@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Desk</title>
+<link rel="stylesheet" href="/xterm.css">
+<style>
+  :root { --bg: #0e0f12; --panel: #16181d; --line: #262a33; --text: #e6e8ee; --dim: #8a90a0; --accent: #ff3ea5; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  ::selection { background: var(--accent); color: #fff; }
+  body { display: grid; grid-template: auto 1fr / 300px 1fr; }
+  header { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  header b { margin-right: 8px; }
+  input, textarea, button { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--dim); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #folder { flex: 1; max-width: 420px; font-family: ui-monospace, Menlo, monospace; }
+  label { color: var(--dim); display: flex; gap: 4px; align-items: center; }
+  aside { border-right: 1px solid var(--line); overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+  aside textarea { width: 100%; resize: vertical; min-height: 64px; display: block; margin-bottom: 6px; }
+  h2 { font: 600 11px ui-monospace, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); margin: 4px 0 6px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin-bottom: 6px; white-space: pre-wrap; word-break: break-word; }
+  .card .row { display: flex; gap: 6px; margin-top: 6px; }
+  .card button { padding: 2px 8px; font-size: 12px; }
+  main { display: grid; gap: 6px; padding: 6px; min-height: 0; min-width: 0; }
+  main.solo .pane:not(.max) { display: none; }
+  main.solo .pane.max { grid-area: 1 / 1 / -1 / -1; }
+  .pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: #000; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .pane.focus { border-color: var(--accent); }
+  .bar { display: flex; gap: 8px; align-items: center; padding: 4px 8px; background: var(--panel); font-size: 12px; user-select: none; }
+  .bar .cwd { color: var(--dim); font-family: ui-monospace, Menlo, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .bar button { padding: 0 6px; border: 0; background: none; color: var(--dim); }
+  .bar button:hover { color: var(--text); }
+  .term { flex: 1; min-height: 0; padding: 4px; }
+  .empty { margin: auto; color: var(--dim); text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <b>Agent Desk</b>
+  <input id="folder" placeholder="Project folder, e.g. ~/code/my-app" spellcheck="false">
+  <label title="Give each new agent its own git worktree, so agents running at the same time don't edit the same files"><input type="checkbox" id="worktree"> own worktree</label>
+  <button class="primary" id="newClaude">+ Claude</button>
+  <button id="newShell">+ Shell</button>
+</header>
+<aside>
+  <div>
+    <textarea id="taskText" placeholder="Describe a task (⌘↵ to add)"></textarea>
+    <button id="addTask">Add task</button>
+  </div>
+  <section><h2>To do</h2><div id="todo"></div></section>
+  <section><h2>Doing</h2><div id="doing"></div></section>
+  <section><h2>Done</h2><div id="done"></div></section>
+</aside>
+<main id="grid"></main>
+<script src="/xterm.js"></script>
+<script src="/addon-fit.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const grid = $('grid');
+const panes = new Map(); // session id -> { el, term }
+let tasks = [];
+
+// Remember the folder and worktree choice between visits.
+$('folder').value = localStorage.getItem('folder') || '~';
+$('worktree').checked = localStorage.getItem('worktree') === '1';
+$('folder').onchange = () => localStorage.setItem('folder', $('folder').value);
+$('worktree').onchange = () => localStorage.setItem('worktree', $('worktree').checked ? '1' : '');
+
+async function api(method, url, body) {
+  const res = await fetch(url, { method, headers: { 'content-type': 'application/json' }, body: body && JSON.stringify(body) });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error);
+  return data;
+}
+
+async function start(kind, prompt = '', name) {
+  try {
+    const s = await api('POST', '/api/sessions', { kind, prompt, name, cwd: $('folder').value, worktree: $('worktree').checked });
+    attach(s);
+    return s;
+  } catch (e) {
+    alert(e.message);
+  }
+}
+$('newClaude').onclick = () => start('claude');
+$('newShell').onclick = () => start('shell');
+
+// Tile the panes in a near-square grid: 2 side by side, 4 as 2x2, up to 16 as 4x4.
+function layout() {
+  const cols = Math.ceil(Math.sqrt(panes.size)) || 1;
+  grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+  grid.style.gridTemplateRows = `repeat(${Math.ceil(panes.size / cols) || 1}, minmax(0, 1fr))`;
+  if (!panes.size) grid.innerHTML = '<div class="empty">No agents running.<br>Pick a folder, then press + Claude or run a task.</div>';
+}
+
+function attach(s) {
+  grid.querySelector('.empty')?.remove();
+  const el = document.createElement('div');
+  el.className = 'pane';
+  el.innerHTML = '<div class="bar"><b></b><span class="cwd"></span><button title="Maximise">⤢</button><button title="Stop and close">✕</button></div><div class="term"></div>';
+  el.querySelector('b').textContent = s.name;
+  el.querySelector('.cwd').textContent = s.cwd;
+  grid.append(el);
+
+  const term = new Terminal({ fontSize: 13, fontFamily: 'ui-monospace, Menlo, monospace', cursorBlink: true, theme: { background: '#000', selectionBackground: '#ff3ea566' } });
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(el.querySelector('.term'));
+
+  const ws = new WebSocket(`ws://${location.host}/ws?id=${s.id}`);
+  const send = msg => {
+    if (ws.readyState !== WebSocket.OPEN) return false;
+    ws.send(JSON.stringify(msg));
+    return true;
+  };
+  ws.onmessage = e => term.write(e.data);
+  ws.onclose = () => term.write('\r\n\x1b[2m[disconnected — reload the page to reattach]\x1b[0m\r\n');
+  term.onData(d => send({ t: 'in', d }));
+
+  let lastSize = '';
+  const resize = () => {
+    fit.fit();
+    const size = `${term.cols}x${term.rows}`;
+    if (size !== lastSize && send({ t: 'resize', cols: term.cols, rows: term.rows })) lastSize = size;
+  };
+  ws.onopen = resize;
+  new ResizeObserver(resize).observe(el);
+
+  el.addEventListener('focusin', () => {
+    grid.querySelectorAll('.pane.focus').forEach(p => p.classList.remove('focus'));
+    el.classList.add('focus');
+  });
+  const [maxBtn, closeBtn] = el.querySelectorAll('.bar button');
+  maxBtn.onclick = () => {
+    const on = !el.classList.contains('max');
+    grid.querySelectorAll('.pane.max').forEach(p => p.classList.remove('max'));
+    el.classList.toggle('max', on);
+    grid.classList.toggle('solo', on);
+  };
+  el.querySelector('.bar').ondblclick = maxBtn.onclick;
+  closeBtn.onclick = async () => {
+    if (!confirm(`Stop and close "${s.name}"?`)) return;
+    await api('DELETE', `/api/sessions/${s.id}`).catch(() => {});
+    ws.onclose = null;
+    ws.close();
+    term.dispose();
+    if (el.classList.contains('max')) grid.classList.remove('solo');
+    el.remove();
+    panes.delete(s.id);
+    layout();
+    renderTasks();
+  };
+
+  panes.set(s.id, { el, term });
+  layout();
+  term.focus();
+}
+
+function showPane(id) {
+  const p = panes.get(id);
+  if (!p) return;
+  if (grid.classList.contains('solo')) {
+    grid.querySelector('.pane.max')?.classList.remove('max');
+    p.el.classList.add('max');
+  }
+  p.term.focus();
+}
+
+// Task board: To do -> Run starts a Claude agent with the task as its first prompt -> Doing -> Done.
+function renderTasks() {
+  for (const col of ['todo', 'doing', 'done']) $(col).replaceChildren();
+  for (const t of tasks) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.textContent = t.text;
+    const row = document.createElement('div');
+    row.className = 'row';
+    const button = (label, onclick, primary) => {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.onclick = onclick;
+      if (primary) b.className = 'primary';
+      row.append(b);
+    };
+    if (t.status === 'todo') { button('Run', () => runTask(t), true); button('Delete', () => removeTask(t)); }
+    if (t.status === 'doing') {
+      if (panes.has(t.sessionId)) button('Show', () => showPane(t.sessionId));
+      button('Done', () => moveTask(t, 'done'));
+      button('Back', () => moveTask(t, 'todo'));
+    }
+    if (t.status === 'done') button('Delete', () => removeTask(t));
+    card.append(row);
+    $(t.status).append(card);
+  }
+}
+
+function update() {
+  renderTasks();
+  api('PUT', '/api/tasks', tasks).catch(e => alert(`Could not save tasks: ${e.message}`));
+}
+const moveTask = (t, status) => { t.status = status; update(); };
+const removeTask = t => { tasks = tasks.filter(x => x !== t); update(); };
+
+async function runTask(t) {
+  const s = await start('claude', t.text, t.text.split('\n')[0].slice(0, 40));
+  if (!s) return;
+  Object.assign(t, { status: 'doing', sessionId: s.id });
+  update();
+}
+
+function addTask() {
+  const text = $('taskText').value.trim();
+  if (!text) return;
+  tasks.push({ id: crypto.randomUUID(), text, status: 'todo' });
+  $('taskText').value = '';
+  update();
+}
+$('addTask').onclick = addTask;
+$('taskText').onkeydown = e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addTask(); };
+
+(async () => {
+  layout();
+  for (const s of await api('GET', '/api/sessions')) attach(s);
+  tasks = await api('GET', '/api/tasks');
+  renderTasks();
+})();
+</script>
+</body>
+</html>
