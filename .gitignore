@@ -3,3 +3,5 @@ data/
 dist/
 tasks.json
 native/build/
+.claude/
+shell/zsh/.zsh_history
