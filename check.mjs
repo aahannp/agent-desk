@@ -294,6 +294,8 @@ try {
   const down = await request('GET', '/api/tasknotes');
   assert.equal(down.status, 503, 'Task Notes being closed is a clear error');
   assert.match(down.body.error, /not running/);
+  fs.writeFileSync(path.join(process.env.TASKNOTES_DATA, 'port.json'), JSON.stringify({ port: notes.address()?.port ?? 1, pid: 2 ** 22 - 1 }));
+  assert.equal((await request('GET', '/api/tasknotes')).status, 503, 'a port.json left by a dead Task Notes is not trusted, and no other port is tried');
 
   await ok('DELETE', `/api/sessions/${shell.id}`);
   assert.deepEqual(await ok('GET', '/api/sessions'), [], 'no sessions left');
