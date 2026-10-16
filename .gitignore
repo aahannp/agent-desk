@@ -3,3 +3,7 @@ data/
 dist/
 tasks.json
 native/build/
+# rendered by npm run build:art
+build/art/out/
+build/icon.icns
+build/background.tiff

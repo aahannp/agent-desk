@@ -1,0 +1,50 @@
+// Renders the app icon and the DMG background from the pages in this folder (npm run build:art).
+// Writes build/icon.icns, build/background.tiff, and the PNGs in build/art/out for review.
+import { app, BrowserWindow } from 'electron';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const ART = import.meta.dirname;
+const BUILD = path.dirname(ART);
+const OUT = path.join(ART, 'out');
+const ICONSET = path.join(OUT, 'icon.iconset');
+
+async function render(page, width, height, scale = 1, hash = '') {
+  const win = new BrowserWindow({
+    show: false, width, height, useContentSize: true, frame: false, transparent: true,
+    webPreferences: { offscreen: { deviceScaleFactor: scale } },
+  });
+  await win.loadFile(path.join(ART, page), { hash });
+  await win.webContents.executeJavaScript('document.fonts.ready.then(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))))');
+  const png = (await win.capturePage()).toPNG({ scaleFactor: scale });
+  await new Promise(resolve => { win.once('closed', resolve); win.close(); });
+  return png;
+}
+
+async function main() {
+  fs.rmSync(OUT, { recursive: true, force: true });
+  fs.mkdirSync(ICONSET, { recursive: true });
+
+  // Every iconset size is drawn at its own pixel size; 16 and 32 point icons use simpler designs.
+  for (const pt of [16, 32, 128, 256, 512]) {
+    for (const x of [1, 2]) {
+      const px = pt * x;
+      const png = await render('icon.html', px, px, 1, px === 16 ? 'tiny' : pt <= 32 ? 'small' : '');
+      fs.writeFileSync(path.join(ICONSET, `icon_${pt}x${pt}${x === 2 ? '@2x' : ''}.png`), png);
+    }
+  }
+  fs.copyFileSync(path.join(ICONSET, 'icon_512x512@2x.png'), path.join(OUT, 'icon-1024.png'));
+  fs.copyFileSync(path.join(ICONSET, 'icon_32x32.png'), path.join(OUT, 'icon-32.png'));
+  execFileSync('iconutil', ['-c', 'icns', ICONSET, '-o', path.join(BUILD, 'icon.icns')]);
+
+  fs.writeFileSync(path.join(OUT, 'background.png'), await render('dmg.html', 660, 420, 1));
+  fs.writeFileSync(path.join(OUT, 'background@2x.png'), await render('dmg.html', 660, 420, 2));
+  execFileSync('tiffutil', ['-cathidpicheck', path.join(OUT, 'background.png'), path.join(OUT, 'background@2x.png'), '-out', path.join(BUILD, 'background.tiff')]);
+
+  console.log(`Art written to ${path.relative(process.cwd(), BUILD)}`);
+}
+
+// No top-level await here: Electron holds the ready event until the main module has finished loading.
+app.dock?.hide();
+app.whenReady().then(main).then(() => app.quit(), e => { console.error(e); app.exit(1); });

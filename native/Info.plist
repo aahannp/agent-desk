@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Linked into desk-listen: command-line tools crash when they use the microphone or speech
+     recognition without these usage strings. -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.aahan.agentdesk.listen</string>
+  <key>CFBundleName</key>
+  <string>Agent Desk Voice</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Agent Desk listens to your voice so you can talk to your agents instead of typing.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Agent Desk turns your speech into text on this Mac so you can talk to your agents.</string>
+</dict>
+</plist>
