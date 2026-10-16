@@ -398,7 +398,7 @@ function safeUrl(raw) {
 }
 
 function browserPane(b, project) {
-  const frame = h('iframe', { src: safeUrl(b.url) ?? 'about:blank', sandbox: 'allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads', allow: 'clipboard-read; clipboard-write' });
+  const frame = h('iframe', { src: safeUrl(b.url) ?? 'about:blank', sandbox: 'allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads', allow: 'clipboard-write' });
   const go = raw => {
     const url = safeUrl(raw);
     if (!url) return toast('Browser panes open http and https pages, other than Agent Desk itself.', 'error');

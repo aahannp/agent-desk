@@ -49,9 +49,20 @@ async function boot() {
     return start({ ...options, port: 0 }); // 4848 is taken, so take any free port
   });
 
+  // Electron grants every page every permission unless told otherwise, and browser panes frame other
+  // websites. So deny by default, and give Agent Desk's own top-level page only what it uses.
+  const ownOrigin = new URL(server.url).origin;
+  const ALLOWED = new Set(['clipboard-sanitized-write', 'notifications', 'media', 'display-capture', 'fullscreen']);
+  const isOwnPage = (url, isMainFrame) => {
+    try { return isMainFrame && new URL(url).origin === ownOrigin; } catch { return false; }
+  };
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) =>
+    callback(ALLOWED.has(permission) && isOwnPage(details.requestingUrl, details.isMainFrame)));
+  session.defaultSession.setPermissionCheckHandler((_wc, permission, origin, details) =>
+    ALLOWED.has(permission) && isOwnPage(details.requestingUrl || origin, details.isMainFrame !== false));
+
   // Screenshots: only Agent Desk's own page (not a browser pane) may capture the screen. On macOS 15+ the
   // system picker appears so you choose exactly what is shared; older versions get the main screen.
-  const ownOrigin = new URL(server.url).origin;
   session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
     const fromApp = request.frame && !request.frame.parent && new URL(request.frame.url).origin === ownOrigin;
     if (!fromApp) return callback({});
