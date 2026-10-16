@@ -7,11 +7,10 @@ import { randomUUID } from 'node:crypto';
 import pty from 'node-pty';
 import { WebSocketServer } from 'ws';
 
-const PORT = Number(process.env.PORT) || 4747;
 const DIR = import.meta.dirname;
-const TASKS_FILE = path.join(DIR, 'tasks.json');
 const SCROLLBACK = 200_000; // characters replayed when a page reattaches to a session
-const LOCAL = new Set([`localhost:${PORT}`, `127.0.0.1:${PORT}`]);
+let TASKS_FILE;
+let LOCAL = new Set();
 
 const STATIC = {
   '/': ['public/index.html', 'text/html'],
@@ -136,4 +135,20 @@ server.on('upgrade', (req, socket, head) => {
   });
 });
 
-server.listen(PORT, '127.0.0.1', () => console.log(`Agent Desk running at http://localhost:${PORT}`));
+// Starts Agent Desk. The Mac app calls this with its own data folder; `npm start` runs it directly.
+export function start({ port = Number(process.env.PORT) || 4747, dataDir = path.join(DIR, 'data') } = {}) {
+  fs.mkdirSync(dataDir, { recursive: true });
+  TASKS_FILE = path.join(dataDir, 'tasks.json');
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', () => {
+      const actual = server.address().port;
+      LOCAL = new Set([`localhost:${actual}`, `127.0.0.1:${actual}`]);
+      const url = `http://localhost:${actual}`;
+      console.log(`Agent Desk running at ${url}`);
+      resolve({ port: actual, url, close: () => { for (const s of sessions.values()) if (!s.exited) s.pty.kill(); server.close(); } });
+    });
+  });
+}
+
+if (process.argv[1] && import.meta.filename === fs.realpathSync(process.argv[1])) start();
