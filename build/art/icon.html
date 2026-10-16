@@ -7,9 +7,9 @@
   svg { display: block; width: 100vw; height: 100vh; }
 </style>
 <svg id="icon" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"></svg>
-<script>
+<script type="module">
 const size = location.hash.slice(1) || 'full';
-const full = size === 'full', tiny = size === 'tiny';
+const full = size === 'full';
 
 // Rounded rectangle with Apple-style continuous corners (Figma's corner smoothing, 60%).
 function squircle(x, y, w, h, r, smoothing = 0.6) {
@@ -31,51 +31,32 @@ function squircle(x, y, w, h, r, smoothing = 0.6) {
 
 const tile = squircle(100, 100, 824, 824, 185);
 
-// Four terminal panes in a 2x2 grid. Smaller icons get bigger panes and wider gaps so the grid
-// survives; at 16px the panes land exactly on pixel edges.
-const { grid, gap, radius, border } = {
-  full: { grid: 536, gap: 34, radius: 54, border: 3.5 },
-  small: { grid: 600, gap: 60, radius: 64, border: 9 },
-  tiny: { grid: 640, gap: 128, radius: 52, border: 0 },
+// The mark: a capital A folded down its centre, so each half is one flat colour and the right half sits
+// in shade. The crossbar is the pink cursor, and it folds with the letter. Small icons get thicker strokes
+// and a taller crossbar so both survive at 32 and 16 pixels.
+const { foot, t, bar } = {
+  full: { foot: 236, t: 118, bar: [584, 656] },
+  small: { foot: 252, t: 138, bar: [574, 664] },
+  tiny: { foot: 262, t: 150, bar: [566, 676] },
 }[size];
-const pane = (grid - gap) / 2;
-const origin = 512 - grid / 2;
-const panes = [0, 1, 2, 3].map(i => ({ x: origin + (i % 2) * (pane + gap), y: origin + Math.floor(i / 2) * (pane + gap) }));
-const paneShape = p => squircle(p.x, p.y, pane, pane, radius);
-const [live, ...idle] = panes;
-
-// Tiny "output" in the three idle panes: [x offset, row, width, colour, opacity, height, corner].
-const V = '#a78bfa', CY = '#22d3ee';
-const lines = [
-  [[0, 0, 128, V, 0.9], [0, 1, 172, V, 0.42], [0, 2, 96, V, 0.42]],
-  [[0, 0, 26, CY, 1], [40, 0, 112, V, 0.9], [0, 1, 150, V, 0.42], [0, 2, 70, V, 0.42]],
-  [[0, 0, 150, V, 0.9], [0, 1, 104, V, 0.42], [0, 2, 58, V, 0.42], [72, 2, 20, CY, 1, 32, 5]],
-];
-const bars = !full ? '' : idle.map((p, i) => lines[i].map(([dx, row, w, color, op, h = 16, rx = 8]) =>
-  `<rect x="${p.x + 46 + dx}" y="${p.y + 76 + row * 42 - (h - 16) / 2}" width="${w}" height="${h}" rx="${rx}" fill="${color}" opacity="${op}"/>`
-).join('')).join('');
-
-// ">_" drawn as strokes so it stays bold and crisp at every size.
-const k = pane / 251;
-const at = (x, y) => `${live.x + x * k} ${live.y + y * k}`;
-const prompt = `M ${at(60, 80)} L ${at(116, 126)} L ${at(60, 172)} M ${at(144, 172)} L ${at(198, 172)}`;
-const promptWidth = (full ? 24 : 34) * k;
+const top = 298, bot = 742, apex = 34; // as a module these don't clash with window.top
+const L0 = 512 - foot, R0 = 512 + foot, s = (512 - apex - L0) / (bot - top);
+const yin = bot - (512 - (L0 + t)) / s; // where the inner edges meet, parallel to the outer ones
+const hw = y => (y - yin) * s;
+const [b1, b2] = bar;
 
 document.getElementById('icon').innerHTML = `
 <defs>
-  <clipPath id="tileClip"><path d="${tile}"/></clipPath>
   <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
     <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity="0.32"/>
   </filter>
 </defs>
 
-<!-- Flat colours only: a solid ink tile, solid violet panes, one solid pink pane with the prompt. -->
-<g filter="url(#shadow)"><path d="${tile}" fill="#151020"/></g>
-<g clip-path="url(#tileClip)">
-  ${idle.map(p => `<path d="${paneShape(p)}" fill="${tiny ? '#5b3fb0' : '#231942'}" stroke="#8b5cf6" stroke-width="${border}"/>`).join('')}
-  ${bars}
-  <path d="${paneShape(live)}" fill="#ff3ea5"/>
-  ${tiny ? '' : `<path d="${prompt}" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="${promptWidth}"/>`}
-  ${tiny ? '' : `<path d="${tile}" fill="none" stroke="#ffffff" stroke-opacity="0.1" stroke-width="5"/>`}
-</g>`;
+<!-- Flat colours only: an ink tile, the lit and shaded halves of the A, and the pink crossbar. -->
+<g filter="url(#shadow)"><path d="${tile}" fill="#0f0e14"/></g>
+<path d="M ${512 - apex} ${top} H 512 V ${yin} L ${L0 + t} ${bot} H ${L0} Z" fill="#f7f5fb"/>
+<path d="M 512 ${top} H ${512 + apex} L ${R0} ${bot} H ${R0 - t} L 512 ${yin} Z" fill="#bfb9cf"/>
+<path d="M ${512 - hw(b1)} ${b1} H 512 V ${b2} H ${512 - hw(b2)} Z" fill="#ff3ea5"/>
+<path d="M 512 ${b1} H ${512 + hw(b1)} L ${512 + hw(b2)} ${b2} H 512 Z" fill="#d22a85"/>
+${full ? `<path d="${tile}" fill="none" stroke="#ffffff" stroke-opacity="0.09" stroke-width="4"/>` : ''}`;
 </script>

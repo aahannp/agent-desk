@@ -27,6 +27,9 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
 - **Browser panes** for your dev server, **command blocks** in shells (each command and its output as a
   block), **screenshots** you can mark up and hand to an agent, **voice input** (on-device in the Mac app),
   **12 themes**, a **command palette** (⌘K) and an animated cursor.
+- **Task Notes**: the Board's Task Notes button lists your open tasks from the Task Notes app. Add one to hand
+  it to an agent, and Task Notes follows its card (In progress and Review show as in progress, Done marks it
+  done). Only tasks you brought over are written back, and only their status.
 - **MCP for your own Claude Code**: Settings shows a one-line `claude mcp add` that gives the same 12 board
   tools to Claude Code anywhere.
 

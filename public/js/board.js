@@ -1,5 +1,5 @@
 // Board view: tasks in four columns. Drag cards between columns; Run hands a task to an agent.
-import { state, api, h, icon, on, toast, guard, actions, modal, confirmDialog, agentLabel, shortBranch, projectTasks, ago } from './ui.js';
+import { state, api, h, icon, on, toast, guard, actions, modal, confirmDialog, command, agentLabel, shortBranch, projectTasks, ago } from './ui.js';
 
 const COLUMNS = [
   { id: 'todo', label: 'To do', color: 'var(--dim)', empty: 'Add a task above, or ask a lead agent to plan one.' },
@@ -26,7 +26,9 @@ export function mount(el) {
   document.addEventListener('keydown', e => e.key === 'Escape' && drawer && !document.querySelector('.overlay') && closeDrawer());
 }
 
-export const toolbar = () => [h('button', { class: 'btn primary', onClick: () => newTask() }, icon('plus', 15), 'New task')];
+export const toolbar = () => [
+  h('button', { class: 'btn', onClick: () => fromTaskNotes(), title: 'Bring tasks over from the Task Notes app' }, icon('clipboard', 15), 'Task Notes'),
+  h('button', { class: 'btn primary', onClick: () => newTask() }, icon('plus', 15), 'New task')];
 export const show = () => render();
 
 function render() {
@@ -112,6 +114,7 @@ function card(t) {
     h('span', { class: `badge ${t.agent}` }, agentLabel(t.agent)),
     t.branch && h('span', { class: 'chip mono' }, icon('branch', 11), shortBranch(t.branch)),
     t.notes.length > 0 && h('span', { class: 'chip', title: 'Comments' }, icon('message', 11), t.notes.length),
+    t.tasknotes && h('span', { class: 'chip', title: 'From Task Notes. Its status there follows this card.' }, icon('clipboard', 11), 'Task Notes'),
     h('span', { class: 'grow' }),
     t.status === 'todo' && h('button', { class: 'btn xs primary', onClick: e => { e.stopPropagation(); run(t); } }, icon('play', 10), 'Run'),
     t.status === 'review' && t.worktreePath && h('button', { class: 'btn xs', onClick: e => { e.stopPropagation(); actions.reviewWorktree(t.worktreePath); } }, icon('branch', 11), 'Review')));
@@ -168,6 +171,34 @@ function newTask() {
   });
 }
 actions.newTask = newTask;
+
+// Task Notes: its open tasks, newest day first; Add puts one on this project's board.
+async function fromTaskNotes() {
+  if (!state.project) return toast('Add a project folder first', 'error');
+  const list = h('div', { class: 'tn-list' }, h('p', { class: 'muted' }, 'Looking in Task Notes…'));
+  modal({ title: 'From Task Notes', width: 600, body: [
+    h('p', { class: 'muted' }, 'Add a task to this board to hand it to an agent. Task Notes follows the card: In progress and Review show as in progress there, and Done marks it done.'),
+    list] });
+  const add = guard(async (t, btn) => {
+    btn.disabled = true;
+    await api('POST', '/api/tasknotes/import', { id: t.id, date: t.date, project: state.project }).catch(e => { btn.disabled = false; throw e; });
+    btn.replaceChildren(icon('check', 12), 'Added');
+  });
+  try {
+    const tasks = await api('GET', '/api/tasknotes');
+    list.replaceChildren(...(tasks.length ? tasks.map(t => h('div', { class: 'tn-row' },
+      h('div', { class: 'tn-text' }, h('div', {}, t.text), t.note && h('div', { class: 'muted' }, t.note)),
+      t.project && h('span', { class: 'chip' }, t.project),
+      t.priority === 'high' && h('span', { class: 'chip' }, 'High'),
+      t.status !== 'todo' && h('span', { class: 'chip' }, { progress: 'In progress', blocked: 'Blocked' }[t.status] ?? t.status),
+      t.onBoard ? h('span', { class: 'muted' }, 'On a board')
+        : h('button', { class: 'btn xs primary', onClick: e => add(t, e.currentTarget) }, icon('plus', 11), 'Add'))) : [h('p', { class: 'muted' }, 'No open tasks in Task Notes.')]));
+  } catch (e) {
+    list.replaceChildren(h('p', { class: 'muted' }, e.message));
+  }
+}
+actions.fromTaskNotes = fromTaskNotes;
+command('Bring a task over from Task Notes', () => fromTaskNotes(), { icon: 'clipboard' });
 
 const agentSelect = value => h('select', { class: 'input' },
   state.agents.map(a => h('option', { value: a.id, selected: a.id === value, disabled: !a.installed }, a.installed ? a.label : `${a.label} (not installed)`)));

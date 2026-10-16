@@ -11,6 +11,7 @@ import { db, load, changed, bus } from './lib/store.mjs';
 import * as S from './lib/sessions.mjs';
 import * as G from './lib/git.mjs';
 import { mcpTools, handleMcp } from './lib/mcp.mjs';
+import * as TN from './lib/tasknotes.mjs';
 
 const DIR = import.meta.dirname;
 const MIME = {
@@ -198,18 +199,25 @@ route('GET', '/api/tasks', ({ req, query }) => {
   const project = query.get('project') ? expand(query.get('project')) : caller(req)?.project;
   return project ? db.tasks.filter(t => t.project === project) : db.tasks;
 });
-route('POST', '/api/tasks', ({ req, body }) => {
+function addTask(req, body) {
   if (!String(body.title || '').trim()) throw fail(400, 'A task needs a title');
   const task = {
     id: randomUUID().slice(0, 8), project: projectFor(req, body.project), title: body.title.trim(),
     description: String(body.description || '').trim(), status: STATUSES.includes(body.status) ? body.status : 'todo',
     agent: body.agent || db.settings.defaultAgent, worktree: body.worktree ?? db.settings.worktreeByDefault,
     sessionId: null, branch: null, worktreePath: null, notes: [], createdBy: caller(req)?.name || 'You', createdAt: Date.now(), updatedAt: Date.now(),
+    tasknotes: body.tasknotes ?? null,
   };
   db.tasks.push(task);
   changed('tasks');
   return task;
-});
+}
+route('POST', '/api/tasks', ({ req, body }) => addTask(req, { ...body, tasknotes: null }));
+
+// Task Notes, the other app on this Mac: its open tasks, and bringing one onto this board
+route('GET', '/api/tasknotes', () => TN.openTasks());
+route('POST', '/api/tasknotes/import', async ({ req, body }) =>
+  addTask(req, await TN.bringOver({ id: String(body.id || ''), date: String(body.date || '') }, projectFor(req, body.project))));
 route('PATCH', '/api/tasks/:id', ({ params, body }) => {
   const task = findTask(params.id);
   if (body.status !== undefined && !STATUSES.includes(body.status)) throw fail(400, `Status must be one of: ${STATUSES.join(', ')}`);
@@ -486,6 +494,7 @@ export async function start({ port = Number(process.env.PORT) || 4747, dataDir =
   fs.mkdirSync(dataDir, { recursive: true });
   load(dataDir);
   S.forgetRunningChats();
+  TN.watch();
   VOICE_HELPER = [voiceHelper, path.join(DIR, 'native', 'build', 'desk-listen')].find(p => p && fs.existsSync(p)) ?? null;
   // The secret is kept in a file only you can read, so links and MCP setups keep working across restarts.
   const tokenFile = path.join(dataDir, 'token');

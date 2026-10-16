@@ -23,6 +23,7 @@ sh('add', '.');
 sh('-c', 'user.name=check', '-c', 'user.email=check@example.com', 'commit', '-qm', 'first');
 
 fs.mkdirSync(path.join(tmp, 'data'));
+process.env.TASKNOTES_DATA = path.join(tmp, 'tasknotes'); // a stand-in Task Notes, never the real one
 fs.writeFileSync(path.join(tmp, 'data', 'token'), ''); // an empty secret file must never mean "no secret"
 const desk = await start({ port: 0, dataDir: path.join(tmp, 'data') });
 assert.ok(desk.token.length >= 32, 'an empty token file is replaced with a real secret');
@@ -234,6 +235,65 @@ try {
   assert.ok(db.chats.some(c => c.id === 'favourite'), 'a chat used just now survives the trim');
   assert.ok(!db.chats.some(c => c.id === 'filler-0'), 'the one used longest ago is dropped');
   await ok('DELETE', `/api/sessions/${newest.id}`);
+
+  // Task Notes: bring a task over, then its status there follows the card, onto the day it was carried to
+  const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const today = ymd(new Date());
+  const yesterday = ymd(new Date(Date.now() - 86_400_000));
+  const days = [{ date: yesterday, tasks: [
+    { id: 'y1', text: 'Fix the login bug', note: 'Users get logged out', status: 'todo', projectId: 'p1' },
+    { id: 'y2', text: 'Already done', status: 'done' }] }];
+  const patches = [];
+  const notes = http.createServer((req, res) => {
+    const u = new URL(req.url, 'http://x');
+    const send = body => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(body)); };
+    if (u.pathname === '/api/projects') return send({ projects: [{ id: 'p1', title: 'Auth' }] });
+    if (u.pathname === '/api/alldays') {
+      const [from, to] = [u.searchParams.get('from') || '0', u.searchParams.get('to') || '9'];
+      return send({ days: days.filter(d => d.date >= from && d.date <= to) });
+    }
+    if (u.pathname === '/api/tasks' && req.method === 'PATCH') {
+      let body = '';
+      req.on('data', c => (body += c));
+      return req.on('end', () => {
+        patches.push({ date: u.searchParams.get('date'), id: u.searchParams.get('id'), ...JSON.parse(body), origin: req.headers.origin });
+        send({ ok: true });
+      });
+    }
+    res.statusCode = 404;
+    res.end('{}');
+  });
+  await new Promise(resolve => notes.listen(0, '127.0.0.1', resolve));
+  fs.mkdirSync(process.env.TASKNOTES_DATA);
+  fs.writeFileSync(path.join(process.env.TASKNOTES_DATA, 'port.json'), JSON.stringify({ port: notes.address().port, pid: process.pid }));
+  const until = async (fn, what) => {
+    for (let i = 0; i < 60 && !fn(); i++) await new Promise(r => setTimeout(r, 50));
+    assert.ok(fn(), what);
+  };
+
+  const open = await ok('GET', '/api/tasknotes');
+  assert.deepEqual(open.map(t => [t.id, t.date, t.project]), [['y1', yesterday, 'Auth']], 'lists open Task Notes tasks with their project');
+  const brought = await ok('POST', '/api/tasknotes/import', { id: 'y1', date: yesterday, project: repo });
+  assert.equal(brought.title, 'Fix the login bug');
+  assert.equal(brought.description, 'Users get logged out');
+  assert.equal((await request('POST', '/api/tasknotes/import', { body: { id: 'y1', date: yesterday, project: repo } })).status, 409, 'the same task is not brought over twice');
+  assert.equal((await ok('POST', '/api/tasks', { title: 'Sneaky', project: repo, tasknotes: { id: 'y2', date: yesterday } })).tasknotes, null, 'a plain new task cannot claim a Task Notes link');
+  await new Promise(r => setTimeout(r, 200));
+  assert.deepEqual(patches, [], 'bringing a task over writes nothing back');
+
+  days.push({ date: today, tasks: [{ id: 't1', srcId: 'y1', carried: true, text: 'Fix the login bug', status: 'todo', projectId: 'p1' }] }); // Task Notes carried it to today
+  assert.equal((await ok('GET', '/api/tasknotes'))[0].onBoard, true, "today's copy shows as already on a board");
+  await ok('PATCH', `/api/tasks/${brought.id}`, { status: 'doing' });
+  await until(() => patches.length === 1, 'moving the card updates Task Notes');
+  assert.deepEqual(patches[0], { date: today, id: 't1', status: 'progress', origin: undefined }, "the update lands on today's copy, as a local request");
+  await ok('PATCH', `/api/tasks/${brought.id}`, { status: 'review' });
+  await ok('PATCH', `/api/tasks/${brought.id}`, { status: 'done' });
+  await until(() => patches.length === 2, 'done reaches Task Notes');
+  assert.equal(patches[1].status, 'done', 'review is still in progress there, so only done is sent');
+  await new Promise(resolve => notes.close(resolve));
+  const down = await request('GET', '/api/tasknotes');
+  assert.equal(down.status, 503, 'Task Notes being closed is a clear error');
+  assert.match(down.body.error, /not running/);
 
   await ok('DELETE', `/api/sessions/${shell.id}`);
   assert.deepEqual(await ok('GET', '/api/sessions'), [], 'no sessions left');

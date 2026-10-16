@@ -11,10 +11,8 @@
   .layer { position: absolute; inset: 0; }
   .grain { opacity: .05; mix-blend-mode: overlay; }
 
-  /* A quiet echo of the icon: four thin pane outlines in the top right corner. */
-  .motif { position: absolute; right: -60px; top: -96px; display: grid; grid-template-columns: 96px 96px; gap: 14px; transform: rotate(-8deg); }
-  .motif i { width: 96px; height: 96px; border-radius: 24px; border: 1.5px solid rgba(139, 92, 246, .22); }
-  .motif i:first-child { border-color: rgba(255, 62, 165, .35); background: rgba(255, 62, 165, .06); }
+  /* A quiet echo of the icon: the A's outline, large and faint, in the top right corner. */
+  .motif { position: absolute; right: -34px; top: -58px; width: 210px; transform: rotate(-8deg); }
 
   header { position: absolute; left: 38px; top: 34px; }
   .brand { display: flex; align-items: center; gap: 10px; }
@@ -31,7 +29,7 @@
   footer i { width: 32px; height: 1px; background: rgba(255, 255, 255, .2); }
 </style>
 
-<div class="motif"><i></i><i></i><i></i><i></i></div>
+<svg class="motif" viewBox="250 280 524 480" fill="none" stroke-width="3"><path d="M 478 298 H 546 L 764 742 H 626 L 512 509.82 L 398 742 H 260 Z" stroke="rgba(255,255,255,.1)"/><path d="M 480.49 574 H 543.51 L 587.7 664 H 436.3 Z" stroke="rgba(255,62,165,.4)"/></svg>
 <svg class="layer grain" width="660" height="420">
   <filter id="noise"><feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" stitchTiles="stitch"/></filter>
   <rect width="100%" height="100%" filter="url(#noise)"/>
@@ -39,12 +37,9 @@
 
 <header>
   <div class="brand">
-    <svg width="23" height="23" viewBox="0 0 23 23" fill="none">
-      <rect x="0" y="0" width="10.5" height="10.5" rx="3" fill="#ff3ea5"/>
-      <rect x="12.9" y="0.4" width="9.7" height="9.7" rx="2.7" stroke="#8b5cf6" stroke-width=".9"/>
-      <rect x="0.4" y="12.9" width="9.7" height="9.7" rx="2.7" stroke="#8b5cf6" stroke-width=".9"/>
-      <rect x="12.9" y="12.9" width="9.7" height="9.7" rx="2.7" stroke="#22d3ee" stroke-width=".9"/>
-      <path d="M3 3.2 L5.4 5.25 L3 7.3" stroke="#fff" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <svg width="23" height="23" viewBox="100 100 824 824">
+      <rect x="100" y="100" width="824" height="824" rx="190" fill="#0f0e14" stroke="rgba(255,255,255,.18)" stroke-width="24"/>
+      <path d="M 478 298 H 512 V 509.82 L 398 742 H 260 Z" fill="#f7f5fb"/><path d="M 512 298 H 546 L 764 742 H 626 L 512 509.82 Z" fill="#bfb9cf"/><path d="M 480.49 574 H 512 V 664 H 436.3 Z" fill="#ff3ea5"/><path d="M 512 574 H 543.51 L 587.7 664 H 512 Z" fill="#d22a85"/>
     </svg>
     <div class="wordmark">Agent Desk</div>
   </div>
