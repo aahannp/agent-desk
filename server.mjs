@@ -155,7 +155,7 @@ route('POST', '/api/tasks', ({ req, body }) => {
     id: randomUUID().slice(0, 8), project: projectFor(req, body.project), title: body.title.trim(),
     description: String(body.description || '').trim(), status: STATUSES.includes(body.status) ? body.status : 'todo',
     agent: body.agent || db.settings.defaultAgent, worktree: body.worktree ?? db.settings.worktreeByDefault,
-    sessionId: null, branch: null, notes: [], createdBy: caller(req)?.name || 'You', createdAt: Date.now(), updatedAt: Date.now(),
+    sessionId: null, branch: null, worktreePath: null, notes: [], createdBy: caller(req)?.name || 'You', createdAt: Date.now(), updatedAt: Date.now(),
   };
   db.tasks.push(task);
   changed('tasks');
@@ -195,7 +195,7 @@ route('POST', '/api/tasks/:id/start', async ({ params, body }) => {
   const worktree = body.worktree ?? task.worktree;
   const prompt = task.description ? `${task.title}\n\n${task.description}` : task.title;
   const s = await S.createSession({ project: task.project, agent, prompt, name: task.title, taskId: task.id, worktree });
-  Object.assign(task, { status: 'doing', sessionId: s.id, agent, worktree, branch: s.worktree?.branch ?? null, updatedAt: Date.now() });
+  Object.assign(task, { status: 'doing', sessionId: s.id, agent, worktree, branch: s.worktree?.branch ?? null, worktreePath: s.worktree?.path ?? null, updatedAt: Date.now() });
   changed('tasks');
   return { task, session: S.info(s) };
 });

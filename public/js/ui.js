@@ -179,11 +179,22 @@ export function menu(anchor, items, { align = 'left' } = {}) {
   }));
 }
 
+// A small glowing tile that says what kind of agent a session is.
+export function avatar(s, small = false) {
+  const kind = s.kind === 'browser' ? 'browser' : s.role === 'lead' ? 'lead' : s.kind === 'shell' ? 'shell' : s.agent;
+  const letters = { claude: 'C', codex: 'Cx', gemini: 'G', cursor: 'Cu' };
+  const glyph = { lead: 'star', shell: 'terminal', browser: 'globe' }[kind];
+  return h('span', { class: `avatar ${kind}${small ? ' sm' : ''}` }, glyph ? icon(glyph, small ? 11 : 14) : letters[kind] ?? 'A');
+}
+export const STATUS_LABEL = { working: 'Working', idle: 'Idle', 'needs-input': 'Needs you', exited: 'Exited' };
+
 export const agentLabel = id => state.agents.find(a => a.id === id)?.label ?? (id || 'Agent');
 export const shortBranch = branch => (branch || '').replace(/^desk\//, '');
 export const projectSessions = () => state.sessions.filter(s => s.project === state.project);
 export const projectTasks = () => state.tasks.filter(t => t.project === state.project);
 export const baseName = p => p.split('/').filter(Boolean).pop() || p;
+// For text shown cut off on the left (direction: rtl), so leading "~" or "/" stays where it belongs.
+export const ltr = text => `\u200E${text}\u200E`;
 
 export function ago(t) {
   const s = Math.round((Date.now() - t) / 1000);

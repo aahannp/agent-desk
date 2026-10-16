@@ -1,0 +1,406 @@
+// Agents view: every agent, shell and browser pane for the project, tiled in a grid of real terminals.
+import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, menu, modal, confirmDialog, agentLabel, shortBranch, baseName, copy, STATUS_LABEL } from './ui.js';
+
+const MONO = '"JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace';
+const panes = new Map(); // id -> pane (a session's terminal, or a browser)
+const seen = new Map(); // session id -> last status we told you about
+let grid;
+let empty;
+let focusedId = null;
+
+export function mount(root) {
+  grid = h('div', { class: 'grid' });
+  empty = h('div', { class: 'empty-state' }, h('div', { class: 'empty-card' },
+    h('div', { class: 'art' }, icon('terminal', 36)),
+    h('h2', {}, 'Your agents work here'),
+    h('p', {}, 'Start a Claude Code agent, let a lead agent plan and split the work, or open a plain shell. Every pane is a real terminal using your own login.'),
+    h('div', { class: 'row' },
+      h('button', { class: 'btn primary', onClick: () => newSession() }, icon('plus', 15), 'New agent'),
+      h('button', { class: 'btn', onClick: () => actions.startLead() }, icon('star', 15), 'Lead agent'),
+      h('button', { class: 'btn', onClick: () => newSession({ kind: 'shell' }) }, icon('terminal', 15), 'Shell')),
+    h('div', { class: 'tips' },
+      h('span', {}, h('kbd', {}, '⌘K'), 'commands'),
+      h('span', {}, h('kbd', {}, '⌘⇧M'), 'voice'),
+      h('span', {}, 'Double-click a pane header to maximise it'))));
+  root.append(grid, empty);
+  new ResizeObserver(layout).observe(grid);
+  on('sessions', sync);
+  on('project', sync);
+  on('settings', syncBrowsers);
+  on('theme', retheme);
+  setInterval(tick, 1000);
+}
+
+export function toolbar() {
+  const installed = state.agents.filter(a => a.installed);
+  return [
+    h('button', { class: 'btn', onClick: () => actions.startLead(), title: 'A lead agent plans the work and starts workers' }, icon('star', 15), 'Lead agent'),
+    h('div', { class: 'split' },
+      h('button', { class: 'btn primary', onClick: () => newSession() }, icon('plus', 15), `New ${agentLabel(state.settings.defaultAgent)}`),
+      h('button', { class: 'btn primary', title: 'More kinds of pane', onClick: e => menu(e.currentTarget, [
+        { heading: 'In the project folder' },
+        ...installed.map(a => ({ label: a.label, icon: 'terminal', onClick: () => newSession({ agent: a.id }) })),
+        { heading: 'In its own git worktree' },
+        ...installed.map(a => ({ label: a.label, icon: 'branch', onClick: () => newSession({ agent: a.id, worktree: true }) })),
+        'sep',
+        { label: 'Shell', icon: 'terminal', onClick: () => newSession({ kind: 'shell' }) },
+        { label: 'Browser pane', icon: 'globe', onClick: () => newBrowser() },
+      ], { align: 'right' }) }, icon('chevron', 14))),
+  ];
+}
+
+// ---------- Starting things ----------
+const newSession = guard(async (opts = {}) => {
+  if (!state.project) throw new Error('Add a project folder first');
+  const s = await api('POST', '/api/sessions', { project: state.project, kind: 'agent', agent: state.settings.defaultAgent, ...opts });
+  await actions.refresh('sessions');
+  focusSession(s.id);
+  return s;
+});
+actions.newSession = newSession;
+
+actions.startLead = () => {
+  if (!state.project) return toast('Add a project folder first', 'error');
+  const goal = h('textarea', { class: 'input', rows: 5, placeholder: 'For example: add a dark mode toggle to the settings page, with tests, and update the docs' });
+  modal({
+    title: 'Start a lead agent', width: 580,
+    body: [
+      h('p', { class: 'muted' }, 'The lead reads the code, turns your goal into tasks on the board, and starts a worker for each one in its own git worktree. You review and merge what they make.'),
+      h('label', { class: 'field' }, h('span', {}, 'What should the team do?'), goal),
+    ],
+    actions: [{ label: 'Cancel' }, {
+      label: 'Start lead', primary: true, onClick: async () => {
+        if (!goal.value.trim()) { toast('Describe the goal first', 'error'); return false; }
+        await newSession({ agent: 'claude', role: 'lead', prompt: goal.value.trim(), name: 'Lead agent' });
+      },
+    }],
+  });
+};
+
+command('New agent', () => newSession(), { icon: 'plus' });
+command('New agent in its own worktree', () => newSession({ worktree: true }), { icon: 'branch' });
+command('Start a lead agent', () => actions.startLead(), { icon: 'star' });
+command('New shell', () => newSession({ kind: 'shell' }), { icon: 'terminal' });
+command('New browser pane', () => newBrowser(), { icon: 'globe' });
+
+// ---------- Keeping panes in step with the server ----------
+function sync() {
+  if (!grid) return;
+  const live = new Set();
+  for (const s of state.sessions) {
+    live.add(s.id);
+    const p = panes.get(s.id) ?? terminalPane(s);
+    p.session = s;
+    p.el.classList.toggle('hidden', s.project !== state.project);
+    renderHead(p);
+    announce(s);
+  }
+  for (const [id, p] of panes) if (p.kind === 'term' && !live.has(id)) dispose(id);
+  syncBrowsers();
+}
+
+function layout() {
+  if (!grid) return;
+  const visible = [...panes.values()].filter(p => !p.el.classList.contains('hidden'));
+  const n = visible.length;
+  empty.hidden = n > 0;
+  let cols = Math.ceil(Math.sqrt(n)) || 1;
+  if (n === 3 && grid.clientWidth > 1300) cols = 3;
+  if (n === 2 && grid.clientWidth < 900) cols = 1;
+  grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+  grid.style.gridTemplateRows = `repeat(${Math.ceil(n / cols) || 1}, minmax(0, 1fr))`;
+  const max = grid.querySelector('.pane.max');
+  if (max && max.classList.contains('hidden')) unmaximise();
+}
+
+// What a session is doing right now. Output in the last 2.5s means it's working.
+const statusOf = s => {
+  if (s.exited) return 'exited';
+  if (s.status === 'needs-input') return 'needs-input';
+  const p = panes.get(s.id);
+  if (!p) return s.status;
+  return Date.now() - p.lastData < 2500 ? 'working' : 'idle';
+};
+actions.statusOf = statusOf;
+
+function tick() {
+  for (const p of panes.values()) {
+    if (p.kind !== 'term') continue;
+    const status = statusOf(p.session);
+    p.state.className = `state ${status}`;
+    p.dot.className = `dot ${status}`;
+    p.stateText.textContent = STATUS_LABEL[status] ?? status;
+  }
+  emit('tick');
+}
+
+// Tell you when an agent needs you or finishes, unless you're already looking at it.
+function announce(s) {
+  const now = s.exited ? 'exited' : s.status === 'needs-input' ? 'needs-input' : 'running';
+  const before = seen.get(s.id);
+  seen.set(s.id, now);
+  if (!before || before === now || now === 'running') return;
+  if (document.hasFocus() && focusedId === s.id) return;
+  const body = now === 'exited' ? `Finished (exit code ${s.exitCode})` : 'Needs your input';
+  if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification(s.name, { body }).onclick = () => { window.focus(); focusSession(s.id); };
+  }
+  toast(`${s.name}: ${body.toLowerCase()}`, 'info', { label: 'Show', onClick: () => focusSession(s.id) });
+}
+
+function retheme() {
+  for (const p of panes.values()) {
+    if (p.kind !== 'term') continue;
+    p.term.options.theme = state.termTheme;
+    p.term.options.fontSize = Number(state.settings.fontSize) || 13;
+    p.fit();
+  }
+}
+
+// ---------- Terminal panes ----------
+function terminalPane(s) {
+  const term = new Terminal({
+    fontFamily: MONO, fontSize: Number(state.settings.fontSize) || 13, lineHeight: 1.2, cursorBlink: true,
+    allowProposedApi: true, macOptionIsMeta: true, scrollback: 5000, theme: state.termTheme,
+  });
+  const fitAddon = new FitAddon.FitAddon();
+  term.loadAddon(fitAddon);
+
+  const dot = h('span', { class: 'dot' });
+  const stateText = h('span', {}, 'Starting');
+  const state_ = h('span', { class: 'state' }, dot, stateText);
+  const title = h('span', { class: 'pane-title' });
+  const sub = h('span', { class: 'pane-sub' });
+  const face = h('span', {});
+  const host = h('div', { class: 'term-host' });
+  const blocks = h('div', { class: 'blocks' });
+  const exitBar = h('div', { class: 'exit-bar' });
+  const id = s.id;
+  const blocksBtn = s.kind === 'shell' && h('button', { class: 'icon-btn', title: 'Command blocks', onClick: () => blocksBtn.classList.toggle('on', el.classList.toggle('show-blocks')) }, icon('list', 15));
+  const head = h('div', { class: 'pane-head', onDblclick: e => !e.target.closest('button') && toggleMaximise(id) },
+    face, h('div', { class: 'pane-titles' }, title, sub), state_,
+    h('div', { class: 'pane-tools' },
+      blocksBtn,
+      h('button', { class: 'icon-btn', title: 'Maximise (double-click the header)', onClick: () => toggleMaximise(id) }, icon('maximize', 14)),
+      h('button', { class: 'icon-btn', title: 'Stop and close', onClick: () => closePane(id) }, icon('x', 15))));
+  const el = h('div', { class: 'pane', 'data-id': id }, head, h('div', { class: 'pane-body' }, host, blocks), exitBar);
+  grid.append(el);
+  term.open(host);
+
+  const p = { id, kind: 'term', el, term, dot, state: state_, stateText, title, sub, face, exitBar, blocksEl: blocks, session: s, lastData: 0, ws: null, size: '' };
+  p.send = data => p.ws?.readyState === WebSocket.OPEN && p.ws.send(JSON.stringify({ t: 'in', d: data }));
+  p.fit = () => {
+    if (!host.offsetWidth) return;
+    fitAddon.fit();
+    const size = `${term.cols}x${term.rows}`;
+    if (size !== p.size && p.ws?.readyState === WebSocket.OPEN) {
+      p.ws.send(JSON.stringify({ t: 'resize', cols: term.cols, rows: term.rows }));
+      p.size = size;
+    }
+  };
+  term.onData(d => p.send(d));
+  host.addEventListener('focusin', () => setFocus(id));
+  new ResizeObserver(() => p.fit()).observe(host);
+  if (s.kind === 'shell') commandBlocks(p);
+  connect(p);
+  panes.set(id, p);
+  layout();
+  return p;
+}
+
+// Each (re)connect gets a fresh copy of the screen from the server, so clear before drawing it.
+function connect(p) {
+  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws?id=${p.id}`);
+  let first = true;
+  p.ws = ws;
+  ws.onopen = () => { p.size = ''; p.fit(); };
+  ws.onmessage = e => {
+    if (first) { p.term.reset(); first = false; }
+    p.term.write(e.data);
+    p.lastData = Date.now();
+  };
+  ws.onclose = () => {
+    if (panes.get(p.id) === p && !p.session.exited) setTimeout(() => panes.get(p.id) === p && connect(p), 1500);
+  };
+}
+
+function renderHead(p) {
+  const s = p.session;
+  p.title.textContent = s.name;
+  p.face.replaceChildren(avatar(s));
+  const kind = s.role === 'lead' ? 'Lead agent' : s.kind === 'shell' ? 'Shell' : agentLabel(s.agent);
+  p.sub.replaceChildren(...[
+    h('span', {}, kind), h('span', { class: 'sep' }, '/'),
+    s.worktree ? h('span', { title: s.worktree.path }, shortBranch(s.worktree.branch)) : h('span', { title: s.cwd }, baseName(s.cwd)),
+    s.taskId && h('span', { class: 'sep' }, '/'),
+    s.taskId && h('button', { title: 'Open the task', onClick: () => actions.openTask?.(s.taskId) }, 'task'),
+  ].filter(Boolean));
+  p.el.classList.toggle('exited', s.exited);
+  p.el.classList.toggle('attn', s.status === 'needs-input');
+  if (s.exited && !p.exitBar.childElementCount) {
+    p.exitBar.append(...[
+      h('span', {}, `Exited with code ${s.exitCode}`), h('span', { class: 'grow' }),
+      s.worktree && h('button', { class: 'btn xs', onClick: () => actions.reviewWorktree?.(s.worktree.path) }, icon('branch', 12), 'Review changes'),
+      h('button', { class: 'btn xs', onClick: () => closePane(p.id) }, 'Close'),
+    ].filter(Boolean));
+  }
+}
+
+function setFocus(id) {
+  focusedId = id;
+  for (const p of panes.values()) p.el.classList.toggle('focus', p.id === id);
+}
+actions.focusedSession = () => (panes.get(focusedId)?.kind === 'term' ? focusedId : null);
+
+function focusSession(id) {
+  const p = panes.get(id);
+  if (!p) return;
+  if (p.session.project !== state.project) actions.switchProject(p.session.project);
+  actions.showView('agents');
+  if (grid.classList.contains('solo') && !p.el.classList.contains('max')) toggleMaximise(id);
+  setFocus(id);
+  setTimeout(() => p.term.focus());
+}
+actions.focusSession = focusSession;
+
+// Type into a session's terminal (voice and screenshots use this). Enter is sent separately.
+actions.typeInto = (id, text, submit = false) => {
+  const p = panes.get(id);
+  if (!p || p.kind !== 'term') return false;
+  p.send(text);
+  if (submit) setTimeout(() => p.send('\r'), 120);
+  return true;
+};
+actions.runningAgents = () => [...panes.values()].filter(p => p.kind === 'term' && !p.session.exited && p.session.project === state.project).map(p => p.session);
+
+function toggleMaximise(id) {
+  const p = panes.get(id);
+  const on = !p.el.classList.contains('max');
+  grid.querySelectorAll('.pane.max').forEach(x => x.classList.remove('max'));
+  p.el.classList.toggle('max', on);
+  grid.classList.toggle('solo', on);
+}
+const unmaximise = () => {
+  grid.querySelectorAll('.pane.max').forEach(x => x.classList.remove('max'));
+  grid.classList.remove('solo');
+};
+
+const closePane = guard(async id => {
+  const p = panes.get(id);
+  if (p.kind === 'browser') return removeBrowser(p);
+  if (!p.session.exited && !(await confirmDialog(`Stop "${p.session.name}"?`, 'This ends the process running in this pane.', { label: 'Stop', danger: true }))) return;
+  await api('DELETE', `/api/sessions/${id}`);
+  dispose(id);
+  actions.refresh('sessions');
+});
+
+function dispose(id) {
+  const p = panes.get(id);
+  if (!p) return;
+  panes.delete(id);
+  if (p.ws) { p.ws.onclose = null; p.ws.close(); }
+  p.term?.dispose();
+  if (p.el.classList.contains('max')) unmaximise();
+  p.el.remove();
+  if (focusedId === id) focusedId = null;
+  layout();
+}
+
+// ---------- Command blocks (Warp style) ----------
+// The shell marks each command (see shell/zsh/.zshrc), so every command and its output becomes a block
+// you can jump to, copy or run again.
+function commandBlocks(p) {
+  const { term } = p;
+  const list = h('div', { class: 'blocks-list' }, h('div', { class: 'blocks-empty' }, 'Run a command and it shows up here as a block.'));
+  p.blocksEl.append(h('div', { class: 'blocks-head' }, icon('list', 14), 'Command blocks'), list);
+  const blocks = [];
+  let commandText = '';
+  let prompt = null;
+  let open = null;
+
+  const output = b => {
+    const buffer = term.buffer.active;
+    const lines = [];
+    for (let i = b.out.line; i >= 0 && i < b.end.line; i++) lines.push(buffer.getLine(i)?.translateToString(true) ?? '');
+    return lines.join('\n').trimEnd();
+  };
+  const render = () => list.replaceChildren(...[...blocks].reverse().map(b => h('div', {
+    class: `block-row ${b.code ? 'bad' : 'ok'}`, title: 'Jump to this command',
+    onClick: () => b.start.line >= 0 && term.scrollToLine(b.start.line),
+  },
+  h('span', { class: 'st' }, icon(b.code ? 'x' : 'check', 13)),
+  h('code', {}, b.cmd || '(command)'),
+  h('span', { class: 'ms' }, b.ms < 1000 ? `${b.ms}ms` : `${(b.ms / 1000).toFixed(1)}s`),
+  h('button', { class: 'icon-btn sm', title: 'Copy output', onClick: e => { e.stopPropagation(); copy(output(b)); } }, icon('copy', 12)),
+  h('button', { class: 'icon-btn sm', title: 'Run again', onClick: e => { e.stopPropagation(); p.send(`${b.cmd}\r`); } }, icon('refresh', 12)))));
+
+  term.parser.registerOscHandler(633, data => {
+    if (data.startsWith('E;')) commandText = data.slice(2);
+    return true;
+  });
+  term.parser.registerOscHandler(133, data => {
+    const [kind, code] = data.split(';');
+    if (kind === 'A') prompt = term.registerMarker(0);
+    if (kind === 'C') open = { cmd: commandText, start: prompt ?? term.registerMarker(0), out: term.registerMarker(0), at: Date.now() };
+    if (kind === 'D' && open) {
+      const b = Object.assign(open, { end: term.registerMarker(0), code: Number(code) || 0, ms: Date.now() - open.at });
+      open = null;
+      blocks.push(b);
+      const height = Math.max(1, b.end.line - b.start.line);
+      term.registerDecoration({ marker: b.start, height, layer: 'bottom' })?.onRender(node => {
+        node.classList.add('block-line');
+        node.classList.toggle('bad', Boolean(b.code));
+      });
+      render();
+    }
+    return true;
+  });
+}
+
+// ---------- Browser panes ----------
+// Saved per project in settings, so they come back after a restart.
+const browserList = project => state.settings.browserPanes?.[project] ?? [];
+const saveBrowsers = (project, list) => actions.setSetting({ browserPanes: { ...state.settings.browserPanes, [project]: list } });
+
+function newBrowser(url = 'http://localhost:3000') {
+  if (!state.project) return toast('Add a project folder first', 'error');
+  saveBrowsers(state.project, [...browserList(state.project), { id: `b${Date.now().toString(36)}`, url }]);
+}
+
+function syncBrowsers() {
+  if (!grid) return;
+  for (const b of browserList(state.project)) if (!panes.has(b.id)) browserPane(b, state.project);
+  for (const [id, p] of panes) {
+    if (p.kind !== 'browser') continue;
+    if (!browserList(p.project).some(b => b.id === id)) dispose(id);
+    else p.el.classList.toggle('hidden', p.project !== state.project);
+  }
+  layout();
+}
+
+function browserPane(b, project) {
+  const frame = h('iframe', { src: b.url, sandbox: 'allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads', allow: 'clipboard-read; clipboard-write' });
+  const go = raw => {
+    let url = raw.trim();
+    if (/^\d+$/.test(url)) url = `http://localhost:${url}`;
+    else if (!/^[a-z]+:\/\//i.test(url)) url = `${/^(localhost|127\.0\.0\.1)/.test(url) ? 'http' : 'https'}://${url}`;
+    frame.src = url;
+    input.value = url;
+    saveBrowsers(project, browserList(project).map(x => (x.id === b.id ? { ...x, url } : x)));
+  };
+  const input = h('input', { class: 'url-input', value: b.url, spellcheck: false, title: 'Type a URL or just a port, like 3000', onKeydown: e => e.key === 'Enter' && go(input.value) });
+  const el = h('div', { class: 'pane', 'data-id': b.id },
+    h('div', { class: 'pane-head', onDblclick: e => e.target === e.currentTarget && toggleMaximise(b.id) },
+      avatar({ kind: 'browser' }), input,
+      h('button', { class: 'icon-btn', title: 'Reload', onClick: () => { frame.src = frame.src; } }, icon('refresh', 14)),
+      h('button', { class: 'icon-btn', title: 'Open in your browser', onClick: () => window.open(input.value, '_blank') }, icon('external', 14)),
+      h('button', { class: 'icon-btn', title: 'Maximise', onClick: () => toggleMaximise(b.id) }, icon('maximize', 14)),
+      h('button', { class: 'icon-btn', title: 'Close', onClick: () => closePane(b.id) }, icon('x', 15))),
+    h('div', { class: 'pane-body' }, frame));
+  grid.append(el);
+  panes.set(b.id, { id: b.id, kind: 'browser', el, project });
+}
+
+function removeBrowser(p) {
+  saveBrowsers(p.project, browserList(p.project).filter(b => b.id !== p.id));
+}
