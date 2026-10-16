@@ -48,7 +48,7 @@ function hasToken(req, url) {
   const cookies = Object.fromEntries((req.headers.cookie || '').split(';').map(c => c.trim().split('=')));
   const given = Buffer.from(String(req.headers['x-desk-token'] || cookies[COOKIE] || url.searchParams.get('t') || ''));
   const want = Buffer.from(TOKEN);
-  return given.length === want.length && timingSafeEqual(given, want);
+  return want.length >= 32 && given.length === want.length && timingSafeEqual(given, want);
 }
 
 // ---------- Helpers ----------
@@ -417,8 +417,12 @@ export async function start({ port = Number(process.env.PORT) || 4747, dataDir =
   VOICE_HELPER = [voiceHelper, path.join(DIR, 'native', 'build', 'desk-listen')].find(p => p && fs.existsSync(p)) ?? null;
   // The secret is kept in a file only you can read, so links and MCP setups keep working across restarts.
   const tokenFile = path.join(dataDir, 'token');
-  if (!fs.existsSync(tokenFile)) fs.writeFileSync(tokenFile, randomBytes(24).toString('base64url'), { mode: 0o600 });
-  TOKEN = fs.readFileSync(tokenFile, 'utf8').trim();
+  TOKEN = fs.existsSync(tokenFile) ? fs.readFileSync(tokenFile, 'utf8').trim() : '';
+  if (!/^[A-Za-z0-9_-]{32,}$/.test(TOKEN)) { // missing, empty or damaged: make a new one
+    TOKEN = randomBytes(24).toString('base64url');
+    fs.writeFileSync(`${tokenFile}.tmp`, TOKEN, { mode: 0o600 });
+    fs.renameSync(`${tokenFile}.tmp`, tokenFile);
+  }
   const server = http.createServer(handle);
   server.on('upgrade', upgrade);
   await new Promise((resolve, reject) => {

@@ -20,7 +20,10 @@ fs.writeFileSync(path.join(repo, 'README.md'), 'hello\n');
 sh('add', '.');
 sh('-c', 'user.name=check', '-c', 'user.email=check@example.com', 'commit', '-qm', 'first');
 
+fs.mkdirSync(path.join(tmp, 'data'));
+fs.writeFileSync(path.join(tmp, 'data', 'token'), ''); // an empty secret file must never mean "no secret"
 const desk = await start({ port: 0, dataDir: path.join(tmp, 'data') });
+assert.ok(desk.token.length >= 32, 'an empty token file is replaced with a real secret');
 const SELF = `http://127.0.0.1:${desk.port}`;
 const EVIL = 'https://evil.example';
 
