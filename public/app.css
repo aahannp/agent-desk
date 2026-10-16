@@ -291,7 +291,9 @@ textarea.input { resize: vertical; min-height: 84px; line-height: 1.55; }
 .pane-sub button { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; }
 .pane-tools { display: flex; align-items: center; gap: 2px; }
 .pane-body { position: relative; flex: 1; min-height: 0; display: flex; }
-.term-host { flex: 1; min-width: 0; padding: 10px 6px 6px 12px; }
+/* content-box: xterm's fit addon reads this box's CSS width and height as the space to fill, so the padding must not be
+   counted in them, or the last column slides under the scrollbar and the bottom row past the edge. */
+.term-host { flex: 1; min-width: 0; padding: 10px 6px 6px 12px; box-sizing: content-box; }
 .term-host .xterm { height: 100%; }
 .term-host .xterm-viewport { scrollbar-width: thin; }
 .exit-bar { display: none; align-items: center; gap: 10px; padding: 9px 12px; border-top: 1px solid var(--hair); background: var(--glass); font-size: 12px; color: var(--dim); }
