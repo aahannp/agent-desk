@@ -147,6 +147,14 @@ route('POST', '/api/sessions', async ({ req, body }) => {
 });
 route('DELETE', '/api/sessions/:id', ({ params }) => (S.stop(findSession(params.id)), {}));
 
+// Claude's SessionStart hook reports the conversation id a pane is on (it changes on /clear).
+route('POST', '/api/claude-session', ({ req, body }) => {
+  const s = caller(req);
+  if (!s) throw fail(404, 'Unknown session');
+  S.noteClaudeSession(s, body.session_id);
+  return {};
+});
+
 // Chats: agent conversations kept after their pane closes or the app quits, so they can be opened again
 const findChat = id => db.chats.find(c => c.id === id) ?? (() => { throw fail(404, 'No such chat'); })();
 route('GET', '/api/chats', ({ query }) => {
@@ -155,16 +163,18 @@ route('GET', '/api/chats', ({ query }) => {
 });
 route('POST', '/api/chats/:id/open', async ({ params }) => {
   const chat = findChat(params.id);
-  const current = chat.sessionId && S.sessions.get(chat.sessionId);
-  if (current && !current.exited) return { session: S.info(current), replaced: null };
-  if (current) S.stop(current); // a finished pane for this chat gives way to the reopened one
+  const mine = S.chatSessions(chat.id);
+  const live = mine.find(s => !s.exited);
+  if (live) return { session: S.info(live), replaced: null };
+  const done = mine.find(s => s.exited); // a finished pane for this chat gives way to the reopened one
+  if (done) S.stop(done);
   const s = await S.createSession({ chatId: chat.id });
   const task = chat.taskId && db.tasks.find(t => t.id === chat.taskId);
   if (task) {
     task.sessionId = s.id;
     changed('tasks');
   }
-  return { session: S.info(s), replaced: current?.id ?? null };
+  return { session: S.info(s), replaced: done?.id ?? null };
 });
 route('PATCH', '/api/chats/:id', ({ params, body }) => {
   const chat = findChat(params.id);
@@ -175,8 +185,7 @@ route('PATCH', '/api/chats/:id', ({ params, body }) => {
 });
 route('DELETE', '/api/chats/:id', ({ params }) => {
   const chat = findChat(params.id);
-  const s = chat.sessionId && S.sessions.get(chat.sessionId);
-  if (s) S.stop(s);
+  for (const s of S.chatSessions(chat.id)) S.stop(s);
   db.chats = db.chats.filter(c => c.id !== chat.id); // Claude's own copy of the conversation is left alone
   changed('chats');
   return {};

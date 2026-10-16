@@ -181,6 +181,60 @@ try {
   assert.deepEqual(resumed.slice(0, 2), ['--resume', named], 'a saved chat is resumed by id');
   assert.ok(!resumed.includes('--session-id'), 'never both');
 
+  // The whole chat lifecycle, with a stand-in `claude` on the PATH that prints its arguments and exits
+  const fakeBin = path.join(tmp, 'fake-bin');
+  fs.mkdirSync(fakeBin);
+  fs.writeFileSync(path.join(fakeBin, 'claude'), '#!/bin/sh\necho "FAKE-CLAUDE $*"\n', { mode: 0o755 });
+  process.env.PATH = `${fakeBin}:${process.env.PATH}`;
+  const exited = async id => {
+    for (let i = 0; i < 50; i++) {
+      const found = (await ok('GET', '/api/sessions')).find(x => x.id === id);
+      if (!found || found.exited) return found;
+      await new Promise(r => setTimeout(r, 100));
+    }
+    throw new Error(`session ${id} never exited`);
+  };
+  const outputOf = async id => (await ok('GET', `/api/sessions/${id}/output?lines=40`)).text;
+  const first = await ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: repo, name: 'Lifecycle chat' });
+  await exited(first.id);
+  const record = () => db.chats.find(c => c.id === first.chatId);
+  assert.match(await outputOf(first.id), new RegExp(`--session-id ${record().claudeSessionId}`), 'a new chat starts with the id we chose');
+  assert.match(await outputOf(first.id), /--settings /, 'claude gets the hook that reports its conversation id');
+  assert.ok(!fs.existsSync(path.join(tmp, 'data', 'hooks', `${first.id}.headers`)), 'the hook secret file is gone once the agent exits');
+
+  const reopened = await ok('POST', `/api/chats/${first.chatId}/open`);
+  assert.equal(reopened.replaced, first.id, "reopening a finished chat replaces its pane, it doesn't add a second one");
+  assert.ok(!(await ok('GET', '/api/sessions')).some(x => x.id === first.id), 'the finished pane is gone');
+  await exited(reopened.session.id);
+
+  // After /clear Claude is on a new conversation; the hook tells us, and the next reopen resumes that one
+  const cleared = randomUUID();
+  assert.equal((await request('POST', '/api/claude-session', { headers: { 'x-desk-session': 'nobody' }, body: { session_id: cleared } })).status, 404, 'the hook must name a real session');
+  await request('POST', '/api/claude-session', { headers: { 'x-desk-session': reopened.session.id }, body: { session_id: '../../etc/passwd' } });
+  assert.notEqual(record().claudeSessionId, '../../etc/passwd', 'only real ids are accepted');
+  assert.equal((await request('POST', '/api/claude-session', { headers: { 'x-desk-session': reopened.session.id }, body: { session_id: cleared, source: 'clear' } })).status, 200);
+  assert.equal(record().claudeSessionId, cleared, 'the chat follows the conversation the pane is on');
+  const clearedDir = path.join(claudeHome, 'projects', repo.replace(/[^a-zA-Z0-9]/g, '-'));
+  fs.writeFileSync(path.join(clearedDir, `${cleared}.jsonl`), line({ type: 'user', message: { content: 'after the clear' } }));
+  const third = await ok('POST', `/api/chats/${first.chatId}/open`);
+  await exited(third.session.id);
+  assert.match(await outputOf(third.session.id), new RegExp(`--resume ${cleared}`), 'reopening resumes the conversation after /clear');
+  assert.equal((await byId())[first.chatId].title, 'after the clear', "and shows that conversation's title");
+
+  await ok('DELETE', `/api/chats/${first.chatId}`);
+  assert.ok(!(await ok('GET', '/api/sessions')).some(x => x.chatId === first.chatId), 'removing a chat also closes its finished pane');
+
+  // Past the limit, the chats used longest ago go first, however old the favourite is
+  const now = Date.now();
+  db.chats.push(...Array.from({ length: 300 }, (_, i) => ({ ...chat(`filler-${i}`, randomUUID()), lastActiveAt: now - 10_000_000 + i, createdAt: now })));
+  db.chats.push({ ...chat('favourite', randomUUID()), createdAt: 1, lastActiveAt: now });
+  const newest = await ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: repo });
+  await exited(newest.id);
+  assert.ok(db.chats.length <= 300, `at most 300 chats are kept (have ${db.chats.length})`);
+  assert.ok(db.chats.some(c => c.id === 'favourite'), 'a chat used just now survives the trim');
+  assert.ok(!db.chats.some(c => c.id === 'filler-0'), 'the one used longest ago is dropped');
+  await ok('DELETE', `/api/sessions/${newest.id}`);
+
   await ok('DELETE', `/api/sessions/${shell.id}`);
   assert.deepEqual(await ok('GET', '/api/sessions'), [], 'no sessions left');
   console.log('All checks passed');

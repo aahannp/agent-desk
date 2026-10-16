@@ -1,5 +1,5 @@
 // The app shell: navigation, projects, live updates from the server, the command palette and shortcuts.
-import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, commands, menu, modal, askText, ago, baseName, ltr, projectSessions, projectTasks, projectChats, chatTitle, DRAG, STATUS_LABEL } from './ui.js';
+import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, commands, menu, modal, askText, confirmDialog, ago, baseName, ltr, projectSessions, projectTasks, projectChats, chatTitle, DRAG, STATUS_LABEL } from './ui.js';
 import { THEMES, applyTheme } from './themes.js';
 import * as agents from './agents.js';
 import * as board from './board.js';
@@ -141,7 +141,10 @@ function renderChrome() {
 }
 
 // Sidebar chats: what's open now, then earlier chats you can click or drag into the grid to pick up again.
+let sidebarDrag = false; // rebuilding the list mid-drag would detach the dragged button and lose its dragend
+
 function renderChats(unordered) {
+  if (sidebarDrag) return;
   const order = actions.paneOrder?.() ?? [];
   const sessions = [...unordered].sort((a, b) => (order.indexOf(a.id) + 1 || Infinity) - (order.indexOf(b.id) + 1 || Infinity));
   const openIds = new Set(sessions.map(s => s.chatId).filter(Boolean));
@@ -149,6 +152,8 @@ function renderChats(unordered) {
   const drag = (type, id) => e => {
     e.dataTransfer.setData(type, id);
     e.dataTransfer.effectAllowed = 'move';
+    sidebarDrag = true;
+    e.currentTarget.addEventListener('dragend', () => { sidebarDrag = false; renderChrome(); }, { once: true });
   };
   const open = sessions.map(s => h('button', {
     class: 'run-item', title: s.cwd, draggable: true, onDragstart: drag(DRAG.pane, s.id),
@@ -173,11 +178,12 @@ function chatMenu(e, chat) {
     { label: chat.running ? 'Show' : 'Open', icon: 'play', disabled: chat.folderMissing, onClick: () => actions.openChat(chat.id) },
     { label: 'Rename…', icon: 'pen', onClick: guard(async () => {
       const title = await askText('Rename chat', { value: chat.title, ok: 'Rename', label: 'Leave it empty to use Claude\'s own title' });
-      if (title !== null) await api('PATCH', `/api/chats/${chat.id}`, { title });
+      if (title !== null) await api('PATCH', `/api/chats/${encodeURIComponent(chat.id)}`, { title });
     }) },
     'sep',
     { label: 'Remove from the list', icon: 'trash', onClick: guard(async () => {
-      await api('DELETE', `/api/chats/${chat.id}`);
+      if (chat.running && !(await confirmDialog(`Stop and remove "${chat.title}"?`, 'The agent is still running. This stops it and takes the chat off the list.', { label: 'Stop and remove', danger: true }))) return;
+      await api('DELETE', `/api/chats/${encodeURIComponent(chat.id)}`);
       toast('Removed. Claude\'s own copy of the conversation is untouched.', 'ok');
     }) },
   ]);

@@ -64,13 +64,14 @@ actions.newSession = newSession;
 // Opens a chat: shows it if it's running, otherwise starts it again (Claude picks up the same conversation).
 // `place` puts its pane before or after another one; a finished pane for the chat keeps its spot.
 actions.openChat = guard(async (chatId, place = null) => {
+  if (!state.chats.some(c => c.id === chatId)) return; // drag data can come from anywhere, so only known chats
   const old = [...panes.values()].find(p => p.session?.chatId === chatId);
   const spot = place ?? (old && { ref: old.id, side: 'replace' });
   const anchor = spot?.side === 'replace' ? old.el.nextElementSibling : null;
-  const { session, replaced } = await api('POST', `/api/chats/${chatId}/open`);
+  const { session, replaced } = await api('POST', `/api/chats/${encodeURIComponent(chatId)}/open`);
   if (replaced) dispose(replaced);
   await actions.refresh('sessions');
-  if (anchor?.isConnected) grid.insertBefore(panes.get(session.id).el, anchor);
+  if (anchor?.isConnected) put(panes.get(session.id).el, anchor);
   else if (spot && spot.side !== 'replace') movePane(session.id, spot);
   saveOrder();
   layout();
@@ -128,9 +129,8 @@ function restoreOrder() {
   let saved = [];
   try { saved = JSON.parse(localStorage.getItem(orderKey()) || '[]'); } catch {}
   const rank = new Map(saved.map((id, i) => [id, i]));
-  const els = [...grid.children];
-  const sorted = [...els].sort((a, b) => (rank.get(a.dataset.id) ?? Infinity) - (rank.get(b.dataset.id) ?? Infinity));
-  if (sorted.some((el, i) => el !== els[i])) grid.append(...sorted);
+  const sorted = [...grid.children].sort((a, b) => (rank.get(a.dataset.id) ?? Infinity) - (rank.get(b.dataset.id) ?? Infinity));
+  sorted.forEach((el, i) => grid.children[i] !== el && put(el, grid.children[i])); // only what's out of place moves
 }
 actions.paneOrder = () => [...grid.children].map(el => el.dataset.id);
 
@@ -374,12 +374,19 @@ const clearDrop = () => {
   grid.classList.remove('drop-end');
 };
 
+// moveBefore keeps a moved element alive; insertBefore would reload a browser pane's page.
+function put(el, before) {
+  try {
+    if (grid.moveBefore) return grid.moveBefore(el, before);
+  } catch {} // not movable in place (older browser): fall back
+  grid.insertBefore(el, before);
+}
+
 function movePane(id, spot) {
   const el = panes.get(id)?.el;
   const ref = spot && panes.get(spot.ref)?.el;
   if (!el || !ref || ref === el) return;
-  if (spot.side === 'before') grid.insertBefore(el, ref);
-  else ref.after(el);
+  put(el, spot.side === 'before' ? ref : ref.nextSibling);
 }
 
 function dropTarget(root) {
@@ -398,7 +405,7 @@ function dropTarget(root) {
     const chat = e.dataTransfer.getData(DRAG.chat);
     const pane = e.dataTransfer.getData(DRAG.pane);
     if (chat) actions.openChat(chat, spot);
-    else if (pane) {
+    else if (panes.has(pane)) {
       movePane(pane, spot ?? { ref: [...grid.children].at(-1)?.dataset.id, side: 'after' });
       saveOrder();
       layout();
