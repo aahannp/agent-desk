@@ -1,11 +1,19 @@
 {
   "name": "agent-desk",
+  "productName": "Agent Desk",
+  "version": "1.0.0",
+  "description": "Run many Claude Code agents side by side",
   "private": true,
   "type": "module",
+  "main": "electron/main.mjs",
   "scripts": {
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true",
     "start": "node server.mjs",
-    "check": "node check.mjs"
+    "check": "node check.mjs",
+    "app": "electron .",
+    "build:native": "mkdir -p native/build && swiftc -O -target \"$(uname -m)-apple-macos12\" native/listen.swift -o native/build/desk-listen -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker native/Info.plist",
+    "build:art": "electron build/art/render.mjs",
+    "dist": "npm run build:native && npm run build:art && electron-builder --mac dmg"
   },
   "dependencies": {
     "@xterm/addon-fit": "0.11.0",
@@ -15,5 +23,56 @@
     "monaco-editor": "0.57.0",
     "node-pty": "1.1.0",
     "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.aahan.agentdesk",
+    "productName": "Agent Desk",
+    "npmRebuild": false,
+    "files": [
+      "electron/**",
+      "server.mjs",
+      "mcp.mjs",
+      "lib/**",
+      "public/**",
+      "shell/**",
+      "!node_modules/monaco-editor/{esm,dev}/**",
+      "!node_modules/node-pty/{deps,src,third_party,prebuilds/win32-*}/**",
+      "!**/*.map"
+    ],
+    "asarUnpack": [
+      "node_modules/node-pty/**",
+      "shell/**",
+      "mcp.mjs"
+    ],
+    "extraResources": [
+      { "from": "native/build/desk-listen", "to": "desk-listen" }
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": "dmg",
+      "icon": "build/icon.icns",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "notarize": false,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Agent Desk listens to your voice so you can talk to your agents instead of typing.",
+        "NSSpeechRecognitionUsageDescription": "Agent Desk turns your speech into text on this Mac so you can talk to your agents."
+      }
+    },
+    "dmg": {
+      "title": "Agent Desk",
+      "icon": "build/icon.icns",
+      "background": "build/background.tiff",
+      "iconSize": 112,
+      "window": { "width": 660, "height": 420 },
+      "contents": [
+        { "x": 180, "y": 235, "type": "file" },
+        { "x": 480, "y": 235, "type": "link", "path": "/Applications" }
+      ]
+    }
   }
 }

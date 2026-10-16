@@ -5,3 +5,7 @@ tasks.json
 native/build/
 .claude/
 shell/zsh/.zsh_history
+# rendered by npm run build:art
+build/art/out/
+build/icon.icns
+build/background.tiff
