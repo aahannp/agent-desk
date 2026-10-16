@@ -39,7 +39,7 @@ const TOOLS = [
   tool('create_task', 'Add a task to the To do column. Make the description self-contained: goal, files, how to check it works.', {
     title: str('Short title'), description: str('What to do, in detail'),
     agent: { type: 'string', enum: ['claude', 'codex', 'gemini', 'cursor'] },
-  }, ['title'], args => api('POST', '/api/tasks', args)),
+  }, ['title'], ({ title, description, agent }) => api('POST', '/api/tasks', { title, description, agent })),
   tool('update_task', 'Change a task\'s status, title or description. Leave id out to update your own task.', {
     id: str('Task id'), status: { type: 'string', enum: ['todo', 'doing', 'review', 'done'] }, title: str('New title'), description: str('New description'),
   }, [], async ({ id, ...changes }) => api('PATCH', `/api/tasks/${q(await myTaskId(id))}`, changes)),
@@ -48,11 +48,11 @@ const TOOLS = [
   }, ['text'], async ({ id, text }) => api('POST', `/api/tasks/${q(await myTaskId(id))}/comments`, { text })),
   tool('start_task', 'Start a worker agent on a task. By default it gets its own git worktree.', {
     id: str('Task id'), agent: { type: 'string', enum: ['claude', 'codex', 'gemini', 'cursor'] }, worktree: { type: 'boolean' },
-  }, ['id'], ({ id, ...opts }) => api('POST', `/api/tasks/${q(id)}/start`, opts)),
+  }, ['id'], ({ id, agent, worktree }) => api('POST', `/api/tasks/${q(id)}/start`, { agent, worktree })),
   tool('start_agent', 'Start a new agent session with a first message (not tied to a task).', {
     prompt: str('First message for the agent'), name: str('Pane title'),
     agent: { type: 'string', enum: ['claude', 'codex', 'gemini', 'cursor'] }, worktree: { type: 'boolean' },
-  }, ['prompt'], args => api('POST', '/api/sessions', { kind: 'agent', ...args })),
+  }, ['prompt'], ({ prompt, name, agent, worktree }) => api('POST', '/api/sessions', { prompt, name, agent, worktree, kind: 'agent' })),
   tool('list_agents', 'List running agents and shells with their status: working, idle, needs-input or exited.', {}, [], async () =>
     (await api('GET', '/api/sessions')).map(({ id, name, agent, kind, role, status, taskId, worktree }) =>
       ({ id, name, agent: agent || kind, role, status, taskId, branch: worktree?.branch ?? null }))),

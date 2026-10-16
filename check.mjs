@@ -81,6 +81,11 @@ try {
     ws.on('error', () => resolve('refused'));
   });
   assert.equal(evilSocket, 'refused', 'websocket from another website is refused');
+  assert.equal((await request('GET', '/%E0%A4%A', { token: '' })).status, 400, 'a malformed URL is a 400, not a crash');
+  assert.equal((await request('GET', '/vendor/constructor', { token: '' })).status, 404, 'vendor lookup ignores prototype keys');
+  assert.equal((await request('GET', '/api/sessions', { token: 'é'.repeat(16) })).status, 401, 'a multi-byte token is refused, not a crash');
+  fs.writeFileSync(path.join(tmp, 'x.svg'), '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+  assert.equal((await request('GET', `/api/fs/raw?path=${encodeURIComponent(path.join(tmp, 'x.svg'))}`)).status, 404, 'SVGs are never served same-origin');
 
   // Projects and a shell session with command blocks
   await ok('POST', '/api/projects', { path: repo });

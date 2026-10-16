@@ -46,8 +46,9 @@ function sameSite(req) {
 
 function hasToken(req, url) {
   const cookies = Object.fromEntries((req.headers.cookie || '').split(';').map(c => c.trim().split('=')));
-  const given = req.headers['x-desk-token'] || cookies[COOKIE] || url.searchParams.get('t') || '';
-  return given.length === TOKEN.length && timingSafeEqual(Buffer.from(given), Buffer.from(TOKEN));
+  const given = Buffer.from(String(req.headers['x-desk-token'] || cookies[COOKIE] || url.searchParams.get('t') || ''));
+  const want = Buffer.from(TOKEN);
+  return given.length === want.length && timingSafeEqual(given, want);
 }
 
 // ---------- Helpers ----------
@@ -94,6 +95,7 @@ function route(method, pattern, handler) {
 }
 
 route('GET', '/api/info', () => ({
+  url: S.serverUrl(), token: TOKEN,
   mcpPath: path.join(DIR, 'mcp.mjs').replace(/app\.asar([/\\])/, 'app.asar.unpacked$1'),
   node: process.execPath, electron: Boolean(process.versions.electron), voice: Boolean(VOICE_HELPER), home: os.homedir(),
 }));
@@ -267,11 +269,12 @@ route('GET', '/api/fs/suggest', ({ query }) => {
     .filter(e => e.isDirectory() && !e.name.startsWith('.') && e.name.toLowerCase().startsWith(start.toLowerCase()))
     .slice(0, 30).map(e => `${shown}${e.name}`);
 });
+// Raster images only: an SVG opened from here would run its scripts with this app's access.
+const RASTER = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
 route('GET', '/api/fs/raw', ({ query }) => {
   const file = expand(query.get('path'));
-  const type = MIME[path.extname(file).toLowerCase()];
-  if (!type?.startsWith('image/') || !fs.existsSync(file)) throw fail(404, 'No such image');
-  return { raw: fs.readFileSync(file), type };
+  if (!RASTER.has(path.extname(file).toLowerCase()) || !fs.existsSync(file)) throw fail(404, 'No such image');
+  return { raw: fs.readFileSync(file), type: MIME[path.extname(file).toLowerCase()] };
 });
 
 // Screenshots for agents, saved inside the project (kept out of git)
@@ -325,16 +328,26 @@ function staticPath(pathname) {
   };
   if (pathname === '/') return path.join(DIR, 'public', 'index.html');
   if (pathname.startsWith('/vendor/monaco/')) return inside(path.join(DIR, 'node_modules', 'monaco-editor', 'min'), pathname.slice(15));
-  if (pathname.startsWith('/vendor/')) return VENDOR[pathname.slice(8)] && path.join(DIR, 'node_modules', VENDOR[pathname.slice(8)]);
+  if (pathname.startsWith('/vendor/')) return Object.hasOwn(VENDOR, pathname.slice(8)) ? path.join(DIR, 'node_modules', VENDOR[pathname.slice(8)]) : null;
   return inside(path.join(DIR, 'public'), pathname.slice(1));
 }
 
 const LOCKED_PAGE = `<!doctype html><meta charset="utf-8"><title>Agent Desk</title>
 <body style="font:15px -apple-system,system-ui,sans-serif;background:#0b0c10;color:#e7e9ef;display:grid;place-items:center;height:100vh;margin:0">
 <div style="max-width:420px;text-align:center"><h2>Agent Desk is locked</h2>
-<p style="color:#8a90a2">Open it with the link printed in the terminal where you ran <code>npm start</code>. The link changes every time the server starts.</p></div>`;
+<p style="color:#8a90a2">Open it with the link printed in the terminal where you ran <code>npm start</code>.</p></div>`;
 
+// One bad request must never take the server (and every running agent) down.
 async function handle(req, res) {
+  try {
+    await respond(req, res);
+  } catch (e) {
+    if (!res.headersSent) res.writeHead(e instanceof URIError ? 400 : 500, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: e instanceof URIError ? 'Bad URL' : e.message }));
+  }
+}
+
+async function respond(req, res) {
   const url = new URL(req.url, 'http://localhost');
   const json = (status, body) => {
     res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
@@ -373,7 +386,7 @@ async function handle(req, res) {
       const body = ['POST', 'PUT', 'PATCH'].includes(req.method) ? await readBody(req) : {};
       const result = await r.handler({ req, params, query: url.searchParams, body });
       if (result?.raw) {
-        res.writeHead(200, { 'content-type': result.type });
+        res.writeHead(200, { 'content-type': result.type, 'x-content-type-options': 'nosniff', 'content-security-policy': 'sandbox' });
         return res.end(result.raw);
       }
       return json(200, result ?? {});
@@ -387,10 +400,14 @@ async function handle(req, res) {
 // Each terminal pane attaches to one session: it gets the current screen, then live output.
 const wss = new WebSocketServer({ noServer: true });
 function upgrade(req, socket, head) {
-  const url = new URL(req.url, 'http://localhost');
-  const s = url.pathname === '/ws' && S.sessions.get(url.searchParams.get('id'));
-  if (!sameSite(req) || !hasToken(req, url) || !s) return socket.destroy();
-  wss.handleUpgrade(req, socket, head, ws => S.attach(s, ws));
+  try {
+    const url = new URL(req.url, 'http://localhost');
+    const s = url.pathname === '/ws' && S.sessions.get(url.searchParams.get('id'));
+    if (!sameSite(req) || !hasToken(req, url) || !s) return socket.destroy();
+    wss.handleUpgrade(req, socket, head, ws => S.attach(s, ws));
+  } catch {
+    socket.destroy();
+  }
 }
 
 // Starts Agent Desk. The Mac app calls this with its own data folder; `npm start` runs it directly.
@@ -398,7 +415,10 @@ export async function start({ port = Number(process.env.PORT) || 4747, dataDir =
   fs.mkdirSync(dataDir, { recursive: true });
   load(dataDir);
   VOICE_HELPER = [voiceHelper, path.join(DIR, 'native', 'build', 'desk-listen')].find(p => p && fs.existsSync(p)) ?? null;
-  TOKEN = randomBytes(24).toString('base64url');
+  // The secret is kept in a file only you can read, so links and MCP setups keep working across restarts.
+  const tokenFile = path.join(dataDir, 'token');
+  if (!fs.existsSync(tokenFile)) fs.writeFileSync(tokenFile, randomBytes(24).toString('base64url'), { mode: 0o600 });
+  TOKEN = fs.readFileSync(tokenFile, 'utf8').trim();
   const server = http.createServer(handle);
   server.on('upgrade', upgrade);
   await new Promise((resolve, reject) => {
@@ -408,7 +428,7 @@ export async function start({ port = Number(process.env.PORT) || 4747, dataDir =
   const actual = server.address().port;
   LOCAL = new Set([`localhost:${actual}`, `127.0.0.1:${actual}`]);
   COOKIE = `desk_${actual}`;
-  S.setServer({ url: `http://127.0.0.1:${actual}`, token: TOKEN });
+  S.setServer({ url: `http://127.0.0.1:${actual}`, token: TOKEN, dataDir });
   const url = `http://localhost:${actual}/?t=${TOKEN}`;
   console.log(`Agent Desk is running. Open ${url}`);
   return {
