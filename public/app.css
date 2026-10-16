@@ -48,15 +48,14 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 
 /* ---------- Cursor: a dot that tracks the pointer and a ring that glides after it ---------- */
 .fancy-cursor, .fancy-cursor *:not(input, textarea, select, .xterm, .xterm *, .monaco-editor, .monaco-editor *, iframe, canvas) { cursor: none !important; }
-.cursor-dot, .cursor-ring { position: fixed; top: 0; left: 0; z-index: 9999; pointer-events: none; border-radius: 50%; opacity: 0; will-change: transform; }
+.cursor-dot, .cursor-ring { position: fixed; top: 0; left: 0; z-index: 9999; pointer-events: none; border-radius: 50%; opacity: 0; will-change: transform; contain: strict; }
 .fancy-cursor .cursor-dot, .fancy-cursor .cursor-ring { opacity: 1; }
-.cursor-dot { width: 6px; height: 6px; margin: -3px 0 0 -3px; background: var(--accent);  transition: opacity .2s, width .2s var(--ease), height .2s var(--ease), margin .2s var(--ease); }
-.cursor-ring { width: 34px; height: 34px; margin: -17px 0 0 -17px; border: 1.5px solid color-mix(in srgb, var(--text) 40%, transparent);
-  transition: opacity .2s, width .25s var(--ease), height .25s var(--ease), margin .25s var(--ease), background .25s, border-color .25s; }
-.cursor-ring.hover { width: 52px; height: 52px; margin: -26px 0 0 -26px; border-color: color-mix(in srgb, var(--accent) 70%, transparent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
-.cursor-dot.hover { width: 4px; height: 4px; margin: -2px 0 0 -2px; }
-.cursor-ring.press { width: 26px; height: 26px; margin: -13px 0 0 -13px; background: color-mix(in srgb, var(--accent) 22%, transparent); }
-.cursor-ring.drag { width: 60px; height: 60px; margin: -30px 0 0 -30px; border-style: dashed; border-color: var(--accent); }
+/* Sizes stay fixed; cursor.js scales them with transform so moving never triggers layout. */
+.cursor-dot { width: 6px; height: 6px; margin: -3px 0 0 -3px; background: var(--accent); transition: opacity .15s; }
+.cursor-ring { width: 34px; height: 34px; margin: -17px 0 0 -17px; border: 1.5px solid color-mix(in srgb, var(--text) 40%, transparent); transition: opacity .15s, background .2s, border-color .2s; }
+.cursor-ring.hover { border-color: color-mix(in srgb, var(--accent) 70%, transparent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.cursor-ring.press { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.cursor-ring.drag { border-style: dashed; border-color: var(--accent); }
 .cursor-dot.away, .cursor-ring.away { opacity: 0 !important; }
 
 
