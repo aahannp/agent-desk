@@ -1,5 +1,5 @@
 // Agents view: every agent, shell and browser pane for the project, tiled in a grid of real terminals.
-import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, menu, modal, confirmDialog, agentLabel, shortBranch, baseName, copy, STATUS_LABEL } from './ui.js';
+import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, menu, modal, confirmDialog, agentLabel, shortBranch, baseName, copy, chatTitle, DRAG, STATUS_LABEL } from './ui.js';
 
 const MONO = '"JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace';
 const panes = new Map(); // id -> pane (a session's terminal, or a browser)
@@ -24,7 +24,9 @@ export function mount(root) {
       h('span', {}, 'Double-click a pane header to maximise it'))));
   root.append(grid, empty);
   new ResizeObserver(layout).observe(grid);
+  dropTarget(root);
   on('sessions', sync);
+  on('chats', () => { for (const p of panes.values()) if (p.kind === 'term') renderHead(p); });
   on('project', sync);
   on('settings', syncBrowsers);
   on('theme', retheme);
@@ -58,6 +60,22 @@ const newSession = guard(async (opts = {}) => {
   return s;
 });
 actions.newSession = newSession;
+
+// Opens a chat: shows it if it's running, otherwise starts it again (Claude picks up the same conversation).
+// `place` puts its pane before or after another one; a finished pane for the chat keeps its spot.
+actions.openChat = guard(async (chatId, place = null) => {
+  const old = [...panes.values()].find(p => p.session?.chatId === chatId);
+  const spot = place ?? (old && { ref: old.id, side: 'replace' });
+  const anchor = spot?.side === 'replace' ? old.el.nextElementSibling : null;
+  const { session, replaced } = await api('POST', `/api/chats/${chatId}/open`);
+  if (replaced) dispose(replaced);
+  await actions.refresh('sessions');
+  if (anchor?.isConnected) grid.insertBefore(panes.get(session.id).el, anchor);
+  else if (spot && spot.side !== 'replace') movePane(session.id, spot);
+  saveOrder();
+  layout();
+  focusSession(session.id);
+});
 
 actions.startLead = () => {
   if (!state.project) return toast('Add a project folder first', 'error');
@@ -97,7 +115,24 @@ function sync() {
   }
   for (const [id, p] of panes) if (p.kind === 'term' && !live.has(id)) dispose(id);
   syncBrowsers();
+  restoreOrder();
 }
+
+// The order you arrange panes in is remembered per project, in this browser only (a convenience, not data).
+const orderKey = () => `agent-desk:order:${state.project}`;
+function saveOrder() {
+  try { localStorage.setItem(orderKey(), JSON.stringify([...grid.children].map(el => el.dataset.id))); } catch {}
+  emit('tick'); // the sidebar lists open panes in the same order
+}
+function restoreOrder() {
+  let saved = [];
+  try { saved = JSON.parse(localStorage.getItem(orderKey()) || '[]'); } catch {}
+  const rank = new Map(saved.map((id, i) => [id, i]));
+  const els = [...grid.children];
+  const sorted = [...els].sort((a, b) => (rank.get(a.dataset.id) ?? Infinity) - (rank.get(b.dataset.id) ?? Infinity));
+  if (sorted.some((el, i) => el !== els[i])) grid.append(...sorted);
+}
+actions.paneOrder = () => [...grid.children].map(el => el.dataset.id);
 
 function layout() {
   if (!grid) return;
@@ -108,6 +143,7 @@ function layout() {
   if (n === 3 && grid.clientWidth > 1300) cols = 3;
   if (n === 2 && grid.clientWidth < 900) cols = 1;
   grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+  grid.classList.toggle('one-col', cols === 1); // panes stack, so "before" and "after" mean above and below
   grid.style.gridTemplateRows = `repeat(${Math.ceil(n / cols) || 1}, minmax(0, 1fr))`;
   const max = grid.querySelector('.pane.max');
   if (max && max.classList.contains('hidden')) unmaximise();
@@ -177,7 +213,7 @@ function terminalPane(s) {
   const exitBar = h('div', { class: 'exit-bar' });
   const id = s.id;
   const blocksBtn = s.kind === 'shell' && h('button', { class: 'icon-btn', title: 'Command blocks', onClick: () => blocksBtn.classList.toggle('on', el.classList.toggle('show-blocks')) }, icon('list', 15));
-  const head = h('div', { class: 'pane-head', onDblclick: e => !e.target.closest('button') && toggleMaximise(id) },
+  const head = h('div', { class: 'pane-head', draggable: true, title: 'Drag to move this pane', onDragstart: e => dragPane(e, id), onDragend: () => el.classList.remove('dragging'), onDblclick: e => !e.target.closest('button') && toggleMaximise(id) },
     face, h('div', { class: 'pane-titles' }, title, sub), state_,
     h('div', { class: 'pane-tools' },
       blocksBtn,
@@ -226,7 +262,7 @@ function connect(p) {
 
 function renderHead(p) {
   const s = p.session;
-  p.title.textContent = s.name;
+  p.title.textContent = chatTitle(s);
   p.face.replaceChildren(avatar(s));
   const kind = s.role === 'lead' ? 'Lead agent' : s.kind === 'shell' ? 'Shell' : agentLabel(s.agent);
   p.sub.replaceChildren(...[
@@ -240,6 +276,7 @@ function renderHead(p) {
   if (s.exited && !p.exitBar.childElementCount) {
     p.exitBar.append(...[
       h('span', {}, `Exited with code ${s.exitCode}`), h('span', { class: 'grow' }),
+      s.chatId && h('button', { class: 'btn xs primary', onClick: () => actions.openChat(s.chatId) }, icon('refresh', 12), s.agent === 'claude' ? 'Resume' : 'Start again'),
       s.worktree && h('button', { class: 'btn xs', onClick: () => actions.reviewWorktree?.(s.worktree.path) }, icon('branch', 12), 'Review changes'),
       h('button', { class: 'btn xs', onClick: () => closePane(p.id) }, 'Close'),
     ].filter(Boolean));
@@ -288,7 +325,8 @@ const unmaximise = () => {
 const closePane = guard(async id => {
   const p = panes.get(id);
   if (p.kind === 'browser') return removeBrowser(p);
-  if (!p.session.exited && !(await confirmDialog(`Stop "${p.session.name}"?`, 'This ends the process running in this pane.', { label: 'Stop', danger: true }))) return;
+  const keeps = p.session.chatId ? ' The chat stays in the sidebar, so you can drag it back in to carry on.' : '';
+  if (!p.session.exited && !(await confirmDialog(`Stop "${chatTitle(p.session)}"?`, `This ends the process running in this pane.${keeps}`, { label: 'Stop', danger: true }))) return;
   await api('DELETE', `/api/sessions/${id}`);
   dispose(id);
   actions.refresh('sessions');
@@ -304,6 +342,73 @@ function dispose(id) {
   p.el.remove();
   if (focusedId === id) focusedId = null;
   layout();
+}
+
+// ---------- Drag and drop ----------
+// Chats from the sidebar and pane headers can be dropped onto the grid: the left (or, when panes stack, top)
+// half of a pane puts it before that pane, the other half after it, anywhere else at the end.
+function dragPane(e, id) {
+  e.dataTransfer.setData(DRAG.pane, id);
+  e.dataTransfer.effectAllowed = 'move';
+  panes.get(id)?.el.classList.add('dragging');
+}
+
+const carries = e => [DRAG.chat, DRAG.pane].some(t => e.dataTransfer.types.includes(t));
+
+function spotAt(e) {
+  const el = e.target.closest?.('.pane');
+  const p = el && panes.get(el.dataset.id);
+  if (!p || p.el.classList.contains('hidden')) return null;
+  const r = el.getBoundingClientRect();
+  const before = grid.classList.contains('one-col') ? e.clientY < r.top + r.height / 2 : e.clientX < r.left + r.width / 2;
+  return { ref: p.id, side: before ? 'before' : 'after' };
+}
+
+function markDrop(spot) {
+  for (const p of panes.values()) p.el.classList.remove('drop-before', 'drop-after');
+  grid.classList.toggle('drop-end', !spot);
+  if (spot) panes.get(spot.ref)?.el.classList.add(`drop-${spot.side}`);
+}
+const clearDrop = () => {
+  markDrop(null);
+  grid.classList.remove('drop-end');
+};
+
+function movePane(id, spot) {
+  const el = panes.get(id)?.el;
+  const ref = spot && panes.get(spot.ref)?.el;
+  if (!el || !ref || ref === el) return;
+  if (spot.side === 'before') grid.insertBefore(el, ref);
+  else ref.after(el);
+}
+
+function dropTarget(root) {
+  root.addEventListener('dragover', e => {
+    if (!carries(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    markDrop(spotAt(e));
+  });
+  root.addEventListener('dragleave', e => !root.contains(e.relatedTarget) && clearDrop());
+  root.addEventListener('drop', e => {
+    if (!carries(e)) return;
+    e.preventDefault();
+    const spot = spotAt(e);
+    clearDrop();
+    const chat = e.dataTransfer.getData(DRAG.chat);
+    const pane = e.dataTransfer.getData(DRAG.pane);
+    if (chat) actions.openChat(chat, spot);
+    else if (pane) {
+      movePane(pane, spot ?? { ref: [...grid.children].at(-1)?.dataset.id, side: 'after' });
+      saveOrder();
+      layout();
+    }
+  });
+  // Dragging a chat over another view switches to the agents so it can be dropped there.
+  document.getElementById('views').addEventListener('dragover', e => {
+    if (e.dataTransfer.types.includes(DRAG.chat) && actions.currentView() !== 'agents') actions.showView('agents');
+  });
+  document.addEventListener('dragend', clearDrop);
 }
 
 // ---------- Command blocks (Warp style) ----------
@@ -409,7 +514,8 @@ function browserPane(b, project) {
   const input = h('input', { class: 'url-input', value: b.url, spellcheck: false, title: 'Type a URL or just a port, like 3000', onKeydown: e => e.key === 'Enter' && go(input.value) });
   const el = h('div', { class: 'pane', 'data-id': b.id },
     h('div', { class: 'pane-head', onDblclick: e => e.target === e.currentTarget && toggleMaximise(b.id) },
-      avatar({ kind: 'browser' }), input,
+      // The globe is the drag handle here, so dragging in the address bar still selects text.
+      h('span', { draggable: true, title: 'Drag to move this pane', style: { cursor: 'grab' }, onDragstart: e => dragPane(e, b.id), onDragend: () => el.classList.remove('dragging') }, avatar({ kind: 'browser' })), input,
       h('button', { class: 'icon-btn', title: 'Reload', onClick: () => { frame.src = frame.src; } }, icon('refresh', 14)),
       h('button', { class: 'icon-btn', title: 'Open in your browser', onClick: () => safeUrl(input.value) && window.open(safeUrl(input.value), '_blank', 'noopener') }, icon('external', 14)),
       h('button', { class: 'icon-btn', title: 'Maximise', onClick: () => toggleMaximise(b.id) }, icon('maximize', 14)),

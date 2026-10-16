@@ -1,6 +1,6 @@
 // Shared by every view: live state, API calls, a tiny DOM builder, icons, toasts, menus and dialogs.
 
-export const state = { project: '', projects: [], tasks: [], sessions: [], agents: [], settings: {}, info: {}, termTheme: {}, theme: null };
+export const state = { project: '', projects: [], tasks: [], sessions: [], chats: [], agents: [], settings: {}, info: {}, termTheme: {}, theme: null };
 
 // Views register what they can do here, so they can call each other without importing each other.
 export const actions = {};
@@ -192,6 +192,11 @@ export const agentLabel = id => state.agents.find(a => a.id === id)?.label ?? (i
 export const shortBranch = branch => (branch || '').replace(/^desk\//, '');
 export const projectSessions = () => state.sessions.filter(s => s.project === state.project);
 export const projectTasks = () => state.tasks.filter(t => t.project === state.project);
+export const projectChats = () => state.chats.filter(c => c.project === state.project);
+// A chat's best name: your rename, Claude's own title, or what the pane was called.
+export const chatTitle = s => state.chats.find(c => c.id === s.chatId)?.title ?? s.name;
+// Drag payloads between the sidebar and the grid.
+export const DRAG = { chat: 'application/x-desk-chat', pane: 'application/x-desk-pane' };
 export const baseName = p => p.split('/').filter(Boolean).pop() || p;
 // For text shown cut off on the left (direction: rtl), so leading "~" or "/" stays where it belongs.
 export const ltr = text => `\u200E${text}\u200E`;

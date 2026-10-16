@@ -146,6 +146,41 @@ route('POST', '/api/sessions', async ({ req, body }) => {
   return S.info(await S.createSession({ project, kind, agent, prompt, name, worktree, role }));
 });
 route('DELETE', '/api/sessions/:id', ({ params }) => (S.stop(findSession(params.id)), {}));
+
+// Chats: agent conversations kept after their pane closes or the app quits, so they can be opened again
+const findChat = id => db.chats.find(c => c.id === id) ?? (() => { throw fail(404, 'No such chat'); })();
+route('GET', '/api/chats', ({ query }) => {
+  const project = query.get('project') ? expand(query.get('project')) : null;
+  return db.chats.filter(c => !project || c.project === project).map(S.chatInfo).sort((a, b) => b.lastActiveAt - a.lastActiveAt);
+});
+route('POST', '/api/chats/:id/open', async ({ params }) => {
+  const chat = findChat(params.id);
+  const current = chat.sessionId && S.sessions.get(chat.sessionId);
+  if (current && !current.exited) return { session: S.info(current), replaced: null };
+  if (current) S.stop(current); // a finished pane for this chat gives way to the reopened one
+  const s = await S.createSession({ chatId: chat.id });
+  const task = chat.taskId && db.tasks.find(t => t.id === chat.taskId);
+  if (task) {
+    task.sessionId = s.id;
+    changed('tasks');
+  }
+  return { session: S.info(s), replaced: current?.id ?? null };
+});
+route('PATCH', '/api/chats/:id', ({ params, body }) => {
+  const chat = findChat(params.id);
+  const title = String(body.title ?? '').trim().slice(0, 120);
+  chat.title = title || null; // empty goes back to Claude's own title
+  changed('chats');
+  return S.chatInfo(chat);
+});
+route('DELETE', '/api/chats/:id', ({ params }) => {
+  const chat = findChat(params.id);
+  const s = chat.sessionId && S.sessions.get(chat.sessionId);
+  if (s) S.stop(s);
+  db.chats = db.chats.filter(c => c.id !== chat.id); // Claude's own copy of the conversation is left alone
+  changed('chats');
+  return {};
+});
 route('GET', '/api/sessions/:id/output', ({ params, query }) => ({ text: S.screenText(findSession(params.id), Number(query.get('lines')) || 60) }));
 route('POST', '/api/sessions/:id/input', ({ params, body }) => (S.send(findSession(params.id), String(body.text ?? ''), body.submit !== false), {}));
 
@@ -441,6 +476,7 @@ function upgrade(req, socket, head) {
 export async function start({ port = Number(process.env.PORT) || 4747, dataDir = path.join(DIR, 'data'), voiceHelper } = {}) {
   fs.mkdirSync(dataDir, { recursive: true });
   load(dataDir);
+  S.forgetRunningChats();
   VOICE_HELPER = [voiceHelper, path.join(DIR, 'native', 'build', 'desk-listen')].find(p => p && fs.existsSync(p)) ?? null;
   // The secret is kept in a file only you can read, so links and MCP setups keep working across restarts.
   const tokenFile = path.join(dataDir, 'token');

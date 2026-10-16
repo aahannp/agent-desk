@@ -9,6 +9,9 @@ import path from 'node:path';
 import WebSocket from 'ws';
 import { start } from './server.mjs';
 import { createWorktree } from './lib/git.mjs';
+import { db } from './lib/store.mjs';
+import { command } from './lib/sessions.mjs';
+import { randomUUID } from 'node:crypto';
 
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desk-check-')));
 const repo = path.join(tmp, 'repo');
@@ -137,6 +140,46 @@ try {
   assert.match((await rpc('tools/call', { name: 'list_agents', arguments: {} })).result.content[0].text, new RegExp(shell.id), 'MCP list_agents sees the shell');
   const self = await rpc('tools/call', { name: 'get_project', arguments: {} }, { 'x-desk-session': shell.id });
   assert.match(self.result.content[0].text, new RegExp(shell.id), 'MCP tools know which session is asking');
+
+  // Chats: titles come from Claude's own saved conversations; rename, remove, and a chat whose folder is gone
+  const claudeHome = path.join(tmp, 'claude-home');
+  process.env.CLAUDE_CONFIG_DIR = claudeHome;
+  const chatDir = path.join(claudeHome, 'projects', repo.replace(/[^a-zA-Z0-9]/g, '-'));
+  fs.mkdirSync(chatDir, { recursive: true });
+  const named = randomUUID();
+  const plain = randomUUID();
+  const line = o => JSON.stringify(o);
+  fs.writeFileSync(path.join(chatDir, `${named}.jsonl`), [
+    line({ type: 'user', message: { content: [{ type: 'text', text: '<system-reminder>ignore me</system-reminder>' }, { type: 'text', text: 'Fix the login bug please' }] } }),
+    line({ type: 'custom-title', customTitle: 'Login bug' }),
+  ].join('\n'));
+  fs.writeFileSync(path.join(chatDir, `${plain}.jsonl`), line({ type: 'user', message: { content: 'Add a dark mode toggle' } }));
+  const chat = (id, claudeSessionId, cwd = repo) => ({ id, agent: 'claude', role: null, project: repo, cwd, taskId: null, name: 'Claude Code', title: null, worktree: null, claudeSessionId, createdAt: Date.now(), lastActiveAt: Date.now(), sessionId: null });
+  db.chats.push(chat('c-named', named), chat('c-plain', plain), chat('c-gone', randomUUID(), path.join(tmp, 'deleted-worktree')));
+  const byId = async () => Object.fromEntries((await ok('GET', `/api/chats?project=${encodeURIComponent(repo)}`)).map(c => [c.id, c]));
+  let chats = await byId();
+  assert.equal(chats['c-named'].title, 'Login bug', "Claude's own title is used");
+  assert.equal(chats['c-plain'].title, 'Add a dark mode toggle', 'otherwise the first thing you typed');
+  assert.equal(chats['c-named'].resumable, true, 'a saved conversation can be resumed');
+  assert.equal(chats['c-gone'].folderMissing, true, 'a chat whose worktree is gone says so');
+  const gone = await request('POST', '/api/chats/c-gone/open');
+  assert.ok(gone.status >= 400 && /folder is gone/.test(gone.body.error), 'opening a chat whose folder is gone fails clearly');
+  await ok('PATCH', '/api/chats/c-named', { title: 'My rename' });
+  assert.equal((await byId())['c-named'].title, 'My rename', 'your rename wins');
+  await ok('PATCH', '/api/chats/c-named', { title: '' });
+  assert.equal((await byId())['c-named'].title, 'Login bug', 'an empty rename goes back to Claude\'s title');
+  await ok('DELETE', '/api/chats/c-plain');
+  assert.ok(!('c-plain' in (await byId())), 'removed from the list');
+  assert.ok(fs.existsSync(path.join(chatDir, `${plain}.jsonl`)), "Claude's own copy is left alone");
+
+  // What claude is started with: a fixed id for a new chat, --resume for one Claude has saved
+  const base = { id: 'check001', kind: 'agent', agent: 'claude', role: null, worktree: null, claudeSessionId: named };
+  const fresh = command({ ...base, resume: false }, '--sneaky prompt', null).args;
+  assert.equal(fresh[0], ' --sneaky prompt', 'a prompt starting with "-" is passed as plain text');
+  assert.deepEqual(fresh.slice(1, 3), ['--session-id', named], 'a new chat gets the id we chose');
+  const resumed = command({ ...base, resume: true }, '', null).args;
+  assert.deepEqual(resumed.slice(0, 2), ['--resume', named], 'a saved chat is resumed by id');
+  assert.ok(!resumed.includes('--session-id'), 'never both');
 
   await ok('DELETE', `/api/sessions/${shell.id}`);
   assert.deepEqual(await ok('GET', '/api/sessions'), [], 'no sessions left');

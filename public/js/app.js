@@ -1,5 +1,5 @@
 // The app shell: navigation, projects, live updates from the server, the command palette and shortcuts.
-import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, commands, menu, modal, baseName, ltr, projectSessions, projectTasks, STATUS_LABEL } from './ui.js';
+import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, commands, menu, modal, askText, ago, baseName, ltr, projectSessions, projectTasks, projectChats, chatTitle, DRAG, STATUS_LABEL } from './ui.js';
 import { THEMES, applyTheme } from './themes.js';
 import * as agents from './agents.js';
 import * as board from './board.js';
@@ -30,6 +30,7 @@ const loaders = {
   tasks: async () => { state.tasks = await api('GET', '/api/tasks'); },
   projects: async () => { state.projects = await api('GET', '/api/projects'); },
   settings: async () => { state.settings = await api('GET', '/api/settings'); },
+  chats: async () => { state.chats = await api('GET', '/api/chats'); },
 };
 
 // Refetch one kind of data. If more changes arrive mid-fetch, fetch once more so nothing stale sticks.
@@ -135,10 +136,51 @@ function renderChrome() {
     if (counts[v.id]) btn.append(counts[v.id]);
   }
 
-  $('running').replaceChildren(...(sessions.length ? sessions.map(s => h('button', { class: 'run-item', onClick: () => actions.focusSession(s.id), title: s.cwd },
-    avatar(s, true), h('span', { class: 'name' }, s.name), h('span', { class: `dot ${actions.statusOf?.(s) ?? s.status}` })))
-    : [h('div', { class: 'run-empty' }, 'Nothing running yet')]));
+  renderChats(sessions);
   renderStatus();
+}
+
+// Sidebar chats: what's open now, then earlier chats you can click or drag into the grid to pick up again.
+function renderChats(unordered) {
+  const order = actions.paneOrder?.() ?? [];
+  const sessions = [...unordered].sort((a, b) => (order.indexOf(a.id) + 1 || Infinity) - (order.indexOf(b.id) + 1 || Infinity));
+  const openIds = new Set(sessions.map(s => s.chatId).filter(Boolean));
+  const recent = projectChats().filter(c => !openIds.has(c.id)).slice(0, 40);
+  const drag = (type, id) => e => {
+    e.dataTransfer.setData(type, id);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+  const open = sessions.map(s => h('button', {
+    class: 'run-item', title: s.cwd, draggable: true, onDragstart: drag(DRAG.pane, s.id),
+    onClick: () => actions.focusSession(s.id),
+    onContextmenu: e => s.chatId && chatMenu(e, state.chats.find(c => c.id === s.chatId)),
+  }, avatar(s, true), h('span', { class: 'name' }, chatTitle(s)), h('span', { class: `dot ${actions.statusOf?.(s) ?? s.status}` })));
+  const earlier = recent.map(c => h('button', {
+    class: `run-item chat${c.folderMissing ? ' gone' : ''}`, draggable: !c.folderMissing, onDragstart: drag(DRAG.chat, c.id),
+    title: c.folderMissing ? `Its folder is gone: ${c.cwd}` : `Click or drag into the grid to ${c.resumable ? 'pick this chat up again' : 'start it again'}`,
+    onClick: () => !c.folderMissing && actions.openChat(c.id),
+    onContextmenu: e => chatMenu(e, c),
+  }, avatar(c, true), h('span', { class: 'name' }, c.title), h('span', { class: 'when' }, ago(c.lastActiveAt).replace(' ago', ''))));
+  $('running').replaceChildren(
+    ...(open.length ? open : [h('div', { class: 'run-empty' }, 'Nothing open')]),
+    ...(earlier.length ? [h('div', { class: 'side-label sub' }, 'Recent'), ...earlier] : []));
+}
+
+function chatMenu(e, chat) {
+  if (!chat) return;
+  e.preventDefault();
+  menu(e.currentTarget, [
+    { label: chat.running ? 'Show' : 'Open', icon: 'play', disabled: chat.folderMissing, onClick: () => actions.openChat(chat.id) },
+    { label: 'Rename…', icon: 'pen', onClick: guard(async () => {
+      const title = await askText('Rename chat', { value: chat.title, ok: 'Rename', label: 'Leave it empty to use Claude\'s own title' });
+      if (title !== null) await api('PATCH', `/api/chats/${chat.id}`, { title });
+    }) },
+    'sep',
+    { label: 'Remove from the list', icon: 'trash', onClick: guard(async () => {
+      await api('DELETE', `/api/chats/${chat.id}`);
+      toast('Removed. Claude\'s own copy of the conversation is untouched.', 'ok');
+    }) },
+  ]);
 }
 
 // The thin bar along the bottom: connection, what's running, and the guardrails in force.
@@ -311,9 +353,10 @@ command('Add a project folder', addProject, { icon: 'folder' });
   }
   buildSidebar();
   showView('agents');
-  for (const kind of ['project', 'settings', 'projects', 'tasks', 'sessions']) emit(kind);
+  for (const kind of ['project', 'settings', 'projects', 'tasks', 'sessions', 'chats']) emit(kind);
   renderChrome();
   listen();
   setInterval(() => refresh('sessions'), 4000); // keeps "working / idle" fresh for the board and agents
+  setInterval(() => refresh('chats'), 15000); // picks up the titles Claude gives chats as they go
   if (!state.projects.length) showWelcome();
 })().catch(e => toast(`Agent Desk could not start: ${e.message}`, 'error'));
