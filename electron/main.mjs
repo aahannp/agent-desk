@@ -49,10 +49,14 @@ async function boot() {
     return start({ ...options, port: 0 }); // 4848 is taken, so take any free port
   });
 
-  // The page takes screenshots with getDisplayMedia; hand it the main screen.
-  session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
+  // Screenshots: only Agent Desk's own page (not a browser pane) may capture the screen. On macOS 15+ the
+  // system picker appears so you choose exactly what is shared; older versions get the main screen.
+  const ownOrigin = new URL(server.url).origin;
+  session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+    const fromApp = request.frame && !request.frame.parent && new URL(request.frame.url).origin === ownOrigin;
+    if (!fromApp) return callback({});
     desktopCapturer.getSources({ types: ['screen'] }).then(([screen]) => callback({ video: screen }), () => callback({}));
-  });
+  }, { useSystemPicker: true });
   // Terminals and inputs need the Edit menu for copy, paste and select all to work.
   Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' }]));
   createWindow();

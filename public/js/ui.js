@@ -179,7 +179,7 @@ export function menu(anchor, items, { align = 'left' } = {}) {
   }));
 }
 
-// A small glowing tile that says what kind of agent a session is.
+// A small coloured tile that says what kind of agent a session is.
 export function avatar(s, small = false) {
   const kind = s.kind === 'browser' ? 'browser' : s.role === 'lead' ? 'lead' : s.kind === 'shell' ? 'shell' : s.agent;
   const letters = { claude: 'C', codex: 'Cx', gemini: 'G', cursor: 'Cu' };

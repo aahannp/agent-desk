@@ -21,16 +21,16 @@ export const show = () => render();
 
 const set = patch => actions.setSetting(patch);
 const setting = (title, text, control) => h('div', { class: 'setting' }, h('div', { class: 'label' }, h('b', {}, title), h('span', {}, text)), control);
-const section = (title, text, ...body) => h('section', { class: 'card-section glow' }, h('h2', {}, title), text && h('p', {}, text), ...body);
+const section = (title, text, ...body) => h('section', { class: 'card-section' }, h('h2', {}, title), text && h('p', {}, text), ...body);
 
 function render() {
   const s = state.settings;
   const current = THEMES[s.theme] ? s.theme : 'midnight';
-  const mcpCommand = `claude mcp add agent-desk --scope user -e AGENT_DESK_URL=${state.info.url} -e AGENT_DESK_TOKEN=${state.info.token} -- node "${state.info.mcpPath}"`;
+  const mcpCommand = `claude mcp add --transport http --scope user agent-desk ${state.info.mcpUrl} --header "x-desk-token: ${state.info.token}"`;
 
   root.replaceChildren(h('div', { class: 'settings-inner' },
     section('Appearance', 'Twelve themes. The accent colour is yours to change.',
-      h('div', { class: 'themes' }, Object.entries(THEMES).map(([id, t]) => h('button', { class: `theme-card glow${id === current ? ' on' : ''}`, onClick: () => set({ theme: id }) },
+      h('div', { class: 'themes' }, Object.entries(THEMES).map(([id, t]) => h('button', { class: `theme-card${id === current ? ' on' : ''}`, onClick: () => set({ theme: id }) },
         h('div', { class: 'theme-prev', style: { background: t.ui.bg } },
           h('div', { class: 'sb', style: { background: t.ui.side, borderRight: `1px solid ${t.ui.line}` } }),
           h('div', { class: 'body' },
@@ -42,12 +42,12 @@ function render() {
       setting('Accent colour', 'Used for buttons, focus rings and highlights.', h('div', { class: 'row' },
         h('input', { type: 'color', value: s.accent || THEMES[current].ui.accent, onChange: e => set({ accent: e.target.value }), style: { width: '44px', height: '30px', border: 0, background: 'none', padding: 0 } }),
         s.accent && h('button', { class: 'btn sm ghost', onClick: () => set({ accent: '' }) }, 'Reset'))),
-      setting('Animated cursor', 'A glowing cursor that reacts to what you point at. It steps aside over terminals and text.',
+      setting('Animated cursor', 'A custom cursor that reacts to what you point at. It steps aside over terminals and text.',
         h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.fancyCursor !== false, onChange: e => set({ fancyCursor: e.target.checked }) }))),
       setting('Terminal and editor text size', `${s.fontSize}px`, h('input', { type: 'range', min: 10, max: 20, value: s.fontSize, onChange: e => set({ fontSize: Number(e.target.value) }) }))),
 
     section('Agents', 'Agent Desk runs each agent\'s own command-line tool with your own login, so Claude Code uses your Claude subscription.',
-      h('div', { class: 'agent-list' }, state.agents.map(a => h('div', { class: 'agent-row glow' },
+      h('div', { class: 'agent-list' }, state.agents.map(a => h('div', { class: 'agent-row' },
         avatar({ kind: 'agent', agent: a.id }), h('b', {}, a.label), h('span', { class: 'grow' }),
         a.installed ? h('span', { class: 'chip', style: { color: 'var(--ok)' } }, icon('check', 11), 'Installed') : h('span', { class: 'chip' }, 'Not found on your PATH'),
         a.installed && h('button', { class: `btn xs${s.defaultAgent === a.id ? ' primary' : ''}`, onClick: () => set({ defaultAgent: a.id }) }, s.defaultAgent === a.id ? 'Default' : 'Make default')))),

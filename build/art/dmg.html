@@ -1,76 +1,37 @@
 <!doctype html>
-<!-- DMG window background, 660x420 points. Finder draws the app icon centred at (180, 235) and the
-     Applications link at (480, 235), both 112pt, with their labels just below. Finder paints those
-     labels black in light mode and white in dark mode, so each one sits on a mid-tone frosted pill
-     that both colours read on. -->
+<!-- DMG window background, 660x420 points, in flat colours only. Finder draws the app icon centred at
+     (180, 235) and the Applications link at (480, 235), both 112pt, with their labels just below. Finder
+     paints those labels black in light mode and white in dark mode, so each sits on a mid-tone pill that
+     both colours read on (#7c739e: about 4.8:1 for black, 4.4:1 for white). -->
 <meta charset="utf-8">
 <style>
-  :root {
-    --ink: #0b0c10; --ink-2: #140d22;
-    --pink: 255, 62, 165; --violet: 139, 92, 246; --cyan: #22d3ee;
-    --mono: ui-monospace, "SF Mono", Menlo, monospace;
-    --sans: -apple-system, "SF Pro Display", system-ui, sans-serif;
-  }
+  :root { --ink: #100c19; --pink: #ff3ea5; --violet: #8b5cf6; --mono: ui-monospace, "SF Mono", Menlo, monospace; --sans: -apple-system, "SF Pro Display", system-ui, sans-serif; }
   html, body { margin: 0; width: 660px; height: 420px; overflow: hidden; }
-  body {
-    position: relative; font-family: var(--sans); color: #fff; -webkit-font-smoothing: antialiased;
-    background: linear-gradient(160deg, var(--ink-2) 0%, #0f0a1a 52%, var(--ink) 100%);
-  }
+  body { position: relative; font-family: var(--sans); color: #fff; -webkit-font-smoothing: antialiased; background: var(--ink); }
   .layer { position: absolute; inset: 0; }
-  .bloom { position: absolute; border-radius: 50%; transform: translate(-50%, -50%); }
+  .grain { opacity: .05; mix-blend-mode: overlay; }
 
-  .dots {
-    background-image: radial-gradient(rgba(255, 255, 255, .17) .75px, transparent 1.25px);
-    background-size: 18px 18px; background-position: 3px 1px;
-    -webkit-mask-image: radial-gradient(ellipse 62% 58% at 50% 50%, #000 0%, rgba(0, 0, 0, .4) 50%, transparent 100%);
-  }
-  .vignette { background: radial-gradient(ellipse 85% 85% at 50% 45%, transparent 55%, rgba(0, 0, 0, .38) 100%); }
-  .grain { opacity: .06; mix-blend-mode: overlay; }
+  /* A quiet echo of the icon: four thin pane outlines in the top right corner. */
+  .motif { position: absolute; right: -60px; top: -96px; display: grid; grid-template-columns: 96px 96px; gap: 14px; transform: rotate(-8deg); }
+  .motif i { width: 96px; height: 96px; border-radius: 24px; border: 1.5px solid rgba(139, 92, 246, .22); }
+  .motif i:first-child { border-color: rgba(255, 62, 165, .35); background: rgba(255, 62, 165, .06); }
 
   header { position: absolute; left: 38px; top: 34px; }
   .brand { display: flex; align-items: center; gap: 10px; }
-  .wordmark {
-    font-size: 30px; font-weight: 800; letter-spacing: -0.045em; line-height: 1; padding-bottom: 2px;
-    background: linear-gradient(180deg, #fff 30%, #e4dcff 100%); -webkit-background-clip: text; color: transparent;
-  }
-  .tag {
-    display: inline-flex; align-items: center; gap: 7px; margin: 12px 0 0 1px; padding: 5px 10px 5px 9px;
-    font: 600 8px/1 var(--mono); letter-spacing: .28em; color: rgba(255, 255, 255, .6);
-    border-radius: 99px; background: rgba(255, 255, 255, .035);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1);
-  }
-  .tag::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: rgb(var(--pink)); box-shadow: 0 0 6px rgb(var(--pink)); }
+  .wordmark { font-size: 30px; font-weight: 800; letter-spacing: -0.045em; line-height: 1; padding-bottom: 2px; }
+  .tag { display: inline-flex; align-items: center; gap: 7px; margin: 12px 0 0 1px; padding: 5px 10px 5px 9px; font: 600 8px/1 var(--mono); letter-spacing: .28em; color: rgba(255, 255, 255, .6); border-radius: 99px; border: 1px solid rgba(255, 255, 255, .12); }
+  .tag::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: var(--pink); }
 
-  /* Mid-tone pills under Finder's labels: black text (light mode) and white text (dark mode) both
-     clear 4.3:1 on #7c739e. */
-  .pill {
-    position: absolute; top: 292px; width: 110px; height: 22px; margin-left: -55px; border-radius: 11px;
-    background: linear-gradient(180deg, #847ba7 0%, #7b729d 50%, #746b95 100%);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12), inset 0 1px 0 rgba(255, 255, 255, .24), 0 5px 12px -4px rgba(0, 0, 0, .5);
-  }
+  /* The drop zone: one hairline frame around both icons. */
+  .zone { position: absolute; left: 92px; top: 156px; width: 476px; height: 172px; border-radius: 30px; border: 1px dashed rgba(255, 255, 255, .14); background: rgba(255, 255, 255, .02); }
+  .pill { position: absolute; top: 292px; width: 110px; height: 22px; margin-left: -55px; border-radius: 11px; background: #7c739e; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .14); }
 
-  .caption {
-    position: absolute; left: 0; right: 0; top: 345px; text-align: center;
-    font-size: 13px; font-weight: 500; letter-spacing: -0.01em; color: rgba(255, 255, 255, .8);
-  }
-  footer {
-    position: absolute; left: 0; right: 0; bottom: 22px; display: flex; align-items: center; justify-content: center; gap: 12px;
-    font: 500 8px/1 var(--mono); letter-spacing: .3em; text-transform: uppercase; color: rgba(255, 255, 255, .42);
-  }
-  footer i { width: 32px; height: 1px; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .24)); }
-  footer i:last-child { transform: scaleX(-1); }
+  .caption { position: absolute; left: 0; right: 0; top: 345px; text-align: center; font-size: 13px; font-weight: 500; letter-spacing: -0.01em; color: rgba(255, 255, 255, .82); }
+  footer { position: absolute; left: 0; right: 0; bottom: 22px; display: flex; align-items: center; justify-content: center; gap: 12px; font: 500 8px/1 var(--mono); letter-spacing: .3em; text-transform: uppercase; color: rgba(255, 255, 255, .42); }
+  footer i { width: 32px; height: 1px; background: rgba(255, 255, 255, .2); }
 </style>
 
-<!-- light -->
-<div class="layer">
-  <div class="bloom" style="left: 470px; top: 40px; width: 560px; height: 380px; filter: blur(70px); background: radial-gradient(closest-side, rgba(var(--violet), .62), rgba(var(--violet), 0));"></div>
-  <div class="bloom" style="left: 110px; top: 320px; width: 520px; height: 360px; filter: blur(70px); background: radial-gradient(closest-side, rgba(var(--pink), .46), rgba(var(--pink), 0));"></div>
-  <div class="bloom" style="left: 180px; top: 238px; width: 230px; height: 190px; filter: blur(34px); background: radial-gradient(closest-side, rgba(var(--pink), .42), rgba(var(--pink), 0));"></div>
-  <div class="bloom" style="left: 480px; top: 238px; width: 230px; height: 190px; filter: blur(34px); background: radial-gradient(closest-side, rgba(var(--violet), .45), rgba(var(--violet), 0));"></div>
-  <div class="bloom" style="left: 610px; top: 0; width: 200px; height: 120px; filter: blur(40px); background: radial-gradient(closest-side, rgba(34, 211, 238, .16), rgba(34, 211, 238, 0));"></div>
-</div>
-<div class="layer dots"></div>
-<div class="layer vignette"></div>
+<div class="motif"><i></i><i></i><i></i><i></i></div>
 <svg class="layer grain" width="660" height="420">
   <filter id="noise"><feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" stitchTiles="stitch"/></filter>
   <rect width="100%" height="100%" filter="url(#noise)"/>
@@ -80,10 +41,9 @@
   <div class="brand">
     <svg width="23" height="23" viewBox="0 0 23 23" fill="none">
       <rect x="0" y="0" width="10.5" height="10.5" rx="3" fill="#ff3ea5"/>
-      <rect x="12.9" y="0.4" width="9.7" height="9.7" rx="2.7" stroke="rgba(196,181,253,.75)" stroke-width=".8"/>
-      <rect x="0.4" y="12.9" width="9.7" height="9.7" rx="2.7" stroke="rgba(196,181,253,.75)" stroke-width=".8"/>
-      <rect x="12.9" y="12.9" width="9.7" height="9.7" rx="2.7" stroke="rgba(196,181,253,.75)" stroke-width=".8"/>
-      <rect x="15" y="15.4" width="2" height="1" rx=".5" fill="#22d3ee"/>
+      <rect x="12.9" y="0.4" width="9.7" height="9.7" rx="2.7" stroke="#8b5cf6" stroke-width=".9"/>
+      <rect x="0.4" y="12.9" width="9.7" height="9.7" rx="2.7" stroke="#8b5cf6" stroke-width=".9"/>
+      <rect x="12.9" y="12.9" width="9.7" height="9.7" rx="2.7" stroke="#22d3ee" stroke-width=".9"/>
       <path d="M3 3.2 L5.4 5.25 L3 7.3" stroke="#fff" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
     <div class="wordmark">Agent Desk</div>
@@ -91,27 +51,14 @@
   <div class="tag">INSTALL · v1.0</div>
 </header>
 
+<div class="zone"></div>
 <div class="pill" style="left: 180px"></div>
 <div class="pill" style="left: 480px"></div>
 
 <svg class="layer" width="660" height="420" viewBox="0 0 660 420">
-  <defs>
-    <linearGradient id="stroke" gradientUnits="userSpaceOnUse" x1="258" y1="0" x2="402" y2="0">
-      <stop offset="0" stop-color="#ff3ea5" stop-opacity="0"/>
-      <stop offset="0.3" stop-color="#ff3ea5"/>
-      <stop offset="1" stop-color="#8b5cf6"/>
-    </linearGradient>
-    <filter id="arrowGlow" x="-20%" y="-100%" width="140%" height="300%"><feGaussianBlur stdDeviation="4.5"/></filter>
-  </defs>
-  <g fill="none" stroke="url(#stroke)" stroke-linecap="round" stroke-linejoin="round">
-    <g filter="url(#arrowGlow)" opacity=".9" stroke-width="6">
-      <path d="M 258 240 C 298 210, 362 207, 400 232"/>
-      <path d="M 395.2 218.8 L 400 232 L 386.1 233.5"/>
-    </g>
-    <g stroke-width="2.25">
-      <path d="M 258 240 C 298 210, 362 207, 400 232"/>
-      <path d="M 395.2 218.8 L 400 232 L 386.1 233.5"/>
-    </g>
+  <g fill="none" stroke="#ff3ea5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 258 240 C 298 210, 362 207, 400 232"/>
+    <path d="M 395.2 218.8 L 400 232 L 386.1 233.5"/>
   </g>
 </svg>
 

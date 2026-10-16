@@ -239,7 +239,7 @@ const loadGallery = guard(async () => {
   if (!gallery || !state.project) return;
   const shots = await api('GET', `/api/shots?project=${encodeURIComponent(state.project)}`);
   gallery.replaceChildren(h('div', { class: 'section-label' }, 'Saved in this project'),
-    ...(shots.length ? shots.map(s => h('button', { class: 'thumb glow', title: s.path, onClick: e => menu(e.currentTarget, [
+    ...(shots.length ? shots.map(s => h('button', { class: 'thumb', title: s.path, onClick: e => menu(e.currentTarget, [
       { label: 'Mark up again', icon: 'pen', onClick: guard(async () => loadBlob(await (await fetch(`/api/fs/raw?path=${encodeURIComponent(s.path)}`)).blob())) },
       'sep',
       ...actions.runningAgents().filter(x => x.kind === 'agent').map(x => ({ label: `Send to ${x.name}`, icon: 'send', onClick: () => sendTo(x, s.path) })),

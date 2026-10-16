@@ -332,13 +332,17 @@ function commandBlocks(p) {
   h('code', {}, b.cmd || '(command)'),
   h('span', { class: 'ms' }, b.ms < 1000 ? `${b.ms}ms` : `${(b.ms / 1000).toFixed(1)}s`),
   h('button', { class: 'icon-btn sm', title: 'Copy output', onClick: e => { e.stopPropagation(); copy(output(b)); } }, icon('copy', 12)),
-  h('button', { class: 'icon-btn sm', title: 'Run again', onClick: e => { e.stopPropagation(); p.send(`${b.cmd}\r`); } }, icon('refresh', 12)))));
+  h('button', { class: 'icon-btn sm', title: 'Put this command back in the prompt (press Enter to run it)', onClick: e => { e.stopPropagation(); p.send(b.cmd); p.term.focus(); } }, icon('refresh', 12)))));
 
+  // Marks only count when they carry this shell's secret; anything else is just text a program printed.
+  const nonce = p.session.nonce;
+  const signed = data => nonce && data.endsWith(`;${nonce}`);
   term.parser.registerOscHandler(633, data => {
-    if (data.startsWith('E;')) commandText = data.slice(2);
+    if (data.startsWith('E;') && signed(data)) commandText = data.slice(2, data.lastIndexOf(';')).replace(/[\x00-\x1f\x7f]/g, '');
     return true;
   });
   term.parser.registerOscHandler(133, data => {
+    if (!signed(data)) return true;
     const [kind, code] = data.split(';');
     if (kind === 'A') prompt = term.registerMarker(0);
     if (kind === 'C') open = { cmd: commandText, start: prompt ?? term.registerMarker(0), out: term.registerMarker(0), at: Date.now() };
@@ -378,12 +382,26 @@ function syncBrowsers() {
   layout();
 }
 
+// Turns what you typed into an http(s) URL, or null. Agent Desk's own address is refused: framed with
+// allow-same-origin it could reach out of the sandbox and into the app.
+function safeUrl(raw) {
+  let url = String(raw || '').trim();
+  if (/^\d+$/.test(url)) url = `http://localhost:${url}`;
+  else if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) url = `${/^(localhost|127\.0\.0\.1)/.test(url) ? 'http' : 'https'}://${url}`;
+  try {
+    const u = new URL(url);
+    const self = u.port === location.port && ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
+    return ['http:', 'https:'].includes(u.protocol) && !self ? u.href : null;
+  } catch {
+    return null;
+  }
+}
+
 function browserPane(b, project) {
-  const frame = h('iframe', { src: b.url, sandbox: 'allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads', allow: 'clipboard-read; clipboard-write' });
+  const frame = h('iframe', { src: safeUrl(b.url) ?? 'about:blank', sandbox: 'allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads', allow: 'clipboard-read; clipboard-write' });
   const go = raw => {
-    let url = raw.trim();
-    if (/^\d+$/.test(url)) url = `http://localhost:${url}`;
-    else if (!/^[a-z]+:\/\//i.test(url)) url = `${/^(localhost|127\.0\.0\.1)/.test(url) ? 'http' : 'https'}://${url}`;
+    const url = safeUrl(raw);
+    if (!url) return toast('Browser panes open http and https pages, other than Agent Desk itself.', 'error');
     frame.src = url;
     input.value = url;
     saveBrowsers(project, browserList(project).map(x => (x.id === b.id ? { ...x, url } : x)));
@@ -393,7 +411,7 @@ function browserPane(b, project) {
     h('div', { class: 'pane-head', onDblclick: e => e.target === e.currentTarget && toggleMaximise(b.id) },
       avatar({ kind: 'browser' }), input,
       h('button', { class: 'icon-btn', title: 'Reload', onClick: () => { frame.src = frame.src; } }, icon('refresh', 14)),
-      h('button', { class: 'icon-btn', title: 'Open in your browser', onClick: () => window.open(input.value, '_blank') }, icon('external', 14)),
+      h('button', { class: 'icon-btn', title: 'Open in your browser', onClick: () => safeUrl(input.value) && window.open(safeUrl(input.value), '_blank', 'noopener') }, icon('external', 14)),
       h('button', { class: 'icon-btn', title: 'Maximise', onClick: () => toggleMaximise(b.id) }, icon('maximize', 14)),
       h('button', { class: 'icon-btn', title: 'Close', onClick: () => closePane(b.id) }, icon('x', 15))),
     h('div', { class: 'pane-body' }, frame));

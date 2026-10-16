@@ -1,12 +1,11 @@
 // Smoke check for the server: security, a shell with command blocks, the task board, worktree review and
 // merge, and the MCP tools. Uses a throwaway data folder and git repo, never your real ones.
 import assert from 'node:assert/strict';
-import { spawn, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import readline from 'node:readline';
 import WebSocket from 'ws';
 import { start } from './server.mjs';
 import { createWorktree } from './lib/git.mjs';
@@ -126,25 +125,18 @@ try {
   await ok('POST', '/api/review/remove', { worktree: wt.path });
   assert.ok(!fs.existsSync(wt.path), 'worktree removed');
 
-  // MCP server: handshake, tool list, and a real tool call against this server
-  const mcp = spawn(process.execPath, ['mcp.mjs'], { cwd: import.meta.dirname, env: { ...process.env, AGENT_DESK_URL: SELF, AGENT_DESK_TOKEN: desk.token } });
-  const replies = readline.createInterface({ input: mcp.stdout });
-  const pending = new Map();
-  replies.on('line', line => { const m = JSON.parse(line); pending.get(m.id)?.(m); });
+  // MCP over HTTP: handshake, tool list, real tool calls, and a tool acting as a specific session
   let nextId = 1;
-  const rpc = (method, params) => new Promise(resolve => {
-    const id = nextId++;
-    pending.set(id, resolve);
-    mcp.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
-  });
+  const rpc = async (method, params, headers = {}) => (await request('POST', '/mcp', { headers, body: { jsonrpc: '2.0', id: nextId++, method, params } })).body;
   assert.equal((await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'check', version: '1' } })).result.serverInfo.name, 'agent-desk');
+  assert.equal((await request('POST', '/mcp', { body: { jsonrpc: '2.0', method: 'notifications/initialized' } })).status, 202, 'notifications get 202');
+  assert.equal((await request('POST', '/mcp', { token: '', body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } })).status, 401, 'MCP needs the token');
   const tools = (await rpc('tools/list', {})).result.tools.map(t => t.name);
   assert.equal(tools.length, 12, `12 MCP tools, got ${tools.join(', ')}`);
-  const listed = await rpc('tools/call', { name: 'list_tasks', arguments: {} });
-  assert.match(listed.result.content[0].text, /Add a greeting/, 'MCP list_tasks reads the board');
-  const agents = await rpc('tools/call', { name: 'list_agents', arguments: {} });
-  assert.match(agents.result.content[0].text, new RegExp(shell.id), 'MCP list_agents sees the shell');
-  mcp.kill();
+  assert.match((await rpc('tools/call', { name: 'list_tasks', arguments: {} })).result.content[0].text, /Add a greeting/, 'MCP list_tasks reads the board');
+  assert.match((await rpc('tools/call', { name: 'list_agents', arguments: {} })).result.content[0].text, new RegExp(shell.id), 'MCP list_agents sees the shell');
+  const self = await rpc('tools/call', { name: 'get_project', arguments: {} }, { 'x-desk-session': shell.id });
+  assert.match(self.result.content[0].text, new RegExp(shell.id), 'MCP tools know which session is asking');
 
   await ok('DELETE', `/api/sessions/${shell.id}`);
   assert.deepEqual(await ok('GET', '/api/sessions'), [], 'no sessions left');

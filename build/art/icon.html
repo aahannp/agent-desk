@@ -64,78 +64,18 @@ const promptWidth = (full ? 24 : 34) * k;
 document.getElementById('icon').innerHTML = `
 <defs>
   <clipPath id="tileClip"><path d="${tile}"/></clipPath>
-  <linearGradient id="ink" x1="0.2" y1="0" x2="0.5" y2="1">
-    <stop offset="0" stop-color="${tiny ? '#1f1240' : '#2a1660'}"/>
-    <stop offset="0.5" stop-color="#160e2c"/>
-    <stop offset="1" stop-color="#0b0c10"/>
-  </linearGradient>
-  <radialGradient id="violetBloom" cx="0.3" cy="0" r="0.8">
-    <stop offset="0" stop-color="#8b5cf6" stop-opacity="0.42"/>
-    <stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/>
-  </radialGradient>
-  <radialGradient id="pinkGlow" cx="0.5" cy="0.5" r="0.5">
-    <stop offset="0" stop-color="#ff3ea5" stop-opacity="0.6"/>
-    <stop offset="0.55" stop-color="#ff3ea5" stop-opacity="0.18"/>
-    <stop offset="1" stop-color="#ff3ea5" stop-opacity="0"/>
-  </radialGradient>
-  <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0" stop-color="#fff" stop-opacity="0.15"/>
-    <stop offset="0.4" stop-color="#fff" stop-opacity="0.02"/>
-    <stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
-  </linearGradient>
-  <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0" stop-color="#fff" stop-opacity="0.32"/>
-    <stop offset="0.3" stop-color="#fff" stop-opacity="0.07"/>
-    <stop offset="1" stop-color="#fff" stop-opacity="0.04"/>
-  </linearGradient>
-  <linearGradient id="paneFill" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0" stop-color="#c4b5fd" stop-opacity="${full ? 0.13 : tiny ? 0.62 : 0.36}"/>
-    <stop offset="1" stop-color="#8b5cf6" stop-opacity="${full ? 0.05 : tiny ? 0.5 : 0.22}"/>
-  </linearGradient>
-  <linearGradient id="paneEdge" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0" stop-color="#ede9fe" stop-opacity="0.85"/>
-    <stop offset="0.45" stop-color="#a78bfa" stop-opacity="0.5"/>
-    <stop offset="1" stop-color="#8b5cf6" stop-opacity="0.22"/>
-  </linearGradient>
-  <linearGradient id="hot" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0" stop-color="#ff74c4"/>
-    <stop offset="0.5" stop-color="#ff3ea5"/>
-    <stop offset="1" stop-color="#e61e8c"/>
-  </linearGradient>
-  <linearGradient id="hotEdge" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0" stop-color="#fff" stop-opacity="0.75"/>
-    <stop offset="0.5" stop-color="#fff" stop-opacity="0.18"/>
-    <stop offset="1" stop-color="#fff" stop-opacity="0.08"/>
-  </linearGradient>
   <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-    <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity="0.38"/>
-    <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#000" flood-opacity="0.22"/>
+    <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity="0.32"/>
   </filter>
-  <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="60"/></filter>
-  <filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="${full ? 7 : 10}"/></filter>
-  <filter id="hotGlow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="34"/></filter>
 </defs>
 
-<g filter="url(#shadow)"><path d="${tile}" fill="#0b0c10"/></g>
+<!-- Flat colours only: a solid ink tile, solid violet panes, one solid pink pane with the prompt. -->
+<g filter="url(#shadow)"><path d="${tile}" fill="#151020"/></g>
 <g clip-path="url(#tileClip)">
-  <path d="${tile}" fill="url(#ink)"/>
-  ${tiny ? '' : `
-  <rect x="100" y="100" width="824" height="824" fill="url(#violetBloom)"/>
-  <ellipse cx="512" cy="${full ? 610 : 560}" rx="400" ry="300" fill="url(#pinkGlow)" filter="url(#soft)"/>
-  <path d="${tile}" fill="url(#sheen)"/>
-  <g filter="url(#glow)" opacity="0.55">
-    ${idle.map(p => `<path d="${paneShape(p)}" fill="none" stroke="#8b5cf6" stroke-width="${border * 2}"/>`).join('')}
-  </g>
-  <path d="${paneShape(live)}" fill="#ff3ea5" filter="url(#hotGlow)" opacity="0.9"/>`}
-
-  ${idle.map(p => `<path d="${paneShape(p)}" fill="url(#paneFill)" stroke="url(#paneEdge)" stroke-width="${border}"/>`).join('')}
+  ${idle.map(p => `<path d="${paneShape(p)}" fill="${tiny ? '#5b3fb0' : '#231942'}" stroke="#8b5cf6" stroke-width="${border}"/>`).join('')}
   ${bars}
-  <path d="${paneShape(live)}" fill="url(#hot)" stroke="url(#hotEdge)" stroke-width="${border}"/>
-  ${tiny ? '' : `
-  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="${promptWidth}">
-    <path d="${prompt}" stroke="#7a0a45" stroke-opacity="0.35" transform="translate(0 ${6 * k})"/>
-    <path d="${prompt}" stroke="#fff"/>
-  </g>
-  <path d="${tile}" fill="none" stroke="url(#rim)" stroke-width="5"/>`}
+  <path d="${paneShape(live)}" fill="#ff3ea5"/>
+  ${tiny ? '' : `<path d="${prompt}" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="${promptWidth}"/>`}
+  ${tiny ? '' : `<path d="${tile}" fill="none" stroke="#ffffff" stroke-opacity="0.1" stroke-width="5"/>`}
 </g>`;
 </script>

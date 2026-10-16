@@ -66,7 +66,7 @@ function render() {
 
 function card(i) {
   const s = i.session;
-  return h('button', { class: `wt glow${i.path === selected ? ' active' : ''}`, onClick: () => { selected = i.path; file = null; render(); } },
+  return h('button', { class: `wt${i.path === selected ? ' active' : ''}`, onClick: () => { selected = i.path; file = null; render(); } },
     h('div', { class: 'wt-top' },
       s ? h('span', { class: `dot ${actions.statusOf(s)}` }) : icon(i.main ? 'folder' : 'branch', 13),
       h('span', { class: 'wt-branch' }, i.main ? i.branch : shortBranch(i.branch)), h('span', { class: 'grow' }),

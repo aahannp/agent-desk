@@ -5,12 +5,17 @@ ZDOTDIR=$_agent_desk_user_zdotdir
 [[ $HISTFILE == $_agent_desk_dir/* ]] && HISTFILE=$ZDOTDIR/.zsh_history
 [[ -f $ZDOTDIR/.zshrc ]] && source $ZDOTDIR/.zshrc
 
+# Each mark ends with this session's secret, so text that a program prints can't pass itself off as a
+# command. The secret is taken out of the environment so the programs you run never see it.
+typeset -g _agent_desk_nonce=$AGENT_DESK_NONCE
+unset AGENT_DESK_NONCE
+
 _agent_desk_preexec() {
-  print -rn -- $'\e]633;E;'"${1//[$'\a\e\n']/ }"$'\a\e]133;C\a'
+  print -rn -- $'\e]633;E;'"${1//[$'\a\e\n']/ }"";$_agent_desk_nonce"$'\a\e]133;C;'"$_agent_desk_nonce"$'\a'
 }
 _agent_desk_precmd() {
   local code=$?
-  print -rn -- $'\e]133;D;'"$code"$'\a\e]133;A\a'
+  print -rn -- $'\e]133;D;'"$code;$_agent_desk_nonce"$'\a\e]133;A;'"$_agent_desk_nonce"$'\a'
 }
 autoload -Uz add-zsh-hook
 add-zsh-hook preexec _agent_desk_preexec

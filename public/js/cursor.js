@@ -1,6 +1,5 @@
 // The custom cursor: a dot on the pointer and a ring that glides after it, growing over anything clickable.
 // Over text (terminals, the editor, inputs, the screenshot canvas) it steps aside so the normal cursor works.
-// It also moves the soft light in the background and on glass cards.
 import { state, on } from './ui.js';
 
 const CLICKABLE = 'button, a, select, label.toggle, .card, .wt, .thumb, .theme-card, .tab, .tree-row, .file-row, .block-row, .menu-item, .run-item, .nav-item, [draggable="true"]';
@@ -10,7 +9,6 @@ const EASE = 0.2; // how quickly the ring catches up, per frame
 const dot = Object.assign(document.createElement('div'), { className: 'cursor-dot' });
 const ring = Object.assign(document.createElement('div'), { className: 'cursor-ring' });
 document.body.append(dot, ring);
-const bg = document.querySelector('.app-bg');
 let x = -100;
 let y = -100;
 let rx = -100;
@@ -26,20 +24,12 @@ function track(clientX, clientY, target) {
   x = clientX;
   y = clientY;
   dot.style.transform = `translate3d(${x}px, ${y}px, 0)`;
-  bg?.style.setProperty('--mx', `${x}px`); // set on the background only: a :root variable would restyle the whole page
-  bg?.style.setProperty('--my', `${y}px`);
   const el = target instanceof Element ? target : null;
   const away = Boolean(el?.closest(TEXT));
   const hover = !away && Boolean(el?.closest(CLICKABLE));
   for (const node of [dot, ring]) {
     node.classList.toggle('away', away);
     node.classList.toggle('hover', hover);
-  }
-  const glow = el?.closest('.glow');
-  if (glow) {
-    const r = glow.getBoundingClientRect();
-    glow.style.setProperty('--gx', `${x - r.left}px`);
-    glow.style.setProperty('--gy', `${y - r.top}px`);
   }
 }
 

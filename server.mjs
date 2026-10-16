@@ -10,6 +10,7 @@ import { WebSocketServer } from 'ws';
 import { db, load, changed, bus } from './lib/store.mjs';
 import * as S from './lib/sessions.mjs';
 import * as G from './lib/git.mjs';
+import { mcpTools, handleMcp } from './lib/mcp.mjs';
 
 const DIR = import.meta.dirname;
 const MIME = {
@@ -95,9 +96,8 @@ function route(method, pattern, handler) {
 }
 
 route('GET', '/api/info', () => ({
-  url: S.serverUrl(), token: TOKEN,
-  mcpPath: path.join(DIR, 'mcp.mjs').replace(/app\.asar([/\\])/, 'app.asar.unpacked$1'),
-  node: process.execPath, electron: Boolean(process.versions.electron), voice: Boolean(VOICE_HELPER), home: os.homedir(),
+  url: S.serverUrl(), token: TOKEN, mcpUrl: `${S.serverUrl()}/mcp`,
+  electron: Boolean(process.versions.electron), voice: Boolean(VOICE_HELPER), home: os.homedir(),
 }));
 
 // Projects
@@ -125,6 +125,11 @@ route('PATCH', '/api/settings', ({ body }) => {
   for (const [key, value] of Object.entries(body)) {
     if (!(key in db.settings)) continue;
     if (key === 'permissionMode' && !PERMISSION_MODES.includes(value)) throw fail(400, 'Unknown permission mode');
+    if (key === 'browserPanes') {
+      const ok = value && typeof value === 'object' && Object.values(value).every(list => Array.isArray(list)
+        && list.every(b => typeof b?.id === 'string' && /^https?:\/\//i.test(String(b.url))));
+      if (!ok) throw fail(400, 'Browser panes can only open http and https pages');
+    }
     db.settings[key] = value;
   }
   changed('settings');
@@ -354,6 +359,7 @@ async function respond(req, res) {
     res.end(JSON.stringify(body));
   };
   if (!sameSite(req)) return json(403, { error: 'Forbidden' });
+  if (url.pathname === '/mcp') return hasToken(req, url) ? mcp(req, res, json) : json(401, { error: 'Missing or wrong Agent Desk token' });
 
   if (!url.pathname.startsWith('/api/')) {
     if (url.pathname === '/' && url.searchParams.has('t')) { // trade the link's secret for a cookie, then drop it from the address bar
@@ -397,6 +403,27 @@ async function respond(req, res) {
   json(404, { error: 'Not found' });
 }
 
+// MCP over HTTP: each POST carries one JSON-RPC message (or a batch). The tools act as the session named
+// in the x-desk-session header, so "update my task" knows which task. No server-to-client stream is offered.
+async function mcp(req, res, json) {
+  if (req.method !== 'POST') return json(405, { error: 'POST JSON-RPC messages here' });
+  const body = await readBody(req);
+  const session = String(req.headers['x-desk-session'] || '');
+  const api = async (method, apiPath, payload) => {
+    const r = await fetch(`${S.serverUrl()}${apiPath}`, {
+      method, headers: { 'content-type': 'application/json', 'x-desk-token': TOKEN, 'x-desk-session': session },
+      body: payload === undefined ? undefined : JSON.stringify(payload),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || `Agent Desk answered ${r.status}`);
+    return data;
+  };
+  const tools = mcpTools({ api, session });
+  const answers = (await Promise.all((Array.isArray(body) ? body : [body]).map(m => handleMcp(m, tools)))).filter(Boolean);
+  if (!answers.length) return res.writeHead(202).end();
+  json(200, Array.isArray(body) ? answers : answers[0]);
+}
+
 // Each terminal pane attaches to one session: it gets the current screen, then live output.
 const wss = new WebSocketServer({ noServer: true });
 function upgrade(req, socket, head) {
@@ -433,7 +460,8 @@ export async function start({ port = Number(process.env.PORT) || 4747, dataDir =
   LOCAL = new Set([`localhost:${actual}`, `127.0.0.1:${actual}`]);
   COOKIE = `desk_${actual}`;
   S.setServer({ url: `http://127.0.0.1:${actual}`, token: TOKEN, dataDir });
-  const url = `http://localhost:${actual}/?t=${TOKEN}`;
+  // 127.0.0.1, not localhost: localhost may resolve to ::1, where some other program could be listening.
+  const url = `http://127.0.0.1:${actual}/?t=${TOKEN}`;
   console.log(`Agent Desk is running. Open ${url}`);
   return {
     port: actual, url, token: TOKEN,

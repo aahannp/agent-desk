@@ -49,7 +49,7 @@ function refreshDots() {
 function column(col, tasks) {
   const body = h('div', { class: 'col-body' }, tasks.length ? tasks.map(card) : h('div', { class: 'col-empty' }, col.empty));
   const el = h('div', {
-    class: 'col glow',
+    class: 'col',
     onDragover: e => {
       if (!dragId) return;
       e.preventDefault();
@@ -91,7 +91,7 @@ const clearDrop = () => document.querySelectorAll('.drop-before').forEach(c => c
 function card(t) {
   const s = t.sessionId && state.sessions.find(x => x.id === t.sessionId);
   return h('div', {
-    class: `card glow${openId === t.id ? ' selected' : ''}`, draggable: true, 'data-id': t.id,
+    class: `card${openId === t.id ? ' selected' : ''}`, draggable: true, 'data-id': t.id,
     onDragstart: e => {
       dragId = t.id;
       e.dataTransfer.effectAllowed = 'move';
