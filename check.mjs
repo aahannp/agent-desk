@@ -265,6 +265,11 @@ try {
   const quiet = await ok('POST', '/api/sessions', { specialist: 'scout', project: repo });
   await exited(quiet.id);
   assert.match(await outputOf(quiet.id), /Starting other agents is turned off/, 'and they are told so');
+  assert.equal((await request('POST', '/api/sessions', { headers: { 'x-desk-session': shell.id }, body: { project: repo } })).status, 403, 'the server refuses, not just the tool');
+  assert.equal((await request('POST', `/api/tasks/${task.id}/start`, { headers: { 'x-desk-via': 'mcp' }, body: {} })).status, 403, 'tasks too');
+  assert.equal((await request('PATCH', '/api/settings', { headers: { 'x-desk-session': shell.id }, body: { agentsCanSpawn: true } })).status, 403, "an agent can't turn it back on");
+  assert.equal((await request('POST', '/api/specialists', { headers: { 'x-desk-via': 'mcp' }, body: { name: 'Mole', role: 'Spy' } })).status, 403, "or change the team");
+  assert.equal((await request('PATCH', '/api/settings', { body: { agentsCanSpawn: 'yes' } })).status, 400, 'the switch is true or false');
   await ok('PATCH', '/api/settings', { agentsCanSpawn: true });
   await ok('DELETE', `/api/specialists/${rhea.id}`);
   assert.equal((await ok('GET', '/api/specialists')).length, 3);

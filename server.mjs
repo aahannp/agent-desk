@@ -63,6 +63,14 @@ const isDir = p => fs.statSync(p, { throwIfNoEntry: false })?.isDirectory() ?? f
 const findTask = id => db.tasks.find(t => t.id === id) ?? (() => { throw fail(404, 'No such task'); })();
 const findSession = id => S.sessions.get(id) ?? (() => { throw fail(404, 'No such session'); })();
 const caller = req => S.sessions.get(req.headers['x-desk-session']);
+// Requests an agent makes through its tools. They may not change settings or the team, and may only start
+// agents while Settings allows it. (An agent runs as you and could reach the API some other way; this keeps
+// the tools, the way agents actually work, inside the lines you set.)
+const fromAgent = req => req.headers['x-desk-via'] === 'mcp' || Boolean(req.headers['x-desk-session']);
+const notFromAgent = (req, what) => { if (fromAgent(req)) throw fail(403, `Agents can't ${what}. Ask the user to do it in Agent Desk.`); };
+const mayStartAgents = req => {
+  if (fromAgent(req) && db.settings.agentsCanSpawn === false) throw fail(403, 'Starting other agents is turned off in Agent Desk settings.');
+};
 const projectFor = (req, value) => {
   const project = value ? expand(value) : caller(req)?.project || db.settings.lastProject;
   if (!project) throw fail(400, 'No project selected');
@@ -125,9 +133,11 @@ route('DELETE', '/api/projects', ({ query }) => {
 
 // Settings
 route('GET', '/api/settings', () => db.settings);
-route('PATCH', '/api/settings', ({ body }) => {
+route('PATCH', '/api/settings', ({ req, body }) => {
+  notFromAgent(req, 'change Agent Desk\'s settings');
   for (const [key, value] of Object.entries(body)) {
     if (!(key in db.settings)) continue;
+    if (['agentsCanSpawn', 'fancyCursor', 'worktreeByDefault'].includes(key) && typeof value !== 'boolean') throw fail(400, `${key} is true or false`);
     if (key === 'permissionMode' && !PERMISSION_MODES.includes(value)) throw fail(400, 'Unknown permission mode');
     if (key === 'browserPanes') {
       const ok = value && typeof value === 'object' && Object.values(value).every(list => Array.isArray(list)
@@ -145,6 +155,7 @@ route('GET', '/api/agents', () => S.availableAgents());
 route('GET', '/api/sessions', () => [...S.sessions.values()].map(S.info));
 route('POST', '/api/sessions', async ({ req, body }) => {
   const { kind = 'agent', agent = db.settings.defaultAgent, prompt = '', name, worktree = false, role = null, specialist = null, model = '' } = body;
+  if (kind === 'agent') mayStartAgents(req);
   const project = projectFor(req, body.project);
   if (!isDir(project)) throw fail(400, `Not a folder: ${project}`);
   return S.info(await S.createSession({ project, kind, agent, prompt, name, worktree, role, specialist, model }));
@@ -219,9 +230,9 @@ route('POST', '/api/tasks', ({ req, body }) => addTask(req, { ...body, tasknotes
 
 // The team: named specialists with their own instructions and model
 route('GET', '/api/specialists', () => T.list());
-route('POST', '/api/specialists', ({ body }) => T.add(body));
-route('PATCH', '/api/specialists/:id', ({ params, body }) => T.update(params.id, body));
-route('DELETE', '/api/specialists/:id', ({ params }) => (T.remove(params.id), {}));
+route('POST', '/api/specialists', ({ req, body }) => (notFromAgent(req, 'change the team'), T.add(body)));
+route('PATCH', '/api/specialists/:id', ({ req, params, body }) => (notFromAgent(req, 'change the team'), T.update(params.id, body)));
+route('DELETE', '/api/specialists/:id', ({ req, params }) => (notFromAgent(req, 'change the team'), T.remove(params.id), {}));
 
 // Artifacts: pages and reports agents saved. You view them, open them in your browser and publish them.
 const findArtifact = id => A.find(id) ?? (() => { throw fail(404, 'No such artifact'); })();
@@ -284,7 +295,8 @@ route('POST', '/api/tasks/:id/comments', ({ req, params, body }) => {
   changed('tasks');
   return task;
 });
-route('POST', '/api/tasks/:id/start', async ({ params, body }) => {
+route('POST', '/api/tasks/:id/start', async ({ req, params, body }) => {
+  mayStartAgents(req);
   const task = findTask(params.id);
   const running = task.sessionId && S.sessions.get(task.sessionId);
   if (running && !running.exited) throw fail(409, 'This task already has a running agent');
@@ -517,7 +529,7 @@ async function mcp(req, res, json) {
   const session = String(req.headers['x-desk-session'] || '');
   const api = async (method, apiPath, payload) => {
     const r = await fetch(`${S.serverUrl()}${apiPath}`, {
-      method, headers: { 'content-type': 'application/json', 'x-desk-token': TOKEN, 'x-desk-session': session },
+      method, headers: { 'content-type': 'application/json', 'x-desk-token': TOKEN, 'x-desk-session': session, 'x-desk-via': 'mcp' },
       body: payload === undefined ? undefined : JSON.stringify(payload),
     });
     const data = await r.json().catch(() => ({}));
