@@ -18,6 +18,10 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
 
 - **Agents**: up to 16 Claude Code, Codex, Gemini CLI, Cursor Agent or shell panes in a grid. Each one shows
   whether it's working, idle, needs you, or finished, and you get a notification when an agent needs you.
+- **Agents talk to each other**: tell an agent to ask Christie something, and the message is typed into
+  Christie's pane, signed with who sent it, where you can watch the exchange. She answers the same way. If no
+  Christie is running, a new one starts. Nothing is ever typed into a pane waiting at a permission prompt or
+  into a shell, at most 10 messages per agent per 10 minutes, and Settings can turn it off.
 - **Lead agent**: give it a goal and it plans tasks on the board, then starts a worker for each one in its
   own git worktree.
 - **Team**: named specialists, each a Claude agent with one area of expertise, its own instructions and,

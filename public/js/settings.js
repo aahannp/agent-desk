@@ -65,6 +65,10 @@ function render() {
         h('button', { class: 'btn xs', onClick: () => editSpecialist(x) }, 'Edit'),
         h('button', { class: 'icon-btn', title: `Remove ${x.name}`, onClick: () => removeSpecialist(x) }, icon('trash', 14))))),
       h('div', { class: 'row', style: { margin: '12px 0 4px' } }, h('button', { class: 'btn sm', onClick: () => editSpecialist() }, icon('plus', 13), 'Add a specialist')),
+      setting('Agents can message each other', s.agentsCanMessage !== false
+        ? 'On: when you ask, an agent can send another one a message (it\'s typed into their pane, signed with who sent it), and they can answer.'
+        : 'Off: agents work alone; only you type into their panes.',
+      h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.agentsCanMessage !== false, onChange: e => set({ agentsCanMessage: e.target.checked }) }))),
       setting('Agents can start other agents', s.agentsCanSpawn !== false
         ? 'On: an agent can start a specialist or a worker, on a model it picks, for part of its job. A lead agent needs this.'
         : 'Off: agents can see the team but only you start agents.',
