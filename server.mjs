@@ -241,8 +241,6 @@ route('POST', '/api/messages', async ({ req, body }) => {
   if (!text || !to) throw fail(400, 'Say who the message is for and what it says');
   if (text.length > 8000) throw fail(413, 'Keep messages under 8,000 characters');
   const project = from?.project ?? projectFor(req, body.project);
-  const recent = (sent.get(project) ?? []).filter(t => Date.now() - t < 10 * 60_000); // per project, so a new agent can't reset it
-  if (recent.length >= 20) throw fail(429, 'That is 20 messages between agents in 10 minutes. Check with the user before sending more.');
   // By name, only agents in the same project; another project's agent only by its exact session id.
   const name = to.toLowerCase();
   const matches = [...S.sessions.values()]
@@ -253,6 +251,10 @@ route('POST', '/api/messages', async ({ req, body }) => {
   const body_ = text.replace(/\[(message from)/gi, '($1'); // so the text can't pass for another signature
   const signed = `[Message from ${sender}]\n${body_}${from ? `\n\n(To answer, use message_agent to "${from.name}".)` : ''}`;
   let target = matches[0];
+  // Counted against the project that receives it, so neither a new agent nor a different project resets it.
+  const bucket = target?.project ?? project;
+  const recent = (sent.get(bucket) ?? []).filter(t => Date.now() - t < 10 * 60_000);
+  if (recent.length >= 20) throw fail(429, 'That is 20 messages between agents in 10 minutes. Check with the user before sending more.');
   if (target) {
     S.deliver(target, signed);
   } else {
@@ -260,7 +262,7 @@ route('POST', '/api/messages', async ({ req, body }) => {
     mayStartAgents(req);
     target = await S.createSession({ project, specialist: to, prompt: signed });
   }
-  sent.set(project, [...recent, Date.now()]);
+  sent.set(bucket, [...recent, Date.now()]);
   bus.emit('event', { type: 'agent-message', from: from?.name ?? 'An agent', to: target.name, toId: target.id, started: !matches[0] });
   return { delivered: Boolean(matches[0]), started: !matches[0], to: S.info(target) };
 });
