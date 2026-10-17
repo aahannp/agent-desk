@@ -65,6 +65,7 @@ const isDir = p => fs.statSync(p, { throwIfNoEntry: false })?.isDirectory() ?? f
 const findTask = id => db.tasks.find(t => t.id === id) ?? (() => { throw fail(404, 'No such task'); })();
 const findSession = id => S.sessions.get(id) ?? (() => { throw fail(404, 'No such session'); })();
 const caller = req => S.sessions.get(req.headers['x-desk-session']);
+const starter = req => (s => s && { id: s.id, name: s.name })(caller(req)); // the agent asking, if it's one of ours
 // Requests an agent makes through its tools. They may not change settings or the team, and may only start
 // agents while Settings allows it. (An agent runs as you and could reach the API some other way; this keeps
 // the tools, the way agents actually work, inside the lines you set.)
@@ -139,7 +140,7 @@ route('PATCH', '/api/settings', ({ req, body }) => {
   notFromAgent(req, 'change Agent Desk\'s settings');
   for (const [key, value] of Object.entries(body)) {
     if (!(key in db.settings)) continue;
-    if (['agentsCanSpawn', 'agentsCanMessage', 'fancyCursor', 'worktreeByDefault', 'sidebarHidden'].includes(key) && typeof value !== 'boolean') throw fail(400, `${key} is true or false`);
+    if (['agentsCanSpawn', 'agentsCanMessage', 'agentsAutonomous', 'fancyCursor', 'worktreeByDefault', 'sidebarHidden'].includes(key) && typeof value !== 'boolean') throw fail(400, `${key} is true or false`);
     if (key === 'scrollSpeed' && !(Number(value) >= 0.25 && Number(value) <= 4)) throw fail(400, 'Scroll speed is between 0.25 and 4');
     if (key === 'agentDefaults') {
       const ok = ['claude', 'lead'].every(k => T.MODELS.includes(value?.[k]?.model) && T.EFFORTS.includes(value?.[k]?.effort));
@@ -165,7 +166,7 @@ route('POST', '/api/sessions', async ({ req, body }) => {
   if (kind === 'agent') mayStartAgents(req);
   const project = projectFor(req, body.project);
   if (!isDir(project)) throw fail(400, `Not a folder: ${project}`);
-  return S.info(await S.createSession({ project, kind, agent, prompt, name, worktree, role, specialist, model, effort }));
+  return S.info(await S.createSession({ project, kind, agent, prompt, name, worktree, role, specialist, model, effort, startedBy: starter(req) }));
 });
 route('DELETE', '/api/sessions/:id', ({ params }) => (S.stop(findSession(params.id)), {}));
 
@@ -198,10 +199,17 @@ route('POST', '/api/chats/:id/open', async ({ params }) => {
   }
   return { session: S.info(s), replaced: done?.id ?? null };
 });
-route('PATCH', '/api/chats/:id', ({ params, body }) => {
+// Naming a chat names its agent too: other agents reach it by that name ("ask Adam").
+route('PATCH', '/api/chats/:id', ({ req, params, body }) => {
+  notFromAgent(req, 'rename agents');
   const chat = findChat(params.id);
-  const title = String(body.title ?? '').trim().slice(0, 120);
+  const title = String(body.title ?? '').replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 120);
   chat.title = title || null; // empty goes back to Claude's own title
+  if (title) {
+    chat.name = title;
+    for (const s of S.chatSessions(chat.id)) s.name = title;
+    changed('sessions');
+  }
   changed('chats');
   return S.chatInfo(chat);
 });
@@ -211,6 +219,11 @@ route('DELETE', '/api/chats/:id', ({ params }) => {
   db.chats = db.chats.filter(c => c.id !== chat.id); // Claude's own copy of the conversation is left alone
   changed('chats');
   return {};
+});
+route('GET', '/api/sessions/:id/chat', ({ params, query }) => S.conversation(findSession(params.id), Math.min(Number(query.get('last')) || 30, 200)));
+route('POST', '/api/sessions/:id/clone', async ({ req, params, body }) => {
+  mayStartAgents(req);
+  return S.info(await S.clone(findSession(params.id), { prompt: String(body.prompt ?? ''), name: body.name ? String(body.name).slice(0, 60) : undefined, startedBy: starter(req) }));
 });
 route('GET', '/api/sessions/:id/output', ({ params, query }) => ({ text: S.screenText(findSession(params.id), Number(query.get('lines')) || 60) }));
 route('POST', '/api/sessions/:id/input', ({ params, body }) => (S.send(findSession(params.id), String(body.text ?? ''), body.submit !== false), {}));
@@ -267,7 +280,7 @@ route('POST', '/api/messages', async ({ req, body }) => {
   } else {
     if (!T.find(to)) throw fail(404, `No running agent called "${to}"${asked ? ' is on that model and effort' : ''}, and no one on the team has that name. A running agent can't change its model; list_agents and list_team show who there is.`);
     mayStartAgents(req);
-    target = await S.createSession({ project, specialist: to, prompt: signed, ...asked });
+    target = await S.createSession({ project, specialist: to, prompt: signed, ...asked, startedBy: starter(req) });
   }
   sent.set(bucket, [...recent, Date.now()]);
   bus.emit('event', { type: 'agent-message', from: from?.name ?? 'An agent', to: target.name, toId: target.id, started: !matches[0] });
@@ -355,7 +368,7 @@ route('POST', '/api/tasks/:id/start', async ({ req, params, body }) => {
   const agent = body.agent || task.agent || db.settings.defaultAgent;
   const worktree = body.worktree ?? task.worktree;
   const prompt = task.description ? `${task.title}\n\n${task.description}` : task.title;
-  const s = await S.createSession({ project: task.project, agent, prompt, name: task.title, taskId: task.id, worktree, specialist: body.specialist || null, model: body.model || '', effort: body.effort || '' });
+  const s = await S.createSession({ project: task.project, agent, prompt, name: task.title, taskId: task.id, worktree, specialist: body.specialist || null, model: body.model || '', effort: body.effort || '', startedBy: starter(req) });
   Object.assign(task, { status: 'doing', sessionId: s.id, agent, worktree, branch: s.worktree?.branch ?? null, worktreePath: s.worktree?.path ?? null, updatedAt: Date.now() });
   changed('tasks');
   return { task, session: S.info(s) };

@@ -1,5 +1,5 @@
 // Agents view: every agent, shell and browser pane for the project, tiled in a grid of real terminals.
-import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, commands, menu, modal, confirmDialog, agentLabel, shortBranch, baseName, copy, chatTitle, DRAG, STATUS_LABEL } from './ui.js';
+import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, commands, menu, askText, modal, confirmDialog, agentLabel, shortBranch, baseName, copy, chatTitle, DRAG, STATUS_LABEL } from './ui.js';
 
 const MONO = '"JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace';
 const panes = new Map(); // id -> pane (a session's terminal, or a browser)
@@ -79,6 +79,13 @@ actions.openChat = guard(async (chatId, place = null) => {
   layout();
   focusSession(session.id);
 });
+
+// Naming an agent names its chat too, and other agents reach it by that name ("ask Adam").
+const renameAgent = guard(async s => {
+  const title = await askText('Name this agent', { value: chatTitle(s), placeholder: 'Like Adam or Emilie', ok: 'Name' });
+  if (title?.trim()) await api('PATCH', `/api/chats/${encodeURIComponent(s.chatId)}`, { title });
+});
+actions.renameAgent = renameAgent;
 
 // ---------- Specialists ----------
 const claudeReady = () => state.agents.some(a => a.id === 'claude' && a.installed);
@@ -344,6 +351,7 @@ function terminalPane(s) {
     face, h('div', { class: 'pane-titles' }, title, sub), state_,
     h('div', { class: 'pane-tools' },
       blocksBtn,
+      s.chatId && h('button', { class: 'icon-btn', title: 'Name this agent', onClick: () => renameAgent(s) }, icon('pen', 13)),
       h('button', { class: 'icon-btn', title: 'Maximise (double-click the header)', onClick: () => toggleMaximise(id) }, icon('maximize', 14)),
       h('button', { class: 'icon-btn', title: 'Stop and close', onClick: () => closePane(id) }, icon('x', 15))));
   const el = h('div', { class: 'pane', 'data-id': id }, head, h('div', { class: 'pane-body' }, host, blocks), exitBar);

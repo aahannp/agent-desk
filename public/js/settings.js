@@ -85,6 +85,10 @@ function render() {
         ? 'On: when you ask, an agent can send another one a message (it\'s typed into their pane, signed with who sent it), and they can answer.'
         : 'Off: agents work alone; only you type into their panes.',
       h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.agentsCanMessage !== false, onChange: e => set({ agentsCanMessage: e.target.checked }) }))),
+      setting('Agents work together without asking', s.agentsAutonomous !== false
+        ? 'On: agents message, read and copy each other without asking you each time. Their edits and commands still ask, as Permissions says. Applies to agents started from now on.'
+        : 'Off: an agent asks you before each message to another agent or each copy it makes.',
+      h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.agentsAutonomous !== false, onChange: e => set({ agentsAutonomous: e.target.checked }) }))),
       setting('Agents can start other agents', s.agentsCanSpawn !== false
         ? 'On: an agent can start a specialist or a worker, on a model it picks, for part of its job. A lead agent needs this.'
         : 'Off: agents can see the team but only you start agents.',
