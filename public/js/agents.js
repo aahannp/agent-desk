@@ -1,7 +1,6 @@
 // Agents view: every agent, shell and browser pane for the project, tiled in a grid of real terminals.
-import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, commands, menu, askText, modal, confirmDialog, agentLabel, shortBranch, baseName, copy, chatTitle, DRAG, STATUS_LABEL } from './ui.js';
+import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, commands, menu, askText, modal, confirmDialog, agentLabel, shortBranch, baseName, copy, chatTitle, DRAG, MONO, STATUS_LABEL } from './ui.js';
 
-const MONO = '"JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace';
 const panes = new Map(); // id -> pane (a session's terminal, or a browser)
 const seen = new Map(); // session id -> last status we told you about
 let grid;
@@ -233,10 +232,15 @@ function announce(s) {
   toast(`${s.name}: ${body.toLowerCase()}`, 'info', { label: 'Show', onClick: () => focusSession(s.id) });
 }
 
+// On a light background, xterm darkens any text colour that would read below 4.5:1, so pale prompt and
+// truecolor output from other tools stays legible. Dark themes keep their colours exactly.
+const contrast = () => state.theme?.dark === false ? 4.5 : 1;
+
 function retheme() {
   for (const p of panes.values()) {
     if (p.kind !== 'term') continue;
     p.term.options.theme = state.termTheme;
+    p.term.options.minimumContrastRatio = contrast();
     p.term.options.fontSize = Number(state.settings.fontSize) || 13;
     Object.assign(p.peek.options, lookOf(p.term));
     p.fit();
@@ -327,12 +331,12 @@ function smoothScroll(term, host) {
 }
 
 // What a terminal looks like, shared with its peek row so the two match.
-const lookOf = term => Object.fromEntries(['fontFamily', 'fontSize', 'lineHeight', 'letterSpacing', 'fontWeight', 'fontWeightBold', 'theme'].map(k => [k, term.options[k]]));
+const lookOf = term => Object.fromEntries(['fontFamily', 'fontSize', 'lineHeight', 'letterSpacing', 'fontWeight', 'fontWeightBold', 'theme', 'minimumContrastRatio'].map(k => [k, term.options[k]]));
 
 function terminalPane(s) {
   const term = new Terminal({
     fontFamily: MONO, fontSize: Number(state.settings.fontSize) || 13, lineHeight: 1.2, cursorBlink: true,
-    allowProposedApi: true, macOptionIsMeta: true, scrollback: 5000, theme: state.termTheme,
+    allowProposedApi: true, macOptionIsMeta: true, scrollback: 5000, theme: state.termTheme, minimumContrastRatio: contrast(),
   });
   const fitAddon = new FitAddon.FitAddon();
   term.loadAddon(fitAddon);

@@ -1,6 +1,6 @@
 // Updates, as in Task Notes: the version pill by the logo checks GitHub for a newer release, shows what's
 // new, and downloads the .dmg into your Downloads folder to drag into Applications.
-import { api, h, icon, on, toast, modal, command } from './ui.js';
+import { api, h, icon, on, toast, modal, command, markdown } from './ui.js';
 
 const pill = document.getElementById('verPill');
 let info = null;
@@ -34,7 +34,7 @@ export async function openUpdates() {
     body.replaceChildren(...[
       h('div', { class: 'update-rows' }, h('span', {}, 'Installed'), h('b', {}, `v${d.current ?? '?'}`), h('span', {}, 'Latest'), h('b', {}, latest)),
       h('p', {}, status),
-      d.notes && h('div', { class: 'update-notes' }, d.notes),
+      d.notes && h('div', { class: 'update-notes md' }, markdown(d.notes)),
       bar, note,
       h('div', { class: 'row update-acts' },
         h('button', { class: 'btn', onClick: async e => { e.currentTarget.disabled = true; paint(await check(true)); } }, icon('refresh', 14), 'Check again'),

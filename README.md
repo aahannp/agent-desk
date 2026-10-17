@@ -72,6 +72,9 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
 - Each agent gets its own token, which only reaches its board tools and hooks and always acts as that agent;
   the master secret never goes in its config. An agent with shell access runs as you, though, so it could
   still read the secret file in the data folder: real isolation would need a separate macOS user.
+- Browsers don't separate cookies by port, so in the browser version (`npm start`) Agent Desk's login cookie
+  also goes to any other localhost server you open in that browser. The Mac app keeps it to Agent Desk only;
+  in a browser, use a profile just for Agent Desk.
 - Claude agents start in "Ask me" permission mode by default, and nothing here offers the bypass modes.
 - A lead agent can't type into other agents or stop them without your approval.
 - Agents only see, read, stop and diff agents in their own project, and can't read or stop your shell panes.

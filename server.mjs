@@ -335,10 +335,14 @@ function logMessage(project, from, to, via) {
   changed('messages');
   return entry;
 }
-// Signed with who sent it, by a plain name, so the text can't pass for another signature (or for the user): any
-// "[message from" in it, however spaced or disguised (control, zero-width or full-width characters), starts with ( instead.
+// Signed with who sent it, by a plain name, so the text can't pass for another signature (or for the user): invisible
+// characters go, and any "[message from" in it, however spaced or disguised, starts with ( instead. A letter that isn't
+// ASCII counts as one of "message from", so a Cyrillic М can't stand in for M.
+// ponytail: spellings that look different ("fr0m") still pass; fence the body off if those ever matter.
+const like = word => [...word].map(c => `[${c}\\P{ASCII}]`).join('');
+const FAKE_SIGNATURE = new RegExp(`\\[(?=[^\\p{L}\\p{N}]*${like('message')}[^\\p{L}\\p{N}]*${like('from')})`, 'giu');
 const sign = (from, text) => `[Message from ${from ? `${S.plain(from.name)} (agent ${from.id})` : 'an agent outside Agent Desk'}]\n${
-  text.normalize('NFKC').replace(/\[(?=[^\p{L}\p{N}]*message[^\p{L}\p{N}]*from)/giu, '(')}`;
+  text.normalize('NFKC').replace(/\p{Default_Ignorable_Code_Point}/gu, '').replace(FAKE_SIGNATURE, '(')}`;
 route('POST', '/api/messages', async ({ req, body }) => {
   mayMessage(req);
   const from = caller(req);
