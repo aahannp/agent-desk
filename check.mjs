@@ -293,7 +293,7 @@ try {
   db.settings.theme = 'latte';
   assert.equal(settingsOf(command({ ...base, resume: false }, '', null).args).theme, 'light', "claude's panes follow a light Agent Desk theme");
   db.settings.theme = 'nord';
-  assert.equal(settingsOf(command({ ...base, resume: false }, '', null).args).theme, 'dark', 'and a dark one');
+  assert.equal(settingsOf(command({ ...base, resume: false }, '', null).args).theme, undefined, "a dark one leaves claude's own theme alone");
   db.settings.theme = savedTheme;
 
   // The whole chat lifecycle, with a stand-in `claude` on the PATH that prints its arguments and exits
