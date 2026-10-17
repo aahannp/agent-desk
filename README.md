@@ -45,6 +45,9 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
 - **Review**: side-by-side diffs of each worktree against where it branched, then commit, merge, or discard.
   When an agent edits files in another repo or a worktree it made itself, that repo joins your projects and its
   Review lists the worktree, with who made it.
+- **Graph**: every agent and shell as a node (the lead ringed in the middle), lines for who messaged whom with
+  a count (dashed for who started whom), and the newest messages glowing along them. Click a node to see its
+  screen and conversation and ask it something; shift-click or drag a box to select nodes and make a named group.
 - **Files**: a file tree and the Monaco editor (VS Code's editor), for the project or any agent's worktree.
 - **Browser panes** for your dev server, **command blocks** in shells (each command and its output as a
   block), **screenshots** you can mark up and hand to an agent, **voice input** (on-device in the Mac app),

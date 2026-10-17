@@ -5,6 +5,7 @@ import * as agents from './agents.js';
 import * as board from './board.js';
 import * as files from './files.js';
 import * as review from './review.js';
+import * as graph from './graph.js';
 import * as artifacts from './artifacts.js';
 import * as shots from './shots.js';
 import * as settings from './settings.js';
@@ -21,6 +22,7 @@ const VIEWS = [
   { id: 'review', label: 'Review', icon: 'branch', module: review, hint: 'Check what agents changed, then merge it' },
   { id: 'artifacts', label: 'Artifacts', icon: 'layers', module: artifacts, hint: 'Pages and reports your agents made' },
   { id: 'shots', label: 'Screenshots', icon: 'camera', module: shots, hint: 'Capture, mark up and hand to an agent' },
+  { id: 'graph', label: 'Graph', icon: 'graph', module: graph, hint: 'Who is doing what, and who is talking to whom' },
   { id: 'settings', label: 'Settings', icon: 'settings', module: settings, hint: 'Themes, agents, voice and MCP' },
 ];
 const $ = id => document.getElementById(id);
@@ -79,7 +81,7 @@ function listen() {
   const events = new EventSource('/api/events');
   events.onmessage = e => {
     const event = JSON.parse(e.data);
-    if (['voice', 'update-progress', 'agent-message', 'specialist-changed'].includes(event.type)) emit(event.type, event);
+    if (['voice', 'update-progress', 'agent-message', 'specialist-changed', 'groups'].includes(event.type)) emit(event.type, event);
     else if (loaders[event.type]) refresh(event.type);
   };
   events.onopen = () => {
@@ -355,7 +357,7 @@ document.addEventListener('keydown', e => {
   if (mod && !e.shiftKey && key === 'k') { e.preventDefault(); e.stopPropagation(); openPalette(); }
   else if (mod && e.shiftKey && key === 'm') { e.preventDefault(); e.stopPropagation(); actions.toggleVoice(); }
   else if (mod && !e.shiftKey && !e.altKey && key === 'b') { e.preventDefault(); e.stopPropagation(); toggleSidebar(); }
-  else if (mod && !e.shiftKey && !e.altKey && /^[1-7]$/.test(e.key)) { e.preventDefault(); e.stopPropagation(); showView(VIEWS[Number(e.key) - 1].id); }
+  else if (mod && !e.shiftKey && !e.altKey && /^[1-8]$/.test(e.key)) { e.preventDefault(); e.stopPropagation(); showView(VIEWS[Number(e.key) - 1].id); }
 }, true);
 
 command('New task', () => { showView('board'); actions.newTask?.(); }, { icon: 'plus' });

@@ -273,6 +273,7 @@ route('POST', '/api/sessions/:id/input', ({ req, params, body }) => {
   const recent = recentMessages(target.project);
   S.deliver(target, sign(from, text));
   sent.set(target.project, [...recent, Date.now()]);
+  bus.emit('event', { type: 'agent-message', from: from.name, to: target.name, ...logMessage(target.project, from, target, 'send_to_agent') });
   return {};
 });
 
@@ -308,6 +309,13 @@ function recentMessages(project) {
 }
 // Signed with who sent it, by a plain name, so the text can't pass for another signature (or for the user): any
 // "[message from" in it, however spaced or disguised (control, zero-width or full-width characters), starts with ( instead.
+// Who messaged whom, when and how (never what), for the Graph's edges. The last 500 are kept.
+function logMessage(project, from, to, via) {
+  const entry = { at: Date.now(), project, fromId: from?.id ?? null, fromName: from?.name ?? 'An agent', toId: to.id, toName: to.name, via };
+  db.messages = [...db.messages, entry].slice(-500);
+  changed('messages');
+  return entry;
+}
 const sign = (from, text) => `[Message from ${from ? `${S.plain(from.name)} (agent ${from.id})` : 'an agent outside Agent Desk'}]\n${
   text.normalize('NFKC').replace(/\[(?=[^\p{L}\p{N}]*message[^\p{L}\p{N}]*from)/giu, '(')}`;
 route('POST', '/api/messages', async ({ req, body }) => {
@@ -338,8 +346,55 @@ route('POST', '/api/messages', async ({ req, body }) => {
     target = await S.createSession({ project, specialist: to, prompt: signed, ...asked, startedBy: starter(req) });
   }
   sent.set(bucket, [...recent, Date.now()]);
-  bus.emit('event', { type: 'agent-message', from: from?.name ?? 'An agent', to: target.name, toId: target.id, started: !matches[0] });
+  bus.emit('event', { type: 'agent-message', from: from?.name ?? 'An agent', to: target.name, started: !matches[0], ...logMessage(bucket, from, target, 'message_agent') });
   return { delivered: Boolean(matches[0]), started: !matches[0], to: S.info(target) };
+});
+
+route('GET', '/api/messages', ({ req, query }) => {
+  const project = projectFor(req, query.get('project'));
+  return db.messages.filter(m => m.project === project);
+});
+
+// Groups on the Graph: you name them and pick who's in them; agents can't change them.
+const findGroup = id => db.groups.find(g => g.id === id) ?? (() => { throw fail(404, 'No such group'); })();
+function groupFields(group, body) {
+  if (body.name !== undefined) {
+    const name = String(body.name).trim();
+    if (!T.NAME.test(name)) throw fail(400, 'A group name is 1 to 30 letters, numbers or spaces');
+    group.name = name;
+  }
+  if (body.color !== undefined) {
+    if (!/^#[0-9a-f]{6}$/i.test(String(body.color))) throw fail(400, 'A colour is like #1c7ed6');
+    group.color = body.color;
+  }
+  if (body.members !== undefined) {
+    if (!Array.isArray(body.members) || body.members.length > 50) throw fail(400, 'Members is a list of up to 50 agents');
+    group.members = [...new Set(body.members.map(String).filter(m => /^[\w-]{1,64}$/.test(m)))];
+  }
+  return group;
+}
+route('GET', '/api/groups', ({ req, query }) => {
+  const project = projectFor(req, query.get('project'));
+  return db.groups.filter(g => g.project === project);
+});
+route('POST', '/api/groups', ({ req, body }) => {
+  notFromAgent(req, 'change groups');
+  const group = groupFields({ id: randomUUID().slice(0, 8), project: projectFor(req, body.project), name: '', color: '#1c7ed6', members: [] }, { name: '', ...body });
+  db.groups.push(group);
+  changed('groups');
+  return group;
+});
+route('PATCH', '/api/groups/:id', ({ req, params, body }) => {
+  notFromAgent(req, 'change groups');
+  const group = groupFields(findGroup(params.id), body);
+  changed('groups');
+  return group;
+});
+route('DELETE', '/api/groups/:id', ({ req, params }) => {
+  notFromAgent(req, 'change groups');
+  db.groups = db.groups.filter(g => g.id !== findGroup(params.id).id);
+  changed('groups');
+  return {};
 });
 
 // Updates: is there a newer release on GitHub, and download it
