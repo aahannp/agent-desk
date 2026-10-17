@@ -136,7 +136,8 @@ try {
   assert.equal((await request('POST', '/mcp', { body: { jsonrpc: '2.0', method: 'notifications/initialized' } })).status, 202, 'notifications get 202');
   assert.equal((await request('POST', '/mcp', { token: '', body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } })).status, 401, 'MCP needs the token');
   const tools = (await rpc('tools/list', {})).result.tools.map(t => t.name);
-  assert.equal(tools.length, 12, `12 MCP tools, got ${tools.join(', ')}`);
+  assert.equal(tools.length, 13, `13 MCP tools, got ${tools.join(', ')}`);
+  assert.ok(!tools.some(t => /publish/.test(t)), 'agents can save artifacts but have no tool to publish them');
   assert.match((await rpc('tools/call', { name: 'list_tasks', arguments: {} })).result.content[0].text, /Add a greeting/, 'MCP list_tasks reads the board');
   assert.match((await rpc('tools/call', { name: 'list_agents', arguments: {} })).result.content[0].text, new RegExp(shell.id), 'MCP list_agents sees the shell');
   const self = await rpc('tools/call', { name: 'get_project', arguments: {} }, { 'x-desk-session': shell.id });
@@ -296,6 +297,91 @@ try {
   assert.match(down.body.error, /not running/);
   fs.writeFileSync(path.join(process.env.TASKNOTES_DATA, 'port.json'), JSON.stringify({ port: notes.address()?.port ?? 1, pid: 2 ** 22 - 1 }));
   assert.equal((await request('GET', '/api/tasknotes')).status, 503, 'a port.json left by a dead Task Notes is not trusted, and no other port is tried');
+
+  // Artifacts: agents save pages, you view them (sandboxed, no token needed) and publish them to GitHub Pages
+  const tool = async (name, args) => {
+    const r = await rpc('tools/call', { name, arguments: args }, { 'x-desk-session': shell.id });
+    if (r.result.isError) throw new Error(r.result.content[0].text);
+    return JSON.parse(r.result.content[0].text);
+  };
+  const page = '<!doctype html><title>Report</title><h1>Q3 report</h1><script>document.title = "ran"</script>';
+  const art = await tool('save_artifact', { title: 'Q3 report', html: page });
+  assert.match(art.url, new RegExp(`/a/${art.id}$`), 'saving returns where to view it');
+  const viewed = await request('GET', `/a/${art.id}`, { token: '' });
+  assert.equal(viewed.status, 200, 'an artifact opens without the token, so your browser can show it');
+  assert.equal(viewed.body, page);
+  assert.match(viewed.headers['content-security-policy'], /^sandbox allow-scripts/, 'it runs sandboxed');
+  assert.ok(!viewed.headers['content-security-policy'].includes('allow-same-origin'), "so its scripts can't reach Agent Desk");
+  assert.equal(viewed.headers['referrer-policy'], 'no-referrer', 'its address is not leaked to the sites it loads');
+  assert.equal((await request('GET', `/a/${'x'.repeat(22)}`, { token: '' })).status, 404, 'unknown artifacts are not found');
+  assert.equal((await request('GET', '/api/artifacts', { token: '' })).status, 401, 'the list still needs the token');
+  fs.writeFileSync(path.join(repo, 'chart.html'), '<h1>chart v1</h1>');
+  const fromFile = await tool('save_artifact', { title: 'Chart', file: 'chart.html' });
+  assert.equal((await request('GET', `/a/${fromFile.id}`, { token: '' })).body, '<h1>chart v1</h1>', "a file is read from the agent's own folder");
+  fs.writeFileSync(path.join(repo, 'notes.txt'), 'x');
+  await assert.rejects(tool('save_artifact', { title: 'Notes', file: 'notes.txt' }), /Not an .html file/, 'only .html files are saved');
+  assert.equal((await tool('save_artifact', { id: art.id, title: 'Q3 report', html: '<h1>v2</h1>' })).id, art.id, 'saving with an id makes a new version');
+  assert.equal((await request('GET', `/a/${art.id}`, { token: '' })).body, '<h1>v2</h1>');
+  await ok('PATCH', `/api/artifacts/${fromFile.id}`, { title: 'Sales chart' });
+  assert.deepEqual((await ok('GET', '/api/artifacts')).map(a => a.title), ['Sales chart', 'Q3 report'], 'newest first, renamed');
+  await ok('DELETE', `/api/artifacts/${fromFile.id}`);
+  assert.equal((await request('GET', `/a/${fromFile.id}`, { token: '' })).status, 404, 'deleting removes it');
+
+  fs.writeFileSync(path.join(fakeBin, 'gh'), `#!/bin/sh
+case "$*" in
+  "auth status --hostname github.com --json hosts") echo '{"hosts":{"github.com":[{"login":"me","active":false,"state":"success"},{"login":"work","active":true,"state":"success"}]}}' ;;
+  "auth token --hostname github.com --user me") echo tok-me ;;
+  "auth token --hostname github.com --user work") echo tok-work ;;
+  *) echo "unexpected: gh $*" >&2; exit 1 ;;
+esac
+`, { mode: 0o755 });
+  const repos = { 'me/my-project': { files: { 'README.md': { sha: 's0' } }, pages: false } };
+  const seen = [];
+  const hub = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', c => (raw += c));
+    req.on('end', () => {
+      const u = new URL(req.url, 'http://x');
+      const body = raw ? JSON.parse(raw) : {};
+      seen.push({ method: req.method, path: u.pathname, auth: req.headers.authorization });
+      const send = (status, value) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(value));
+      if (req.method === 'POST' && u.pathname === '/user/repos') {
+        repos[`me/${body.name}`] = { files: { 'README.md': { sha: 's0' } }, pages: false };
+        return send(201, { name: body.name, default_branch: 'main' });
+      }
+      const m = /^\/repos\/([^/]+\/[^/]+)(?:\/(contents|pages)(?:\/(.+))?)?$/.exec(u.pathname);
+      const r = m && repos[m[1]];
+      if (!r) return send(404, { message: 'Not Found' });
+      if (!m[2]) return send(200, { default_branch: 'main' });
+      if (m[2] === 'pages') {
+        if (req.method === 'POST') r.pages = true;
+        return r.pages ? send(req.method === 'POST' ? 201 : 200, { html_url: `https://me.github.io/${m[1].split('/')[1]}/` }) : send(404, { message: 'Not Found' });
+      }
+      const f = r.files[m[3]];
+      if (req.method === 'GET') return f ? send(200, { sha: f.sha }) : send(404, { message: 'Not Found' });
+      if (f && body.sha !== f.sha) return send(409, { message: 'sha does not match' });
+      r.files[m[3]] = { sha: `s${seen.length}`, text: Buffer.from(body.content, 'base64').toString() };
+      return send(f ? 200 : 201, {});
+    });
+  });
+  await new Promise(resolve => hub.listen(0, '127.0.0.1', resolve));
+  process.env.AGENT_DESK_GITHUB_API = `http://127.0.0.1:${hub.address().port}`;
+  assert.deepEqual((await ok('GET', '/api/github/accounts')).map(a => a.login), ['me', 'work'], "lists the GitHub CLI's accounts");
+  const published = await ok('POST', `/api/artifacts/${art.id}/publish`, { account: 'me', repo: 'artifacts', slug: 'q3-report' });
+  assert.equal(published.published.url, 'https://me.github.io/artifacts/q3-report/', 'publishing says where it lives');
+  assert.equal(repos['me/artifacts'].files['q3-report/index.html'].text, '<h1>v2</h1>', 'the page is in the repo it made');
+  assert.ok(repos['me/artifacts'].files['.agent-desk'] && repos['me/artifacts'].files['.nojekyll'] && repos['me/artifacts'].pages, 'the repo is marked as made by Agent Desk, and Pages is on');
+  assert.ok(seen.every(r => r.auth === 'Bearer tok-me'), 'only the chosen account is used');
+  await tool('save_artifact', { id: art.id, title: 'Q3 report', html: '<h1>v3</h1>' });
+  await ok('POST', `/api/artifacts/${art.id}/publish`, { account: 'me', repo: 'artifacts', slug: 'q3-report' });
+  assert.equal(repos['me/artifacts'].files['q3-report/index.html'].text, '<h1>v3</h1>', 'publishing again replaces the page');
+  const before = seen.length;
+  const wrongRepo = await request('POST', `/api/artifacts/${art.id}/publish`, { body: { account: 'me', repo: 'my-project', slug: 'q3-report' } });
+  assert.equal(wrongRepo.status, 409, "it won't publish into a repo it didn't make");
+  assert.ok(!seen.slice(before).some(r => r.method === 'PUT'), 'and writes nothing there');
+  assert.equal((await request('POST', `/api/artifacts/${art.id}/publish`, { body: { account: 'stranger', repo: 'artifacts', slug: 'x' } })).status, 400, 'only signed-in accounts');
+  assert.equal((await request('POST', `/api/artifacts/${art.id}/publish`, { body: { account: 'me', repo: 'artifacts', slug: '../up' } })).status, 400, 'page names are plain');
+  await new Promise(resolve => hub.close(resolve));
 
   await ok('DELETE', `/api/sessions/${shell.id}`);
   assert.deepEqual(await ok('GET', '/api/sessions'), [], 'no sessions left');

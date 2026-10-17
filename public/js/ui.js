@@ -1,6 +1,6 @@
 // Shared by every view: live state, API calls, a tiny DOM builder, icons, toasts, menus and dialogs.
 
-export const state = { project: '', projects: [], tasks: [], sessions: [], chats: [], agents: [], settings: {}, info: {}, termTheme: {}, theme: null };
+export const state = { project: '', projects: [], tasks: [], sessions: [], chats: [], artifacts: [], agents: [], settings: {}, info: {}, termTheme: {}, theme: null };
 
 // Views register what they can do here, so they can call each other without importing each other.
 export const actions = {};

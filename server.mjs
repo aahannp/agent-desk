@@ -12,6 +12,7 @@ import * as S from './lib/sessions.mjs';
 import * as G from './lib/git.mjs';
 import { mcpTools, handleMcp } from './lib/mcp.mjs';
 import * as TN from './lib/tasknotes.mjs';
+import * as A from './lib/artifacts.mjs';
 
 const DIR = import.meta.dirname;
 const MIME = {
@@ -214,6 +215,35 @@ function addTask(req, body) {
 }
 route('POST', '/api/tasks', ({ req, body }) => addTask(req, { ...body, tasknotes: null }));
 
+// Artifacts: pages and reports agents saved. You view them, open them in your browser and publish them.
+const findArtifact = id => A.find(id) ?? (() => { throw fail(404, 'No such artifact'); })();
+route('GET', '/api/artifacts', () => db.artifacts);
+route('POST', '/api/artifacts', ({ req, body }) => {
+  let html = body.html;
+  if (body.file !== undefined) { // an .html file the agent wrote, relative to its own folder
+    const from = caller(req)?.cwd || projectFor(req, body.project);
+    const file = path.resolve(from, String(body.file).replace(/^~(?=$|\/)/, os.homedir()));
+    const stat = fs.statSync(file, { throwIfNoEntry: false });
+    if (!/\.html?$/i.test(file) || !stat?.isFile()) throw fail(400, `Not an .html file: ${file}`);
+    if (stat.size > 10 * 1024 * 1024) throw fail(413, 'Artifacts can be up to 10 MB');
+    html = fs.readFileSync(file, 'utf8');
+  }
+  const project = caller(req)?.project || (body.project ? expand(body.project) : db.settings.lastProject) || null;
+  const a = A.save({ id: body.id, title: body.title, html, project, by: caller(req)?.name || 'You' });
+  return { ...a, url: `${S.serverUrl()}/a/${a.id}` };
+});
+route('PATCH', '/api/artifacts/:id', ({ params, body }) => {
+  const a = findArtifact(params.id);
+  if (!String(body.title || '').trim()) throw fail(400, 'Give it a name');
+  a.title = body.title.trim().slice(0, 120);
+  changed('artifacts');
+  return a;
+});
+route('DELETE', '/api/artifacts/:id', ({ params }) => (A.remove(findArtifact(params.id)), {})); // a published copy stays on GitHub
+route('GET', '/api/github/accounts', () => A.accounts());
+route('POST', '/api/artifacts/:id/publish', ({ params, body }) =>
+  A.publish(findArtifact(params.id), { account: String(body.account || ''), repo: String(body.repo || ''), slug: String(body.slug || '') }));
+
 // Task Notes, the other app on this Mac: its open tasks, and bringing one onto this board
 route('GET', '/api/tasknotes', () => TN.openTasks());
 route('POST', '/api/tasknotes/import', async ({ req, body }) =>
@@ -413,6 +443,20 @@ async function respond(req, res) {
   if (!sameSite(req)) return json(403, { error: 'Forbidden' });
   if (url.pathname === '/mcp') return hasToken(req, url) ? mcp(req, res, json) : json(401, { error: 'Missing or wrong Agent Desk token' });
 
+  // An artifact opens without the token, so your own browser can show it: its random id is the key. It runs
+  // sandboxed in an origin of its own, so its scripts can't reach Agent Desk, and it sends no Referer that
+  // would leak its address to the sites it loads from.
+  const artifact = req.method === 'GET' && /^\/a\/([A-Za-z0-9_-]{22})\/?$/.exec(url.pathname);
+  if (artifact) {
+    const a = A.find(artifact[1]);
+    if (!a) return json(404, { error: 'No such artifact' });
+    res.writeHead(200, {
+      'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer',
+      'content-security-policy': 'sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms allow-modals allow-downloads',
+    });
+    return res.end(A.read(a));
+  }
+
   if (!url.pathname.startsWith('/api/')) {
     if (url.pathname === '/' && url.searchParams.has('t')) { // trade the link's secret for a cookie, then drop it from the address bar
       if (!hasToken(req, url)) return res.writeHead(302, { location: '/' }).end();
@@ -494,6 +538,7 @@ export async function start({ port = Number(process.env.PORT) || 4747, dataDir =
   fs.mkdirSync(dataDir, { recursive: true });
   load(dataDir);
   S.forgetRunningChats();
+  A.setDir(dataDir);
   TN.watch();
   VOICE_HELPER = [voiceHelper, path.join(DIR, 'native', 'build', 'desk-listen')].find(p => p && fs.existsSync(p)) ?? null;
   // The secret is kept in a file only you can read, so links and MCP setups keep working across restarts.

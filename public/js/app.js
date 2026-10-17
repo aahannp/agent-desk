@@ -5,6 +5,7 @@ import * as agents from './agents.js';
 import * as board from './board.js';
 import * as files from './files.js';
 import * as review from './review.js';
+import * as artifacts from './artifacts.js';
 import * as shots from './shots.js';
 import * as settings from './settings.js';
 import './voice.js';
@@ -17,6 +18,7 @@ const VIEWS = [
   { id: 'board', label: 'Board', icon: 'board', module: board, hint: 'Plan tasks and hand them to agents' },
   { id: 'files', label: 'Files', icon: 'file', module: files, hint: 'Browse and edit the project' },
   { id: 'review', label: 'Review', icon: 'branch', module: review, hint: 'Check what agents changed, then merge it' },
+  { id: 'artifacts', label: 'Artifacts', icon: 'layers', module: artifacts, hint: 'Pages and reports your agents made' },
   { id: 'shots', label: 'Screenshots', icon: 'camera', module: shots, hint: 'Capture, mark up and hand to an agent' },
   { id: 'settings', label: 'Settings', icon: 'settings', module: settings, hint: 'Themes, agents, voice and MCP' },
 ];
@@ -31,6 +33,7 @@ const loaders = {
   projects: async () => { state.projects = await api('GET', '/api/projects'); },
   settings: async () => { state.settings = await api('GET', '/api/settings'); },
   chats: async () => { state.chats = await api('GET', '/api/chats'); },
+  artifacts: async () => { state.artifacts = await api('GET', '/api/artifacts'); },
 };
 
 // Refetch one kind of data. If more changes arrive mid-fetch, fetch once more so nothing stale sticks.
@@ -337,7 +340,7 @@ document.addEventListener('keydown', e => {
   const key = e.key.toLowerCase();
   if (mod && !e.shiftKey && key === 'k') { e.preventDefault(); e.stopPropagation(); openPalette(); }
   else if (mod && e.shiftKey && key === 'm') { e.preventDefault(); e.stopPropagation(); actions.toggleVoice(); }
-  else if (mod && !e.shiftKey && !e.altKey && /^[1-6]$/.test(e.key)) { e.preventDefault(); e.stopPropagation(); showView(VIEWS[Number(e.key) - 1].id); }
+  else if (mod && !e.shiftKey && !e.altKey && /^[1-7]$/.test(e.key)) { e.preventDefault(); e.stopPropagation(); showView(VIEWS[Number(e.key) - 1].id); }
 }, true);
 
 command('New task', () => { showView('board'); actions.newTask?.(); }, { icon: 'plus' });
@@ -359,7 +362,7 @@ command('Add a project folder', addProject, { icon: 'folder' });
   }
   buildSidebar();
   showView('agents');
-  for (const kind of ['project', 'settings', 'projects', 'tasks', 'sessions', 'chats']) emit(kind);
+  for (const kind of ['project', 'settings', 'projects', 'tasks', 'sessions', 'chats', 'artifacts']) emit(kind);
   renderChrome();
   listen();
   setInterval(() => refresh('sessions'), 4000); // keeps "working / idle" fresh for the board and agents
