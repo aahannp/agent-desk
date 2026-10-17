@@ -29,6 +29,7 @@ sh('-c', 'user.name=check', '-c', 'user.email=check@example.com', 'commit', '-qm
 
 fs.mkdirSync(path.join(tmp, 'data'));
 process.env.TASKNOTES_DATA = path.join(tmp, 'tasknotes'); // a stand-in Task Notes, never the real one
+process.env.CLAUDE_CONFIG_DIR = path.join(tmp, 'claude-home'); // and never your real transcripts (the Spend scan reads them all)
 fs.writeFileSync(path.join(tmp, 'data', 'token'), ''); // an empty secret file must never mean "no secret"
 fs.mkdirSync(path.join(tmp, 'data', 'mcp'));
 fs.writeFileSync(path.join(tmp, 'data', 'mcp', 'gone1234.json'), 'left by a crash');
@@ -250,8 +251,7 @@ try {
   assert.match(self.result.content[0].text, new RegExp(shell.id), 'MCP tools know which session is asking');
 
   // Chats: titles come from Claude's own saved conversations; rename, remove, and a chat whose folder is gone
-  const claudeHome = path.join(tmp, 'claude-home');
-  process.env.CLAUDE_CONFIG_DIR = claudeHome;
+  const claudeHome = process.env.CLAUDE_CONFIG_DIR;
   delete process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW; // yours would change lead upkeep's window below
   const chatDir = path.join(claudeHome, 'projects', repo.replace(/[^a-zA-Z0-9]/g, '-'));
   fs.mkdirSync(chatDir, { recursive: true });
