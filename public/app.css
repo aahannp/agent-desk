@@ -66,7 +66,9 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .side-top { height: 58px; display: flex; align-items: center; padding: 0 6px; -webkit-app-region: drag; }
 .is-app .side-top { padding-left: 80px; }
 .brand { display: flex; align-items: center; gap: 10px; font: 650 14.5px var(--display); letter-spacing: -.02em; }
-.brand .ver { font: 600 9px var(--mono); letter-spacing: .08em; color: var(--dim); border: 1px solid var(--hair-strong); border-radius: 99px; padding: 1px 6px; }
+.brand .ver { font: 600 9px var(--mono); letter-spacing: .08em; color: var(--dim); background: none; border: 1px solid var(--hair-strong); border-radius: 99px; padding: 1px 6px; -webkit-app-region: no-drag; }
+.brand .ver:hover { color: var(--text); border-color: var(--dim); }
+.brand .ver.new { color: #fff; background: var(--accent); border-color: transparent; }
 .logo { width: 26px; height: 26px; }
 
 .project-switch { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 9px 10px; margin-bottom: 14px; border-radius: 12px;
@@ -445,6 +447,15 @@ textarea.input { resize: vertical; min-height: 84px; line-height: 1.55; }
 
 .specialist-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
 .specialist-head p { margin: 2px 0 0; font-size: 12.5px; }
+
+/* ---------- Updates ---------- */
+.update-rows { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin-bottom: 12px; font-size: 13px; }
+.update-rows span { color: var(--dim); }
+.update-notes { max-height: 200px; overflow: auto; white-space: pre-wrap; font-size: 12.5px; line-height: 1.55; color: var(--dim); padding: 10px 12px; border-radius: 10px; background: var(--softer); border: 1px solid var(--hair); margin-bottom: 12px; }
+.update-bar { height: 6px; border-radius: 3px; background: var(--softer); overflow: hidden; margin: 4px 0 6px; }
+.update-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+.update-note { font-size: 12.5px; line-height: 1.5; }
+.update-acts { margin-top: 10px; }
 
 /* ---------- Artifacts ---------- */
 .arts { position: absolute; inset: 0; display: grid; grid-template-columns: 290px 1fr; padding: 12px; gap: 12px; }

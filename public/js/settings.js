@@ -1,6 +1,7 @@
 // Settings view: themes, agents and their guardrails, voice, notifications, and the MCP setup for your own Claude Code.
 import { state, api, h, icon, avatar, on, actions, copy, guard, modal, toast, confirmDialog } from './ui.js';
 import { modelSelect } from './agents.js';
+import { openUpdates } from './updates.js';
 import { THEMES } from './themes.js';
 
 const PERMISSIONS = [
@@ -91,8 +92,9 @@ function render() {
       ['Maximise a pane', 'double-click its header'], ['Close dialogs', 'Esc'],
     ].map(([what, keys]) => h('div', {}, what, h('kbd', {}, keys))))),
 
-    section('About', null, h('p', { class: 'muted', style: { margin: 0 } },
-      `Agent Desk ${state.info.electron ? 'Mac app' : 'in the browser'} · server ${state.info.url}`))));
+    section('About', null, h('div', { class: 'row' }, h('p', { class: 'muted grow', style: { margin: 0 } },
+      `Agent Desk ${state.info.version ? `v${state.info.version} ` : ''}${state.info.electron ? 'Mac app' : 'in the browser'} · server ${state.info.url}`),
+    h('button', { class: 'btn sm', onClick: () => openUpdates() }, icon('refresh', 13), 'Check for updates')))));
 }
 
 // The Mac app grants notifications without a prompt; in a browser you turn them on above.

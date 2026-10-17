@@ -38,6 +38,8 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
 - **Task Notes**: the Board's Task Notes button lists your open tasks from the Task Notes app. Add one to hand
   it to an agent, and Task Notes follows its card (In progress and Review show as in progress, Done marks it
   done). Only tasks you brought over are written back, and only their status.
+- **Updates**: the version pill next to the logo checks this repo's GitHub releases. When a newer one is out it
+  says Update, and one click downloads the new .dmg into your Downloads folder.
 - **MCP for your own Claude Code**: Settings shows a one-line `claude mcp add` that gives the same 12 board
   tools to Claude Code anywhere.
 

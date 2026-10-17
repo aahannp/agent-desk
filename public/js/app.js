@@ -10,6 +10,7 @@ import * as shots from './shots.js';
 import * as settings from './settings.js';
 import './voice.js';
 import './cursor.js';
+import './updates.js';
 
 if (navigator.userAgent.includes('Electron')) document.documentElement.classList.add('is-app');
 
@@ -78,7 +79,7 @@ function listen() {
   const events = new EventSource('/api/events');
   events.onmessage = e => {
     const event = JSON.parse(e.data);
-    if (event.type === 'voice') emit('voice', event);
+    if (event.type === 'voice' || event.type === 'update-progress') emit(event.type, event);
     else if (loaders[event.type]) refresh(event.type);
   };
   events.onopen = () => {

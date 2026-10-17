@@ -11,6 +11,7 @@ const listeners = new Map();
 export function on(type, fn) {
   if (!listeners.has(type)) listeners.set(type, new Set());
   listeners.get(type).add(fn);
+  return () => listeners.get(type).delete(fn);
 }
 export const emit = (type, detail) => listeners.get(type)?.forEach(fn => fn(detail));
 

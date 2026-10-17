@@ -14,6 +14,7 @@ import { mcpTools, handleMcp } from './lib/mcp.mjs';
 import * as TN from './lib/tasknotes.mjs';
 import * as A from './lib/artifacts.mjs';
 import * as T from './lib/team.mjs';
+import * as U from './lib/update.mjs';
 
 const DIR = import.meta.dirname;
 const MIME = {
@@ -110,7 +111,7 @@ function route(method, pattern, handler) {
 
 route('GET', '/api/info', () => ({
   url: S.serverUrl(), token: TOKEN, mcpUrl: `${S.serverUrl()}/mcp`,
-  electron: Boolean(process.versions.electron), voice: Boolean(VOICE_HELPER), home: os.homedir(),
+  electron: Boolean(process.versions.electron), voice: Boolean(VOICE_HELPER), home: os.homedir(), version: U.current(),
 }));
 
 // Projects
@@ -228,6 +229,11 @@ function addTask(req, body) {
   return task;
 }
 route('POST', '/api/tasks', ({ req, body }) => addTask(req, { ...body, tasknotes: null }));
+
+// Updates: is there a newer release on GitHub, and download it
+route('GET', '/api/update', ({ query }) => U.check(query.get('force') === '1'));
+route('POST', '/api/update/download', ({ req }) => (notFromAgent(req, 'download updates'), U.download()));
+route('POST', '/api/update/show', () => U.reveal());
 
 // The team: named specialists with their own instructions and model
 route('GET', '/api/specialists', () => T.list());

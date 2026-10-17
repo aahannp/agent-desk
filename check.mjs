@@ -11,6 +11,7 @@ import { start } from './server.mjs';
 import { createWorktree } from './lib/git.mjs';
 import { db } from './lib/store.mjs';
 import { command } from './lib/sessions.mjs';
+import { isNewer } from './lib/update.mjs';
 import { randomUUID } from 'node:crypto';
 
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desk-check-')));
@@ -433,6 +434,44 @@ esac
   assert.equal((await request('POST', `/api/artifacts/${art.id}/publish`, { body: { account: 'stranger', repo: 'artifacts', slug: 'x' } })).status, 400, 'only signed-in accounts');
   assert.equal((await request('POST', `/api/artifacts/${art.id}/publish`, { body: { account: 'me', repo: 'artifacts', slug: '../up' } })).status, 400, 'page names are plain');
   await new Promise(resolve => hub.close(resolve));
+
+  // Updates: compare versions, check GitHub's latest release, download its .dmg (following GitHub links only)
+  assert.ok(isNewer('v1.10.0', '1.9.2') && isNewer('2.0.0', '1.99.99') && !isNewer('v1.0.0', '1.0.0') && !isNewer('v1.0.0-beta', '1.0.0'), 'version comparison');
+  let release = null;
+  const dmgBytes = Buffer.from('not really a dmg');
+  const gh = http.createServer((req, res) => {
+    const send = (status, body, headers = {}) => res.writeHead(status, { 'content-type': 'application/json', ...headers }).end(body === undefined ? '' : JSON.stringify(body));
+    if (req.url === '/repos/aahannp/agent-desk/releases/latest') return release ? send(200, release) : send(404, { message: 'Not Found' });
+    if (req.url === '/dl/agent.dmg') return send(302, undefined, { location: '/files/agent.dmg' });
+    if (req.url === '/files/agent.dmg') return res.writeHead(200, { 'content-length': dmgBytes.length }).end(dmgBytes);
+    if (req.url === '/dl/elsewhere.dmg') return send(302, undefined, { location: 'https://example.invalid/agent.dmg' });
+    send(404, {});
+  });
+  await new Promise(resolve => gh.listen(0, '127.0.0.1', resolve));
+  const hubUrl = `http://127.0.0.1:${gh.address().port}`;
+  process.env.AGENT_DESK_GITHUB_API = hubUrl;
+  assert.equal((await ok('GET', '/api/update?force=1')).none, true, 'no releases yet is not an error');
+  release = { tag_name: 'v99.0.0', body: 'Smoother scrolling', html_url: 'https://github.com/aahannp/agent-desk/releases/tag/v99.0.0',
+    assets: [{ name: 'Agent-Desk-99.0.0-arm64.dmg', browser_download_url: `${hubUrl}/dl/agent.dmg`, size: dmgBytes.length }] };
+  const up = await ok('GET', '/api/update?force=1');
+  assert.deepEqual([up.newer, up.latest, up.notes, up.asset.name], [true, 'v99.0.0', 'Smoother scrolling', 'Agent-Desk-99.0.0-arm64.dmg'], 'a newer release is found');
+  assert.equal((await request('POST', '/api/update/download', { headers: { 'x-desk-via': 'mcp' } })).status, 403, "agents can't download updates");
+  const realHome = process.env.HOME;
+  process.env.HOME = tmp;
+  fs.mkdirSync(path.join(tmp, 'Downloads'));
+  try {
+    const got = await ok('POST', '/api/update/download');
+    assert.equal(got.path, path.join(tmp, 'Downloads', 'Agent-Desk-99.0.0-arm64.dmg'), 'it lands in Downloads');
+    assert.deepEqual(fs.readFileSync(got.path), dmgBytes, 'following the redirect, the whole file');
+    release.assets[0].browser_download_url = `${hubUrl}/dl/elsewhere.dmg`;
+    await ok('GET', '/api/update?force=1');
+    const stopped = await request('POST', '/api/update/download');
+    assert.equal(stopped.status, 502, 'a download that leaves GitHub is stopped');
+    assert.match(stopped.body.error, /somewhere other than GitHub/);
+  } finally {
+    process.env.HOME = realHome;
+    await new Promise(resolve => gh.close(resolve));
+  }
 
   await ok('DELETE', `/api/sessions/${shell.id}`);
   assert.deepEqual(await ok('GET', '/api/sessions'), [], 'no sessions left');
