@@ -222,6 +222,14 @@ function terminalPane(s) {
   const el = h('div', { class: 'pane', 'data-id': id }, head, h('div', { class: 'pane-body' }, host, blocks), exitBar);
   grid.append(el);
   term.open(host);
+  // Draw on the GPU, as VS Code's terminal does: far less work per frame than the default renderer, which
+  // rebuilds every row as page text on each scroll step. A page gets about 16 WebGL contexts, so a pane
+  // that loses its context (or a Mac without WebGL) falls back to the default renderer and keeps working.
+  try {
+    const webgl = new WebglAddon.WebglAddon();
+    webgl.onContextLoss(() => webgl.dispose());
+    term.loadAddon(webgl);
+  } catch {}
 
   const p = { id, kind: 'term', el, term, dot, state: state_, stateText, title, sub, face, exitBar, blocksEl: blocks, session: s, lastData: 0, ws: null, size: '' };
   p.send = data => p.ws?.readyState === WebSocket.OPEN && p.ws.send(JSON.stringify({ t: 'in', d: data }));

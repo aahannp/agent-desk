@@ -320,6 +320,8 @@ try {
   assert.equal((await request('GET', `/a/${fromFile.id}`, { token: '' })).body, '<h1>chart v1</h1>', "a file is read from the agent's own folder");
   fs.writeFileSync(path.join(repo, 'notes.txt'), 'x');
   await assert.rejects(tool('save_artifact', { title: 'Notes', file: 'notes.txt' }), /Not an .html file/, 'only .html files are saved');
+  fs.symlinkSync(path.join(repo, 'notes.txt'), path.join(repo, 'sneaky.html'));
+  await assert.rejects(tool('save_artifact', { title: 'Sneaky', file: 'sneaky.html' }), /Not an .html file/, 'a link named .html pointing at another file is refused');
   assert.equal((await tool('save_artifact', { id: art.id, title: 'Q3 report', html: '<h1>v2</h1>' })).id, art.id, 'saving with an id makes a new version');
   assert.equal((await request('GET', `/a/${art.id}`, { token: '' })).body, '<h1>v2</h1>');
   await ok('PATCH', `/api/artifacts/${fromFile.id}`, { title: 'Sales chart' });

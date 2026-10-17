@@ -24,6 +24,7 @@ const VENDOR = {
   'xterm.js': '@xterm/xterm/lib/xterm.js',
   'xterm.css': '@xterm/xterm/css/xterm.css',
   'addon-fit.js': '@xterm/addon-fit/lib/addon-fit.js',
+  'addon-webgl.js': '@xterm/addon-webgl/lib/addon-webgl.js',
 };
 const STATUSES = ['todo', 'doing', 'review', 'done'];
 const PERMISSION_MODES = ['default', 'acceptEdits', 'auto', 'plan'];
@@ -222,8 +223,10 @@ route('POST', '/api/artifacts', ({ req, body }) => {
   let html = body.html;
   if (body.file !== undefined) { // an .html file the agent wrote, relative to its own folder
     const from = caller(req)?.cwd || projectFor(req, body.project);
-    const file = path.resolve(from, String(body.file).replace(/^~(?=$|\/)/, os.homedir()));
-    const stat = fs.statSync(file, { throwIfNoEntry: false });
+    // The real file, so a link named page.html can't stand in for something else. It isn't limited to the
+    // agent's folder: agents often write pages to scratch folders, and the token already reads any file.
+    const file = (() => { try { return fs.realpathSync(path.resolve(from, String(body.file).replace(/^~(?=$|\/)/, os.homedir()))); } catch { return ''; } })();
+    const stat = file && fs.statSync(file, { throwIfNoEntry: false });
     if (!/\.html?$/i.test(file) || !stat?.isFile()) throw fail(400, `Not an .html file: ${file}`);
     if (stat.size > 10 * 1024 * 1024) throw fail(413, 'Artifacts can be up to 10 MB');
     html = fs.readFileSync(file, 'utf8');

@@ -299,7 +299,7 @@ textarea.input { resize: vertical; min-height: 84px; line-height: 1.55; }
    counted in them, or the last column slides under the scrollbar and the bottom row past the edge. */
 .term-host { flex: 1; min-width: 0; padding: 10px 6px 6px 12px; box-sizing: content-box; }
 .term-host .xterm { height: 100%; }
-.term-host .xterm-viewport { scrollbar-width: thin; }
+.term-host .xterm-viewport { scrollbar-width: thin; background-color: transparent; } /* xterm.css paints it black, and it shows below the last row */
 /* Drop markers while dragging a chat or a pane into the grid. */
 .pane.drop-before { box-shadow: inset 4px 0 0 var(--accent), 0 0 0 1px var(--accent); }
 .pane.drop-after { box-shadow: inset -4px 0 0 var(--accent), 0 0 0 1px var(--accent); }
