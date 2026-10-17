@@ -182,6 +182,28 @@ route('POST', '/api/claude-session', ({ req, body }) => {
   return {};
 });
 
+// Claude's PostToolUse hook reports each file an agent edits. The repo it's in becomes a project (you stay on yours),
+// a worktree the agent made itself is recorded for Review, and the agent's project remembers the repo.
+route('POST', '/api/touched', async ({ req, body }) => {
+  const from = caller(req);
+  const input = body.tool_input ?? {};
+  const where = await G.touched(String(input.file_path ?? input.notebook_path ?? ''), from);
+  if (where?.added) changed('tasks');
+  if (!where || (from && `${from.project}/`.startsWith(`${where.main}/`))) return {}; // the agent's own project already covers it
+  let added = false;
+  if (!db.projects.some(p => p.path === where.main)) {
+    db.projects.push({ path: where.main, name: path.basename(where.main), addedAt: Date.now() });
+    added = true;
+  }
+  const mine = from && db.projects.find(p => p.path === from.project);
+  if (mine && !mine.repos?.includes(where.main)) {
+    (mine.repos ??= []).push(where.main);
+    added = true;
+  }
+  if (added) changed('projects');
+  return {};
+});
+
 // Chats: agent conversations kept after their pane closes or the app quits, so they can be opened again
 const findChat = id => db.chats.find(c => c.id === id) ?? (() => { throw fail(404, 'No such chat'); })();
 route('GET', '/api/chats', ({ query }) => {
@@ -412,7 +434,10 @@ route('POST', '/api/tasks/:id/start', async ({ req, params, body }) => {
 
 // Review: what each agent worktree changed, and committing, merging or discarding it
 route('GET', '/api/review', async ({ req, query }) => {
-  const result = await G.review(projectFor(req, query.get('project')));
+  const project = projectFor(req, query.get('project'));
+  const result = await G.review(project);
+  // Not a repo itself: the repos its agents changed instead
+  if (!result.git) result.elsewhere = (db.projects.find(p => p.path === project)?.repos ?? []).filter(isDir).map(root => ({ root, name: path.basename(root) }));
   for (const item of result.items) {
     const s = [...S.sessions.values()].find(x => x.cwd === item.path && !x.exited);
     item.session = s ? S.info(s) : null;

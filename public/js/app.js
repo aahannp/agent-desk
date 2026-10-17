@@ -270,6 +270,7 @@ const openProject = guard(async path => {
   toast(`Opened ${baseName(state.project)}`, 'ok');
   return true;
 });
+actions.openProject = openProject;
 
 function addProject() {
   let close;

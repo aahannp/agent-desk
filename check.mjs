@@ -130,6 +130,59 @@ try {
   await ok('POST', '/api/review/remove', { worktree: wt.path });
   assert.ok(!fs.existsSync(wt.path), 'worktree removed');
 
+  // An agent in a project that isn't a repo edits a worktree it made by hand in another repo
+  const other = path.join(tmp, 'other');
+  fs.mkdirSync(other);
+  const og = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=check', '-c', 'user.email=check@example.com', ...args], { cwd, stdio: 'pipe' }).toString();
+  og(other, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(other, 'README.md'), 'hello\n');
+  og(other, 'add', '.');
+  og(other, 'commit', '-qm', 'first');
+  const handWt = path.join(tmp, 'other-wt');
+  og(other, 'worktree', 'add', '-q', '-b', 'by-hand', handWt);
+  fs.writeFileSync(path.join(handWt, 'README.md'), 'hello again\n');
+  og(handWt, 'commit', '-qam', 'committed by the agent');
+  fs.writeFileSync(path.join(handWt, 'notes.txt'), 'not committed yet\n');
+  fs.symlinkSync(path.join(repo, '.git'), path.join(handWt, 'linked')); // like a symlinked node_modules
+  const notRepo = path.join(tmp, 'notRepo');
+  fs.mkdirSync(notRepo);
+  await ok('POST', '/api/projects', { path: notRepo });
+  const plainShell = await ok('POST', '/api/sessions', { kind: 'shell', project: notRepo });
+  const touch = file_path => ok('POST', '/api/touched', { tool_name: 'Edit', tool_input: { file_path } });
+  const touchAs = file_path => request('POST', '/api/touched', { headers: { 'x-desk-session': plainShell.id }, body: { tool_name: 'Edit', tool_input: { file_path } } });
+  const projectCount = db.projects.length;
+  await touch('README.md');
+  await touch(path.join(notRepo, 'x.txt'));
+  assert.equal(db.projects.length, projectCount, 'a relative or non-git file is ignored');
+  assert.equal((await touchAs(path.join(handWt, 'README.md'))).status, 200);
+  assert.ok((await ok('GET', '/api/projects')).some(p => p.path === other), 'the repo the agent changed is added as a project');
+  assert.equal((await ok('GET', '/api/settings')).lastProject, notRepo, 'without switching you to it');
+  const handItem = (await ok('GET', `/api/review?project=${encodeURIComponent(other)}`)).items.find(i => i.path === handWt);
+  assert.deepEqual(handItem.files.map(f => f.path), ['linked', 'notes.txt', 'README.md'], 'review shows its committed and uncommitted changes');
+  assert.ok(handItem.add > 0 && handItem.del > 0, 'with lines added and removed');
+  assert.deepEqual([handItem.base, handItem.by], ['main', plainShell.name], 'compared with the branch it came from, and says who made it');
+  assert.deepEqual(await ok('GET', `/api/review/file?worktree=${encodeURIComponent(handWt)}&file=README.md`), { original: 'hello\n', modified: 'hello again\n' });
+  assert.deepEqual((await ok('GET', `/api/review?project=${encodeURIComponent(notRepo)}`)).elsewhere, [{ root: other, name: 'other' }], 'the non-git project lists the repo its agent changed');
+  await ok('POST', '/api/review/commit', { worktree: handWt, message: 'Add notes' });
+  await ok('POST', '/api/review/merge', { worktree: handWt });
+  assert.equal(fs.readFileSync(path.join(other, 'notes.txt'), 'utf8'), 'not committed yet\n', 'a hand-made worktree merges like our own');
+  // The main folder hasn't pulled: what its upstream already has isn't counted as the worktree's work
+  const pulled = path.join(tmp, 'other-pulled');
+  og(other, 'worktree', 'add', '-q', '-b', 'pulled', pulled);
+  fs.writeFileSync(path.join(pulled, 'upstream.txt'), 'merged upstream\n');
+  og(pulled, 'add', '.');
+  og(pulled, 'commit', '-qm', 'upstream');
+  og(other, 'branch', '-q', '-u', 'pulled', 'main');
+  const late = path.join(tmp, 'other-late');
+  og(other, 'worktree', 'add', '-q', '-b', 'late', late, 'pulled');
+  fs.writeFileSync(path.join(late, 'late.txt'), 'agent work\n');
+  const lateItem = (await ok('GET', `/api/review?project=${encodeURIComponent(other)}`)).items.find(i => i.path === late);
+  assert.deepEqual(lateItem.files.map(f => f.path), ['late.txt'], "commits the main folder hasn't pulled aren't the agent's");
+  og(other, 'worktree', 'add', '-q', '--detach', path.join(tmp, 'other-detached'));
+  assert.match((await request('POST', '/api/review/merge', { body: { worktree: path.join(tmp, 'other-detached') } })).body.error, /detached/, 'a detached worktree can be reviewed but not merged');
+  await ok('DELETE', `/api/sessions/${plainShell.id}`);
+  await ok('POST', '/api/projects', { path: repo }); // back to the main check project
+
   // MCP over HTTP: handshake, tool list, real tool calls, and a tool acting as a specific session
   let nextId = 1;
   const rpc = async (method, params, headers = {}) => (await request('POST', '/mcp', { headers, body: { jsonrpc: '2.0', id: nextId++, method, params } })).body;
@@ -183,6 +236,8 @@ try {
   const resumed = command({ ...base, resume: true }, '', null).args;
   assert.deepEqual(resumed.slice(0, 2), ['--resume', named], 'a saved chat is resumed by id');
   assert.ok(!resumed.includes('--session-id'), 'never both');
+  const hooks = JSON.parse(fs.readFileSync(fresh[fresh.indexOf('--settings') + 1], 'utf8')).hooks;
+  assert.match(hooks.PostToolUse[0].hooks[0].command, /\/api\/touched/, 'every file an agent edits is reported');
 
   // The whole chat lifecycle, with a stand-in `claude` on the PATH that prints its arguments and exits
   const fakeBin = path.join(tmp, 'fake-bin');
