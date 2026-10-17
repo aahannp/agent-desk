@@ -9,7 +9,7 @@ import path from 'node:path';
 import WebSocket from 'ws';
 import { start } from './server.mjs';
 import { createWorktree } from './lib/git.mjs';
-import { db } from './lib/store.mjs';
+import { db, bus } from './lib/store.mjs';
 import { command } from './lib/sessions.mjs';
 import { isNewer } from './lib/update.mjs';
 import { randomUUID } from 'node:crypto';
@@ -101,6 +101,27 @@ try {
   const out = await shellUntil(shell.id, cookie, 'echo ok-$((6*7))', ['ok-42', '\x1b]133;D;0']);
   assert.ok(out.includes('\x1b]633;E;echo ok-$((6*7))'), 'the command text is marked for its block');
   assert.match((await ok('GET', `/api/sessions/${shell.id}/output?lines=20`)).text, /ok-42/, 'screen text is readable');
+
+  // The pty's size is listed (the Graph panel's mirror draws at exactly that size), and a drag's many resizes
+  // reach pages as one change once it settles
+  const sizeOf = async () => (({ cols, rows }) => ({ cols, rows }))((await ok('GET', '/api/sessions')).find(x => x.id === shell.id));
+  assert.deepEqual(await sizeOf(), { cols: 120, rows: 32 }, 'sessions list their terminal size');
+  const sessionEvents = [];
+  const count = e => e.type === 'sessions' && sessionEvents.push(e);
+  bus.on('event', count);
+  await new Promise((resolve, reject) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${desk.port}/ws?id=${shell.id}`, { origin: SELF, headers: { cookie } });
+    ws.on('open', () => {
+      for (const cols of [110, 100, 90]) ws.send(JSON.stringify({ t: 'resize', cols, rows: 30 }));
+      setTimeout(() => { ws.close(); resolve(); }, 100);
+    });
+    ws.on('error', reject);
+  });
+  assert.equal(sessionEvents.length, 0, 'no change is announced while the size is still moving');
+  await new Promise(resolve => setTimeout(resolve, 400));
+  bus.off('event', count);
+  assert.equal(sessionEvents.length, 1, 'one change once it settles');
+  assert.deepEqual(await sizeOf(), { cols: 90, rows: 30 }, 'the new size is listed');
   assert.equal((await request('POST', '/api/sessions', { body: { kind: 'shell', project: '/no/such/folder' } })).status, 400, 'missing folder is rejected');
 
   // Task board

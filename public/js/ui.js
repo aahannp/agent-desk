@@ -203,6 +203,7 @@ export const projectChats = () => state.chats.filter(c => c.project === state.pr
 // A chat's best name: your rename, Claude's own title, or what the pane was called.
 export const chatTitle = s => state.chats.find(c => c.id === s.chatId)?.title ?? s.name;
 // Drag payloads between the sidebar and the grid.
+export const MONO = '"JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace'; // the terminals' font
 export const DRAG = { chat: 'application/x-desk-chat', pane: 'application/x-desk-pane' };
 export const baseName = p => p.split('/').filter(Boolean).pop() || p;
 // For text shown cut off on the left (direction: rtl), so leading "~" or "/" stays where it belongs.

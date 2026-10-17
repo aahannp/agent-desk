@@ -1,7 +1,6 @@
 // Agents view: every agent, shell and browser pane for the project, tiled in a grid of real terminals.
-import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, commands, menu, askText, modal, confirmDialog, agentLabel, shortBranch, baseName, copy, chatTitle, DRAG, STATUS_LABEL } from './ui.js';
+import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, commands, menu, askText, modal, confirmDialog, agentLabel, shortBranch, baseName, copy, chatTitle, DRAG, MONO, STATUS_LABEL } from './ui.js';
 
-const MONO = '"JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace';
 const panes = new Map(); // id -> pane (a session's terminal, or a browser)
 const seen = new Map(); // session id -> last status we told you about
 let grid;
