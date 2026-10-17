@@ -69,6 +69,9 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
 - The server only listens on 127.0.0.1. Every request needs this install's secret (kept in a file only you
   can read) and must come from Agent Desk's own page, so other websites and other users on the Mac can't
   use it.
+- Each agent gets its own token, which only reaches its board tools and hooks and always acts as that agent;
+  the master secret never goes in its config. An agent with shell access runs as you, though, so it could
+  still read the secret file in the data folder: real isolation would need a separate macOS user.
 - Browsers don't separate cookies by port, so in the browser version (`npm start`) Agent Desk's login cookie
   also goes to any other localhost server you open in that browser. The Mac app keeps it to Agent Desk only;
   in a browser, use a profile just for Agent Desk.
