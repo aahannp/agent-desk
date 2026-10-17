@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import tls from 'node:tls';
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
 import { WebSocketServer } from 'ws';
@@ -224,6 +225,7 @@ route('DELETE', '/api/chats/:id', ({ params }) => {
 const sameProject = (req, id) => {
   const s = findSession(id);
   const from = caller(req);
+  if (fromAgent(req) && !from) throw fail(403, 'Only agents inside Agent Desk can read or copy other agents');
   if (from && s.project !== from.project) throw fail(403, 'Agents can only read or copy agents in their own project');
   return s;
 };
@@ -628,9 +630,19 @@ function upgrade(req, socket, head) {
   }
 }
 
+// A work network that inspects HTTPS installs its own root certificate in the Mac's keychain, which Safari
+// and curl trust but Node doesn't: GitHub calls (updates, publishing) then fail with "self signed certificate
+// in certificate chain". So Node trusts the Mac's roots too, as Task Notes does. Verification stays on.
+function trustTheMac() {
+  try {
+    tls.setDefaultCACertificates([...tls.getCACertificates('default'), ...tls.getCACertificates('system')]);
+  } catch {} // older Node: its own roots only
+}
+
 // Starts Agent Desk. The Mac app calls this with its own data folder; `npm start` runs it directly.
 export async function start({ port = Number(process.env.PORT) || 4747, dataDir = path.join(DIR, 'data'), voiceHelper } = {}) {
   fs.mkdirSync(dataDir, { recursive: true });
+  trustTheMac();
   load(dataDir);
   S.forgetRunningChats();
   A.setDir(dataDir);

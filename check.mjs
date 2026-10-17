@@ -524,6 +524,7 @@ esac
   const outsider = await ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: elsewhere });
   assert.equal((await request('GET', `/api/sessions/${outsider.id}/chat`, { headers: { 'x-desk-session': christieId } })).status, 403, "an agent can't read another project's agents");
   assert.equal((await request('POST', `/api/sessions/${outsider.id}/clone`, { headers: { 'x-desk-session': christieId }, body: { prompt: 'x' } })).status, 403, 'or copy them');
+  assert.equal((await request('GET', `/api/sessions/${outsider.id}/chat`, { headers: { 'x-desk-via': 'mcp' } })).status, 403, 'a tool call that names no agent is refused, not treated as you');
   assert.equal((await request('GET', `/api/sessions/${outsider.id}/chat`)).status, 200, 'but you can');
   await ok('DELETE', `/api/sessions/${outsider.id}`);
   await ok('PATCH', '/api/settings', { agentsAutonomous: false });
