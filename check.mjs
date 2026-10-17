@@ -11,6 +11,7 @@ import { start } from './server.mjs';
 import { createWorktree } from './lib/git.mjs';
 import { db } from './lib/store.mjs';
 import { command } from './lib/sessions.mjs';
+import { isNewer } from './lib/update.mjs';
 import { randomUUID } from 'node:crypto';
 
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desk-check-')));
@@ -136,7 +137,8 @@ try {
   assert.equal((await request('POST', '/mcp', { body: { jsonrpc: '2.0', method: 'notifications/initialized' } })).status, 202, 'notifications get 202');
   assert.equal((await request('POST', '/mcp', { token: '', body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } })).status, 401, 'MCP needs the token');
   const tools = (await rpc('tools/list', {})).result.tools.map(t => t.name);
-  assert.equal(tools.length, 12, `12 MCP tools, got ${tools.join(', ')}`);
+  assert.equal(tools.length, 14, `14 MCP tools, got ${tools.join(', ')}`);
+  assert.ok(!tools.some(t => /publish/.test(t)), 'agents can save artifacts but have no tool to publish them');
   assert.match((await rpc('tools/call', { name: 'list_tasks', arguments: {} })).result.content[0].text, /Add a greeting/, 'MCP list_tasks reads the board');
   assert.match((await rpc('tools/call', { name: 'list_agents', arguments: {} })).result.content[0].text, new RegExp(shell.id), 'MCP list_agents sees the shell');
   const self = await rpc('tools/call', { name: 'get_project', arguments: {} }, { 'x-desk-session': shell.id });
@@ -195,7 +197,7 @@ try {
     }
     throw new Error(`session ${id} never exited`);
   };
-  const outputOf = async id => (await ok('GET', `/api/sessions/${id}/output?lines=40`)).text;
+  const outputOf = async id => (await ok('GET', `/api/sessions/${id}/output?lines=200`)).text.replace(/\n/g, '');
   const first = await ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: repo, name: 'Lifecycle chat' });
   await exited(first.id);
   const record = () => db.chats.find(c => c.id === first.chatId);
@@ -224,6 +226,55 @@ try {
 
   await ok('DELETE', `/api/chats/${first.chatId}`);
   assert.ok(!(await ok('GET', '/api/sessions')).some(x => x.chatId === first.chatId), 'removing a chat also closes its finished pane');
+
+  // The team: named specialists with their own instructions and model, who know about each other
+  assert.deepEqual((await ok('GET', '/api/specialists')).map(x => [x.name, x.model]), [['Christie', ''], ['Browner', ''], ['Scout', 'haiku']], 'three built-in specialists');
+  const scout = await ok('POST', '/api/sessions', { specialist: 'scout', project: repo, prompt: 'where is the README?' });
+  assert.deepEqual([scout.name, scout.agent, scout.model, scout.specialist.name, scout.asked], ['Scout', 'claude', 'haiku', 'Scout', 'where is the README?'], 'a specialist is Claude with their own model');
+  await exited(scout.id);
+  const scoutRan = await outputOf(scout.id);
+  assert.match(scoutRan, /--model haiku/, 'claude runs on the specialist\'s model');
+  assert.match(scoutRan, /You are Scout/, 'with their own instructions');
+  assert.match(scoutRan, /- Christie: Learning coach.*- Browner: Frontend.*- Scout \(you\)/, 'and knows who else is on the team');
+  const coach = await ok('POST', '/api/sessions', { specialist: 'Christie', model: 'opus', project: repo });
+  assert.equal(coach.model, 'opus', 'you can pick a model for one run');
+  await exited(coach.id);
+  const coachChat = db.chats.find(c => c.id === coach.chatId);
+  assert.deepEqual([coachChat.specialist, coachChat.model], ['christie', 'opus'], 'the chat remembers who and which model');
+  const coachAgain = await ok('POST', `/api/chats/${coach.chatId}/open`);
+  assert.deepEqual([coachAgain.session.specialist?.name, coachAgain.session.model], ['Christie', 'opus'], 'reopening the chat keeps both');
+  await exited(coachAgain.session.id);
+  assert.equal((await request('POST', '/api/sessions', { body: { specialist: 'nobody', project: repo } })).status, 500, 'unknown specialists are refused');
+  assert.equal((await request('POST', '/api/sessions', { body: { specialist: 'scout', model: 'gpt-9', project: repo } })).status, 500, 'only Claude models');
+
+  const rhea = await ok('POST', '/api/specialists', { name: 'Rhea', role: 'Code reviewer: finds bugs before you merge', model: 'opus', instructions: 'Review carefully.' });
+  assert.equal((await request('POST', '/api/specialists', { body: { name: 'rhea', role: 'Twin' } })).status, 409, 'names are unique');
+  assert.equal((await request('POST', '/api/specialists', { body: { name: 'Max', role: 'x', model: 'gpt-9' } })).status, 400, 'only known models');
+  await ok('PATCH', `/api/specialists/${rhea.id}`, { model: 'sonnet' });
+  const viaTool = async (name, args) => (await rpc('tools/call', { name, arguments: args }, { 'x-desk-session': shell.id })).result;
+  const teamNow = JSON.parse((await viaTool('list_team', {})).content[0].text);
+  assert.deepEqual(teamNow.map(x => [x.name, x.model]), [['Christie', 'default'], ['Browner', 'default'], ['Scout', 'haiku'], ['Rhea', 'sonnet']], 'agents see the whole team');
+  const started = JSON.parse((await viaTool('start_agent', { prompt: 'Review the README', specialist: 'Rhea', model: 'haiku' })).content[0].text);
+  assert.deepEqual([started.specialist.name, started.model], ['Rhea', 'haiku'], 'an agent can start a specialist on a chosen model');
+  await exited(started.id);
+  const listed = JSON.parse((await viaTool('list_agents', {})).content[0].text).find(x => x.id === started.id);
+  assert.deepEqual([listed.specialist, listed.model, listed.asked], ['Rhea, Code reviewer: finds bugs before you merge', 'haiku', 'Review the README'], 'agents see who the others are and what each was asked');
+
+  await ok('PATCH', '/api/settings', { agentsCanSpawn: false });
+  const refused = await viaTool('start_agent', { prompt: 'x', specialist: 'Scout' });
+  assert.ok(refused.isError && /turned off/.test(refused.content[0].text), 'with the setting off, agents cannot start agents');
+  const quiet = await ok('POST', '/api/sessions', { specialist: 'scout', project: repo });
+  await exited(quiet.id);
+  assert.match(await outputOf(quiet.id), /Starting other agents is turned off/, 'and they are told so');
+  assert.equal((await request('POST', '/api/sessions', { headers: { 'x-desk-session': shell.id }, body: { project: repo } })).status, 403, 'the server refuses, not just the tool');
+  assert.equal((await request('POST', `/api/tasks/${task.id}/start`, { headers: { 'x-desk-via': 'mcp' }, body: {} })).status, 403, 'tasks too');
+  assert.equal((await request('PATCH', '/api/settings', { headers: { 'x-desk-session': shell.id }, body: { agentsCanSpawn: true } })).status, 403, "an agent can't turn it back on");
+  assert.equal((await request('POST', '/api/specialists', { headers: { 'x-desk-via': 'mcp' }, body: { name: 'Mole', role: 'Spy' } })).status, 403, "or change the team");
+  assert.equal((await request('PATCH', '/api/settings', { body: { agentsCanSpawn: 'yes' } })).status, 400, 'the switch is true or false');
+  await ok('PATCH', '/api/settings', { agentsCanSpawn: true });
+  await ok('DELETE', `/api/specialists/${rhea.id}`);
+  assert.equal((await ok('GET', '/api/specialists')).length, 3);
+  for (const x of await ok('GET', '/api/sessions')) if (x.exited) await ok('DELETE', `/api/sessions/${x.id}`);
 
   // Past the limit, the chats used longest ago go first, however old the favourite is
   const now = Date.now();
@@ -296,6 +347,131 @@ try {
   assert.match(down.body.error, /not running/);
   fs.writeFileSync(path.join(process.env.TASKNOTES_DATA, 'port.json'), JSON.stringify({ port: notes.address()?.port ?? 1, pid: 2 ** 22 - 1 }));
   assert.equal((await request('GET', '/api/tasknotes')).status, 503, 'a port.json left by a dead Task Notes is not trusted, and no other port is tried');
+
+  // Artifacts: agents save pages, you view them (sandboxed, no token needed) and publish them to GitHub Pages
+  const tool = async (name, args) => {
+    const r = await rpc('tools/call', { name, arguments: args }, { 'x-desk-session': shell.id });
+    if (r.result.isError) throw new Error(r.result.content[0].text);
+    return JSON.parse(r.result.content[0].text);
+  };
+  const page = '<!doctype html><title>Report</title><h1>Q3 report</h1><script>document.title = "ran"</script>';
+  const art = await tool('save_artifact', { title: 'Q3 report', html: page });
+  assert.match(art.url, new RegExp(`/a/${art.id}$`), 'saving returns where to view it');
+  const viewed = await request('GET', `/a/${art.id}`, { token: '' });
+  assert.equal(viewed.status, 200, 'an artifact opens without the token, so your browser can show it');
+  assert.equal(viewed.body, page);
+  assert.match(viewed.headers['content-security-policy'], /^sandbox allow-scripts/, 'it runs sandboxed');
+  assert.ok(!viewed.headers['content-security-policy'].includes('allow-same-origin'), "so its scripts can't reach Agent Desk");
+  assert.equal(viewed.headers['referrer-policy'], 'no-referrer', 'its address is not leaked to the sites it loads');
+  assert.equal((await request('GET', `/a/${'x'.repeat(22)}`, { token: '' })).status, 404, 'unknown artifacts are not found');
+  assert.equal((await request('GET', '/api/artifacts', { token: '' })).status, 401, 'the list still needs the token');
+  fs.writeFileSync(path.join(repo, 'chart.html'), '<h1>chart v1</h1>');
+  const fromFile = await tool('save_artifact', { title: 'Chart', file: 'chart.html' });
+  assert.equal((await request('GET', `/a/${fromFile.id}`, { token: '' })).body, '<h1>chart v1</h1>', "a file is read from the agent's own folder");
+  fs.writeFileSync(path.join(repo, 'notes.txt'), 'x');
+  await assert.rejects(tool('save_artifact', { title: 'Notes', file: 'notes.txt' }), /Not an .html file/, 'only .html files are saved');
+  fs.symlinkSync(path.join(repo, 'notes.txt'), path.join(repo, 'sneaky.html'));
+  await assert.rejects(tool('save_artifact', { title: 'Sneaky', file: 'sneaky.html' }), /Not an .html file/, 'a link named .html pointing at another file is refused');
+  assert.equal((await tool('save_artifact', { id: art.id, title: 'Q3 report', html: '<h1>v2</h1>' })).id, art.id, 'saving with an id makes a new version');
+  assert.equal((await request('GET', `/a/${art.id}`, { token: '' })).body, '<h1>v2</h1>');
+  await ok('PATCH', `/api/artifacts/${fromFile.id}`, { title: 'Sales chart' });
+  assert.deepEqual((await ok('GET', '/api/artifacts')).map(a => a.title), ['Sales chart', 'Q3 report'], 'newest first, renamed');
+  await ok('DELETE', `/api/artifacts/${fromFile.id}`);
+  assert.equal((await request('GET', `/a/${fromFile.id}`, { token: '' })).status, 404, 'deleting removes it');
+
+  fs.writeFileSync(path.join(fakeBin, 'gh'), `#!/bin/sh
+case "$*" in
+  "auth status --hostname github.com --json hosts") echo '{"hosts":{"github.com":[{"login":"me","active":false,"state":"success"},{"login":"work","active":true,"state":"success"}]}}' ;;
+  "auth token --hostname github.com --user me") echo tok-me ;;
+  "auth token --hostname github.com --user work") echo tok-work ;;
+  *) echo "unexpected: gh $*" >&2; exit 1 ;;
+esac
+`, { mode: 0o755 });
+  const repos = { 'me/my-project': { files: { 'README.md': { sha: 's0' } }, pages: false } };
+  const seen = [];
+  const hub = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', c => (raw += c));
+    req.on('end', () => {
+      const u = new URL(req.url, 'http://x');
+      const body = raw ? JSON.parse(raw) : {};
+      seen.push({ method: req.method, path: u.pathname, auth: req.headers.authorization });
+      const send = (status, value) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(value));
+      if (req.method === 'POST' && u.pathname === '/user/repos') {
+        repos[`me/${body.name}`] = { files: { 'README.md': { sha: 's0' } }, pages: false };
+        return send(201, { name: body.name, default_branch: 'main' });
+      }
+      const m = /^\/repos\/([^/]+\/[^/]+)(?:\/(contents|pages)(?:\/(.+))?)?$/.exec(u.pathname);
+      const r = m && repos[m[1]];
+      if (!r) return send(404, { message: 'Not Found' });
+      if (!m[2]) return send(200, { default_branch: 'main' });
+      if (m[2] === 'pages') {
+        if (req.method === 'POST') r.pages = true;
+        return r.pages ? send(req.method === 'POST' ? 201 : 200, { html_url: `https://me.github.io/${m[1].split('/')[1]}/` }) : send(404, { message: 'Not Found' });
+      }
+      const f = r.files[m[3]];
+      if (req.method === 'GET') return f ? send(200, { sha: f.sha }) : send(404, { message: 'Not Found' });
+      if (f && body.sha !== f.sha) return send(409, { message: 'sha does not match' });
+      r.files[m[3]] = { sha: `s${seen.length}`, text: Buffer.from(body.content, 'base64').toString() };
+      return send(f ? 200 : 201, {});
+    });
+  });
+  await new Promise(resolve => hub.listen(0, '127.0.0.1', resolve));
+  process.env.AGENT_DESK_GITHUB_API = `http://127.0.0.1:${hub.address().port}`;
+  assert.deepEqual((await ok('GET', '/api/github/accounts')).map(a => a.login), ['me', 'work'], "lists the GitHub CLI's accounts");
+  const published = await ok('POST', `/api/artifacts/${art.id}/publish`, { account: 'me', repo: 'artifacts', slug: 'q3-report' });
+  assert.equal(published.published.url, 'https://me.github.io/artifacts/q3-report/', 'publishing says where it lives');
+  assert.equal(repos['me/artifacts'].files['q3-report/index.html'].text, '<h1>v2</h1>', 'the page is in the repo it made');
+  assert.ok(repos['me/artifacts'].files['.agent-desk'] && repos['me/artifacts'].files['.nojekyll'] && repos['me/artifacts'].pages, 'the repo is marked as made by Agent Desk, and Pages is on');
+  assert.ok(seen.every(r => r.auth === 'Bearer tok-me'), 'only the chosen account is used');
+  await tool('save_artifact', { id: art.id, title: 'Q3 report', html: '<h1>v3</h1>' });
+  await ok('POST', `/api/artifacts/${art.id}/publish`, { account: 'me', repo: 'artifacts', slug: 'q3-report' });
+  assert.equal(repos['me/artifacts'].files['q3-report/index.html'].text, '<h1>v3</h1>', 'publishing again replaces the page');
+  const before = seen.length;
+  const wrongRepo = await request('POST', `/api/artifacts/${art.id}/publish`, { body: { account: 'me', repo: 'my-project', slug: 'q3-report' } });
+  assert.equal(wrongRepo.status, 409, "it won't publish into a repo it didn't make");
+  assert.ok(!seen.slice(before).some(r => r.method === 'PUT'), 'and writes nothing there');
+  assert.equal((await request('POST', `/api/artifacts/${art.id}/publish`, { body: { account: 'stranger', repo: 'artifacts', slug: 'x' } })).status, 400, 'only signed-in accounts');
+  assert.equal((await request('POST', `/api/artifacts/${art.id}/publish`, { body: { account: 'me', repo: 'artifacts', slug: '../up' } })).status, 400, 'page names are plain');
+  await new Promise(resolve => hub.close(resolve));
+
+  // Updates: compare versions, check GitHub's latest release, download its .dmg (following GitHub links only)
+  assert.ok(isNewer('v1.10.0', '1.9.2') && isNewer('2.0.0', '1.99.99') && !isNewer('v1.0.0', '1.0.0') && !isNewer('v1.0.0-beta', '1.0.0'), 'version comparison');
+  let release = null;
+  const dmgBytes = Buffer.from('not really a dmg');
+  const gh = http.createServer((req, res) => {
+    const send = (status, body, headers = {}) => res.writeHead(status, { 'content-type': 'application/json', ...headers }).end(body === undefined ? '' : JSON.stringify(body));
+    if (req.url === '/repos/aahannp/agent-desk/releases/latest') return release ? send(200, release) : send(404, { message: 'Not Found' });
+    if (req.url === '/dl/agent.dmg') return send(302, undefined, { location: '/files/agent.dmg' });
+    if (req.url === '/files/agent.dmg') return res.writeHead(200, { 'content-length': dmgBytes.length }).end(dmgBytes);
+    if (req.url === '/dl/elsewhere.dmg') return send(302, undefined, { location: 'https://example.invalid/agent.dmg' });
+    send(404, {});
+  });
+  await new Promise(resolve => gh.listen(0, '127.0.0.1', resolve));
+  const hubUrl = `http://127.0.0.1:${gh.address().port}`;
+  process.env.AGENT_DESK_GITHUB_API = hubUrl;
+  assert.equal((await ok('GET', '/api/update?force=1')).none, true, 'no releases yet is not an error');
+  release = { tag_name: 'v99.0.0', body: 'Smoother scrolling', html_url: 'https://github.com/aahannp/agent-desk/releases/tag/v99.0.0',
+    assets: [{ name: 'Agent-Desk-99.0.0-arm64.dmg', browser_download_url: `${hubUrl}/dl/agent.dmg`, size: dmgBytes.length }] };
+  const up = await ok('GET', '/api/update?force=1');
+  assert.deepEqual([up.newer, up.latest, up.notes, up.asset.name], [true, 'v99.0.0', 'Smoother scrolling', 'Agent-Desk-99.0.0-arm64.dmg'], 'a newer release is found');
+  assert.equal((await request('POST', '/api/update/download', { headers: { 'x-desk-via': 'mcp' } })).status, 403, "agents can't download updates");
+  const realHome = process.env.HOME;
+  process.env.HOME = tmp;
+  fs.mkdirSync(path.join(tmp, 'Downloads'));
+  try {
+    const got = await ok('POST', '/api/update/download');
+    assert.equal(got.path, path.join(tmp, 'Downloads', 'Agent-Desk-99.0.0-arm64.dmg'), 'it lands in Downloads');
+    assert.deepEqual(fs.readFileSync(got.path), dmgBytes, 'following the redirect, the whole file');
+    release.assets[0].browser_download_url = `${hubUrl}/dl/elsewhere.dmg`;
+    await ok('GET', '/api/update?force=1');
+    const stopped = await request('POST', '/api/update/download');
+    assert.equal(stopped.status, 502, 'a download that leaves GitHub is stopped');
+    assert.match(stopped.body.error, /somewhere other than GitHub/);
+  } finally {
+    process.env.HOME = realHome;
+    await new Promise(resolve => gh.close(resolve));
+  }
 
   await ok('DELETE', `/api/sessions/${shell.id}`);
   assert.deepEqual(await ok('GET', '/api/sessions'), [], 'no sessions left');

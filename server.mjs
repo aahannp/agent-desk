@@ -12,6 +12,9 @@ import * as S from './lib/sessions.mjs';
 import * as G from './lib/git.mjs';
 import { mcpTools, handleMcp } from './lib/mcp.mjs';
 import * as TN from './lib/tasknotes.mjs';
+import * as A from './lib/artifacts.mjs';
+import * as T from './lib/team.mjs';
+import * as U from './lib/update.mjs';
 
 const DIR = import.meta.dirname;
 const MIME = {
@@ -23,6 +26,8 @@ const VENDOR = {
   'xterm.js': '@xterm/xterm/lib/xterm.js',
   'xterm.css': '@xterm/xterm/css/xterm.css',
   'addon-fit.js': '@xterm/addon-fit/lib/addon-fit.js',
+  'addon-webgl.js': '@xterm/addon-webgl/lib/addon-webgl.js',
+  'addon-serialize.js': '@xterm/addon-serialize/lib/addon-serialize.js',
 };
 const STATUSES = ['todo', 'doing', 'review', 'done'];
 const PERMISSION_MODES = ['default', 'acceptEdits', 'auto', 'plan'];
@@ -60,6 +65,14 @@ const isDir = p => fs.statSync(p, { throwIfNoEntry: false })?.isDirectory() ?? f
 const findTask = id => db.tasks.find(t => t.id === id) ?? (() => { throw fail(404, 'No such task'); })();
 const findSession = id => S.sessions.get(id) ?? (() => { throw fail(404, 'No such session'); })();
 const caller = req => S.sessions.get(req.headers['x-desk-session']);
+// Requests an agent makes through its tools. They may not change settings or the team, and may only start
+// agents while Settings allows it. (An agent runs as you and could reach the API some other way; this keeps
+// the tools, the way agents actually work, inside the lines you set.)
+const fromAgent = req => req.headers['x-desk-via'] === 'mcp' || Boolean(req.headers['x-desk-session']);
+const notFromAgent = (req, what) => { if (fromAgent(req)) throw fail(403, `Agents can't ${what}. Ask the user to do it in Agent Desk.`); };
+const mayStartAgents = req => {
+  if (fromAgent(req) && db.settings.agentsCanSpawn === false) throw fail(403, 'Starting other agents is turned off in Agent Desk settings.');
+};
 const projectFor = (req, value) => {
   const project = value ? expand(value) : caller(req)?.project || db.settings.lastProject;
   if (!project) throw fail(400, 'No project selected');
@@ -98,7 +111,7 @@ function route(method, pattern, handler) {
 
 route('GET', '/api/info', () => ({
   url: S.serverUrl(), token: TOKEN, mcpUrl: `${S.serverUrl()}/mcp`,
-  electron: Boolean(process.versions.electron), voice: Boolean(VOICE_HELPER), home: os.homedir(),
+  electron: Boolean(process.versions.electron), voice: Boolean(VOICE_HELPER), home: os.homedir(), version: U.current(),
 }));
 
 // Projects
@@ -122,9 +135,11 @@ route('DELETE', '/api/projects', ({ query }) => {
 
 // Settings
 route('GET', '/api/settings', () => db.settings);
-route('PATCH', '/api/settings', ({ body }) => {
+route('PATCH', '/api/settings', ({ req, body }) => {
+  notFromAgent(req, 'change Agent Desk\'s settings');
   for (const [key, value] of Object.entries(body)) {
     if (!(key in db.settings)) continue;
+    if (['agentsCanSpawn', 'fancyCursor', 'worktreeByDefault'].includes(key) && typeof value !== 'boolean') throw fail(400, `${key} is true or false`);
     if (key === 'permissionMode' && !PERMISSION_MODES.includes(value)) throw fail(400, 'Unknown permission mode');
     if (key === 'browserPanes') {
       const ok = value && typeof value === 'object' && Object.values(value).every(list => Array.isArray(list)
@@ -141,10 +156,11 @@ route('PATCH', '/api/settings', ({ body }) => {
 route('GET', '/api/agents', () => S.availableAgents());
 route('GET', '/api/sessions', () => [...S.sessions.values()].map(S.info));
 route('POST', '/api/sessions', async ({ req, body }) => {
-  const { kind = 'agent', agent = db.settings.defaultAgent, prompt = '', name, worktree = false, role = null } = body;
+  const { kind = 'agent', agent = db.settings.defaultAgent, prompt = '', name, worktree = false, role = null, specialist = null, model = '' } = body;
+  if (kind === 'agent') mayStartAgents(req);
   const project = projectFor(req, body.project);
   if (!isDir(project)) throw fail(400, `Not a folder: ${project}`);
-  return S.info(await S.createSession({ project, kind, agent, prompt, name, worktree, role }));
+  return S.info(await S.createSession({ project, kind, agent, prompt, name, worktree, role, specialist, model }));
 });
 route('DELETE', '/api/sessions/:id', ({ params }) => (S.stop(findSession(params.id)), {}));
 
@@ -214,6 +230,48 @@ function addTask(req, body) {
 }
 route('POST', '/api/tasks', ({ req, body }) => addTask(req, { ...body, tasknotes: null }));
 
+// Updates: is there a newer release on GitHub, and download it
+route('GET', '/api/update', ({ query }) => U.check(query.get('force') === '1'));
+route('POST', '/api/update/download', ({ req }) => (notFromAgent(req, 'download updates'), U.download()));
+route('POST', '/api/update/show', () => U.reveal());
+
+// The team: named specialists with their own instructions and model
+route('GET', '/api/specialists', () => T.list());
+route('POST', '/api/specialists', ({ req, body }) => (notFromAgent(req, 'change the team'), T.add(body)));
+route('PATCH', '/api/specialists/:id', ({ req, params, body }) => (notFromAgent(req, 'change the team'), T.update(params.id, body)));
+route('DELETE', '/api/specialists/:id', ({ req, params }) => (notFromAgent(req, 'change the team'), T.remove(params.id), {}));
+
+// Artifacts: pages and reports agents saved. You view them, open them in your browser and publish them.
+const findArtifact = id => A.find(id) ?? (() => { throw fail(404, 'No such artifact'); })();
+route('GET', '/api/artifacts', () => db.artifacts);
+route('POST', '/api/artifacts', ({ req, body }) => {
+  let html = body.html;
+  if (body.file !== undefined) { // an .html file the agent wrote, relative to its own folder
+    const from = caller(req)?.cwd || projectFor(req, body.project);
+    // The real file, so a link named page.html can't stand in for something else. It isn't limited to the
+    // agent's folder: agents often write pages to scratch folders, and the token already reads any file.
+    const file = (() => { try { return fs.realpathSync(path.resolve(from, String(body.file).replace(/^~(?=$|\/)/, os.homedir()))); } catch { return ''; } })();
+    const stat = file && fs.statSync(file, { throwIfNoEntry: false });
+    if (!/\.html?$/i.test(file) || !stat?.isFile()) throw fail(400, `Not an .html file: ${file}`);
+    if (stat.size > 10 * 1024 * 1024) throw fail(413, 'Artifacts can be up to 10 MB');
+    html = fs.readFileSync(file, 'utf8');
+  }
+  const project = caller(req)?.project || (body.project ? expand(body.project) : db.settings.lastProject) || null;
+  const a = A.save({ id: body.id, title: body.title, html, project, by: caller(req)?.name || 'You' });
+  return { ...a, url: `${S.serverUrl()}/a/${a.id}` };
+});
+route('PATCH', '/api/artifacts/:id', ({ params, body }) => {
+  const a = findArtifact(params.id);
+  if (!String(body.title || '').trim()) throw fail(400, 'Give it a name');
+  a.title = body.title.trim().slice(0, 120);
+  changed('artifacts');
+  return a;
+});
+route('DELETE', '/api/artifacts/:id', ({ params }) => (A.remove(findArtifact(params.id)), {})); // a published copy stays on GitHub
+route('GET', '/api/github/accounts', () => A.accounts());
+route('POST', '/api/artifacts/:id/publish', ({ params, body }) =>
+  A.publish(findArtifact(params.id), { account: String(body.account || ''), repo: String(body.repo || ''), slug: String(body.slug || '') }));
+
 // Task Notes, the other app on this Mac: its open tasks, and bringing one onto this board
 route('GET', '/api/tasknotes', () => TN.openTasks());
 route('POST', '/api/tasknotes/import', async ({ req, body }) =>
@@ -244,14 +302,15 @@ route('POST', '/api/tasks/:id/comments', ({ req, params, body }) => {
   changed('tasks');
   return task;
 });
-route('POST', '/api/tasks/:id/start', async ({ params, body }) => {
+route('POST', '/api/tasks/:id/start', async ({ req, params, body }) => {
+  mayStartAgents(req);
   const task = findTask(params.id);
   const running = task.sessionId && S.sessions.get(task.sessionId);
   if (running && !running.exited) throw fail(409, 'This task already has a running agent');
   const agent = body.agent || task.agent || db.settings.defaultAgent;
   const worktree = body.worktree ?? task.worktree;
   const prompt = task.description ? `${task.title}\n\n${task.description}` : task.title;
-  const s = await S.createSession({ project: task.project, agent, prompt, name: task.title, taskId: task.id, worktree });
+  const s = await S.createSession({ project: task.project, agent, prompt, name: task.title, taskId: task.id, worktree, specialist: body.specialist || null, model: body.model || '' });
   Object.assign(task, { status: 'doing', sessionId: s.id, agent, worktree, branch: s.worktree?.branch ?? null, worktreePath: s.worktree?.path ?? null, updatedAt: Date.now() });
   changed('tasks');
   return { task, session: S.info(s) };
@@ -413,6 +472,20 @@ async function respond(req, res) {
   if (!sameSite(req)) return json(403, { error: 'Forbidden' });
   if (url.pathname === '/mcp') return hasToken(req, url) ? mcp(req, res, json) : json(401, { error: 'Missing or wrong Agent Desk token' });
 
+  // An artifact opens without the token, so your own browser can show it: its random id is the key. It runs
+  // sandboxed in an origin of its own, so its scripts can't reach Agent Desk, and it sends no Referer that
+  // would leak its address to the sites it loads from.
+  const artifact = req.method === 'GET' && /^\/a\/([A-Za-z0-9_-]{22})\/?$/.exec(url.pathname);
+  if (artifact) {
+    const a = A.find(artifact[1]);
+    if (!a) return json(404, { error: 'No such artifact' });
+    res.writeHead(200, {
+      'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer',
+      'content-security-policy': 'sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms allow-modals allow-downloads',
+    });
+    return res.end(A.read(a));
+  }
+
   if (!url.pathname.startsWith('/api/')) {
     if (url.pathname === '/' && url.searchParams.has('t')) { // trade the link's secret for a cookie, then drop it from the address bar
       if (!hasToken(req, url)) return res.writeHead(302, { location: '/' }).end();
@@ -463,7 +536,7 @@ async function mcp(req, res, json) {
   const session = String(req.headers['x-desk-session'] || '');
   const api = async (method, apiPath, payload) => {
     const r = await fetch(`${S.serverUrl()}${apiPath}`, {
-      method, headers: { 'content-type': 'application/json', 'x-desk-token': TOKEN, 'x-desk-session': session },
+      method, headers: { 'content-type': 'application/json', 'x-desk-token': TOKEN, 'x-desk-session': session, 'x-desk-via': 'mcp' },
       body: payload === undefined ? undefined : JSON.stringify(payload),
     });
     const data = await r.json().catch(() => ({}));
@@ -494,6 +567,7 @@ export async function start({ port = Number(process.env.PORT) || 4747, dataDir =
   fs.mkdirSync(dataDir, { recursive: true });
   load(dataDir);
   S.forgetRunningChats();
+  A.setDir(dataDir);
   TN.watch();
   VOICE_HELPER = [voiceHelper, path.join(DIR, 'native', 'build', 'desk-listen')].find(p => p && fs.existsSync(p)) ?? null;
   // The secret is kept in a file only you can read, so links and MCP setups keep working across restarts.

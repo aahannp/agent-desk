@@ -1,6 +1,6 @@
 // Shared by every view: live state, API calls, a tiny DOM builder, icons, toasts, menus and dialogs.
 
-export const state = { project: '', projects: [], tasks: [], sessions: [], chats: [], agents: [], settings: {}, info: {}, termTheme: {}, theme: null };
+export const state = { project: '', projects: [], tasks: [], sessions: [], chats: [], artifacts: [], specialists: [], agents: [], settings: {}, info: {}, termTheme: {}, theme: null };
 
 // Views register what they can do here, so they can call each other without importing each other.
 export const actions = {};
@@ -11,6 +11,7 @@ const listeners = new Map();
 export function on(type, fn) {
   if (!listeners.has(type)) listeners.set(type, new Set());
   listeners.get(type).add(fn);
+  return () => listeners.get(type).delete(fn);
 }
 export const emit = (type, detail) => listeners.get(type)?.forEach(fn => fn(detail));
 
@@ -180,7 +181,11 @@ export function menu(anchor, items, { align = 'left' } = {}) {
 }
 
 // A small coloured tile that says what kind of agent a session is.
+// A specialist gets their initial on a colour of their own; the colour follows the name, so it never changes.
+const TEAM_COLORS = ['#e8590c', '#0ca678', '#7048e8', '#1c7ed6', '#d6336c', '#f59f00', '#0b7285', '#5c940d'];
+export const teamColor = name => TEAM_COLORS[[...String(name)].reduce((n, ch) => (n * 31 + ch.codePointAt(0)) >>> 0, 7) % TEAM_COLORS.length];
 export function avatar(s, small = false) {
+  if (s.specialist) return h('span', { class: `avatar${small ? ' sm' : ''}`, style: { background: teamColor(s.specialist.name) }, title: s.specialist.role }, s.specialist.name.slice(0, 1).toUpperCase());
   const kind = s.kind === 'browser' ? 'browser' : s.role === 'lead' ? 'lead' : s.kind === 'shell' ? 'shell' : s.agent;
   const letters = { claude: 'C', codex: 'Cx', gemini: 'G', cursor: 'Cu' };
   const glyph = { lead: 'star', shell: 'terminal', browser: 'globe' }[kind];

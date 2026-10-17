@@ -66,7 +66,9 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .side-top { height: 58px; display: flex; align-items: center; padding: 0 6px; -webkit-app-region: drag; }
 .is-app .side-top { padding-left: 80px; }
 .brand { display: flex; align-items: center; gap: 10px; font: 650 14.5px var(--display); letter-spacing: -.02em; }
-.brand .ver { font: 600 9px var(--mono); letter-spacing: .08em; color: var(--dim); border: 1px solid var(--hair-strong); border-radius: 99px; padding: 1px 6px; }
+.brand .ver { font: 600 9px var(--mono); letter-spacing: .08em; color: var(--dim); background: none; border: 1px solid var(--hair-strong); border-radius: 99px; padding: 1px 6px; -webkit-app-region: no-drag; }
+.brand .ver:hover { color: var(--text); border-color: var(--dim); }
+.brand .ver.new { color: #fff; background: var(--accent); border-color: transparent; }
 .logo { width: 26px; height: 26px; }
 
 .project-switch { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 9px 10px; margin-bottom: 14px; border-radius: 12px;
@@ -298,8 +300,10 @@ textarea.input { resize: vertical; min-height: 84px; line-height: 1.55; }
 /* content-box: xterm's fit addon reads this box's CSS width and height as the space to fill, so the padding must not be
    counted in them, or the last column slides under the scrollbar and the bottom row past the edge. */
 .term-host { flex: 1; min-width: 0; padding: 10px 6px 6px 12px; box-sizing: content-box; }
-.term-host .xterm { height: 100%; }
-.term-host .xterm-viewport { scrollbar-width: thin; }
+.term-host .xterm { height: 100%; overflow: hidden; } /* clips rows sliding past the top and bottom while scrolling */
+.term-peek { position: absolute; left: 0; right: 0; visibility: hidden; pointer-events: none; }
+.term-peek .xterm { height: auto; }
+.term-host .xterm-viewport { scrollbar-width: thin; background-color: transparent; } /* xterm.css paints it black, and it shows below the last row */
 /* Drop markers while dragging a chat or a pane into the grid. */
 .pane.drop-before { box-shadow: inset 4px 0 0 var(--accent), 0 0 0 1px var(--accent); }
 .pane.drop-after { box-shadow: inset -4px 0 0 var(--accent), 0 0 0 1px var(--accent); }
@@ -440,6 +444,30 @@ textarea.input { resize: vertical; min-height: 84px; line-height: 1.55; }
 .thumb:hover { border-color: var(--accent); transform: translateY(-2px); }
 .thumb img { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; background: var(--bg); }
 .thumb span { display: block; padding: 7px 10px; font: 10.5px var(--mono); color: var(--dim); }
+
+.specialist-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.specialist-head p { margin: 2px 0 0; font-size: 12.5px; }
+
+/* ---------- Updates ---------- */
+.update-rows { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin-bottom: 12px; font-size: 13px; }
+.update-rows span { color: var(--dim); }
+.update-notes { max-height: 200px; overflow: auto; white-space: pre-wrap; font-size: 12.5px; line-height: 1.55; color: var(--dim); padding: 10px 12px; border-radius: 10px; background: var(--softer); border: 1px solid var(--hair); margin-bottom: 12px; }
+.update-bar { height: 6px; border-radius: 3px; background: var(--softer); overflow: hidden; margin: 4px 0 6px; }
+.update-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+.update-note { font-size: 12.5px; line-height: 1.5; }
+.update-acts { margin-top: 10px; }
+
+/* ---------- Artifacts ---------- */
+.arts { position: absolute; inset: 0; display: grid; grid-template-columns: 290px 1fr; padding: 12px; gap: 12px; }
+.art-list { overflow: auto; display: flex; flex-direction: column; gap: 6px; }
+.art-item { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 11px 12px; border-radius: 11px; border: 1px solid var(--hair); background: var(--softer); color: var(--text); text-align: left; transition: border-color .2s, background .2s; }
+.art-item:hover { border-color: var(--hair-strong); }
+.art-item.on { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: var(--accent-soft); }
+.art-title { font-size: 13px; font-weight: 600; line-height: 1.35; }
+.art-meta { font-size: 11.5px; color: var(--dim); }
+.art-stage { position: relative; min-width: 0; border-radius: 14px; overflow: hidden; border: 1px solid var(--hair); background: var(--panel); }
+.art-frame { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
+.publish-url { margin: 4px 0 0; padding: 9px 11px; border-radius: 9px; background: var(--softer); border: 1px solid var(--hair); font-size: 12px; overflow-wrap: anywhere; }
 
 /* ---------- Settings ---------- */
 .settings { position: absolute; inset: 0; overflow: auto; padding: 26px 28px 60px; }

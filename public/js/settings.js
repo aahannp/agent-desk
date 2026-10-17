@@ -1,5 +1,7 @@
 // Settings view: themes, agents and their guardrails, voice, notifications, and the MCP setup for your own Claude Code.
-import { state, h, icon, avatar, on, actions, copy } from './ui.js';
+import { state, api, h, icon, avatar, on, actions, copy, guard, modal, toast, confirmDialog } from './ui.js';
+import { modelSelect } from './agents.js';
+import { openUpdates } from './updates.js';
 import { THEMES } from './themes.js';
 
 const PERMISSIONS = [
@@ -15,7 +17,7 @@ let root;
 export function mount(el) {
   root = h('div', { class: 'settings' });
   el.append(root);
-  on('settings', () => actions.currentView() === 'settings' && render());
+  for (const kind of ['settings', 'specialists']) on(kind, () => actions.currentView() === 'settings' && render());
 }
 export const show = () => render();
 
@@ -56,6 +58,18 @@ function render() {
       setting('Give new tasks their own git worktree', 'Agents running at the same time then never edit the same files. You merge their work from Review.',
         h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.worktreeByDefault, onChange: e => set({ worktreeByDefault: e.target.checked }) })))),
 
+    section('Team', 'Specialists are Claude agents with a name, one area of expertise, their own instructions and, if you like, a model. Every agent knows who is on the team, so it can hand a job to the right one. Start one from the New Claude Code menu.',
+      h('div', { class: 'agent-list' }, state.specialists.map(x => h('div', { class: 'agent-row' },
+        avatar({ specialist: x }), h('div', { class: 'grow' }, h('b', {}, x.name), h('div', { class: 'muted', style: { fontSize: '12px' } }, x.role)),
+        h('span', { class: 'chip' }, x.model || 'Default model'),
+        h('button', { class: 'btn xs', onClick: () => editSpecialist(x) }, 'Edit'),
+        h('button', { class: 'icon-btn', title: `Remove ${x.name}`, onClick: () => removeSpecialist(x) }, icon('trash', 14))))),
+      h('div', { class: 'row', style: { margin: '12px 0 4px' } }, h('button', { class: 'btn sm', onClick: () => editSpecialist() }, icon('plus', 13), 'Add a specialist')),
+      setting('Agents can start other agents', s.agentsCanSpawn !== false
+        ? 'On: an agent can start a specialist or a worker, on a model it picks, for part of its job. A lead agent needs this.'
+        : 'Off: agents can see the team but only you start agents.',
+      h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.agentsCanSpawn !== false, onChange: e => set({ agentsCanSpawn: e.target.checked }) })))),
+
     section('Voice', state.info.voice ? 'On-device speech recognition from macOS. Nothing you say leaves your Mac.'
       : window.webkitSpeechRecognition ? 'Uses your browser\'s speech recognition, which sends audio to the browser maker. The Mac app does it on-device instead.'
         : 'Voice needs the Agent Desk Mac app or Chrome. macOS Dictation (press Fn twice) also works in any pane.',
@@ -69,18 +83,51 @@ function render() {
           ? h('button', { class: 'btn sm', onClick: async () => { await Notification.requestPermission(); render(); } }, 'Turn on')
           : h('span', { class: 'chip', style: { color: 'var(--ok)' } }, icon('check', 11), 'On'))),
 
-    section('Use the board from your own Claude Code', 'Agents inside Agent Desk already have these tools. Run this once in a terminal to give the same 12 tools (tasks, agents, diffs) to Claude Code everywhere else.',
+    section('Use the board from your own Claude Code', 'Agents inside Agent Desk already have these tools. Run this once in a terminal to give the same tools (tasks, agents, the team, artifacts, diffs) to Claude Code everywhere else.',
       h('div', { class: 'codeblock' }, mcpCommand, h('button', { class: 'icon-btn', title: 'Copy', onClick: () => copy(mcpCommand) }, icon('copy', 14))),
       h('p', { class: 'muted', style: { margin: '10px 0 0', fontSize: '12px' } }, 'The command includes this Agent Desk\'s secret, so don\'t share it.')),
 
     section('Keyboard', null, h('div', { class: 'keys' }, [
-      ['Command palette', '⌘K'], ['Voice input', '⌘⇧M'], ['Switch views', '⌘1 – ⌘6'], ['Save file', '⌘S'],
+      ['Command palette', '⌘K'], ['Voice input', '⌘⇧M'], ['Switch views', '⌘1 – ⌘7'], ['Save file', '⌘S'],
       ['Maximise a pane', 'double-click its header'], ['Close dialogs', 'Esc'],
     ].map(([what, keys]) => h('div', {}, what, h('kbd', {}, keys))))),
 
-    section('About', null, h('p', { class: 'muted', style: { margin: 0 } },
-      `Agent Desk ${state.info.electron ? 'Mac app' : 'in the browser'} · server ${state.info.url}`))));
+    section('About', null, h('div', { class: 'row' }, h('p', { class: 'muted grow', style: { margin: 0 } },
+      `Agent Desk ${state.info.version ? `v${state.info.version} ` : ''}${state.info.electron ? 'Mac app' : 'in the browser'} · server ${state.info.url}`),
+    h('button', { class: 'btn sm', onClick: () => openUpdates() }, icon('refresh', 13), 'Check for updates')))));
 }
 
 // The Mac app grants notifications without a prompt; in a browser you turn them on above.
 if ('Notification' in window && Notification.permission === 'default' && navigator.userAgent.includes('Electron')) Notification.requestPermission();
+
+// Adding or changing a specialist: a name, what they're good at, their instructions and their model.
+function editSpecialist(x = null) {
+  const name = h('input', { class: 'input', value: x?.name ?? '', placeholder: 'A name, like Rhea' });
+  const role = h('input', { class: 'input', value: x?.role ?? '', placeholder: 'What they are good at, like: Code reviewer: finds bugs before you merge' });
+  const model = modelSelect(x?.model ?? '');
+  model.options[0].textContent = 'Your Claude Code default';
+  const instructions = h('textarea', { class: 'input', rows: 9, value: x?.instructions ?? '', placeholder: 'How they work: what to focus on, what to avoid, how to report back.' });
+  modal({
+    title: x ? `Edit ${x.name}` : 'Add a specialist', width: 600,
+    body: [
+      h('div', { class: 'row' }, h('label', { class: 'field', style: { flex: 1 } }, h('span', {}, 'Name'), name), h('label', { class: 'field', style: { flex: 1 } }, h('span', {}, 'Model'), model)),
+      h('label', { class: 'field' }, h('span', {}, 'Good at'), role),
+      h('label', { class: 'field' }, h('span', {}, 'Instructions'), instructions),
+    ],
+    actions: [{ label: 'Cancel' }, { label: x ? 'Save' : 'Add', primary: true, onClick: async () => {
+      try {
+        const body = { name: name.value, role: role.value, model: model.value, instructions: instructions.value };
+        await api(x ? 'PATCH' : 'POST', x ? `/api/specialists/${x.id}` : '/api/specialists', body);
+      } catch (e) {
+        toast(e.message, 'error');
+        return false;
+      }
+    } }],
+  });
+}
+
+const removeSpecialist = guard(async x => {
+  if (await confirmDialog(`Remove ${x.name}?`, `${x.name} leaves the team. Their past chats stay in the sidebar.`, { label: 'Remove', danger: true })) {
+    await api('DELETE', `/api/specialists/${x.id}`);
+  }
+});

@@ -1,5 +1,5 @@
 // Agents view: every agent, shell and browser pane for the project, tiled in a grid of real terminals.
-import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, menu, modal, confirmDialog, agentLabel, shortBranch, baseName, copy, chatTitle, DRAG, STATUS_LABEL } from './ui.js';
+import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, commands, menu, modal, confirmDialog, agentLabel, shortBranch, baseName, copy, chatTitle, DRAG, STATUS_LABEL } from './ui.js';
 
 const MONO = '"JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace';
 const panes = new Map(); // id -> pane (a session's terminal, or a browser)
@@ -44,6 +44,8 @@ export function toolbar() {
         ...installed.map(a => ({ label: a.label, icon: 'terminal', onClick: () => newSession({ agent: a.id }) })),
         { heading: 'In its own git worktree' },
         ...installed.map(a => ({ label: a.label, icon: 'branch', onClick: () => newSession({ agent: a.id, worktree: true }) })),
+        ...(claudeReady() && state.specialists.length ? [{ heading: 'Specialists' },
+          ...state.specialists.map(x => ({ label: x.name, sub: x.role.split(':')[0], icon: 'sparkles', onClick: () => startSpecialist(x) }))] : []),
         'sep',
         { label: 'Shell', icon: 'terminal', onClick: () => newSession({ kind: 'shell' }) },
         { label: 'Browser pane', icon: 'globe', onClick: () => newBrowser() },
@@ -76,6 +78,37 @@ actions.openChat = guard(async (chatId, place = null) => {
   saveOrder();
   layout();
   focusSession(session.id);
+});
+
+// ---------- Specialists ----------
+const claudeReady = () => state.agents.some(a => a.id === 'claude' && a.installed);
+const MODELS = [['', 'Their usual model'], ['opus', 'Opus: the most capable'], ['sonnet', 'Sonnet: everyday work'], ['haiku', 'Haiku: quick and cheap']];
+export const modelSelect = value => h('select', { class: 'input' }, MODELS.map(([id, label]) => h('option', { value: id, selected: id === value }, label)));
+
+// Starts a specialist. The first message is optional: Christie, say, starts by asking what you want to learn.
+function startSpecialist(x) {
+  if (!state.project) return toast('Add a project folder first', 'error');
+  const ask = h('textarea', { class: 'input', rows: 4, placeholder: `What should ${x.name} help with? You can leave this empty and tell them in the pane.` });
+  const model = modelSelect('');
+  const worktree = h('input', { type: 'checkbox' });
+  modal({
+    title: `Start ${x.name}`, width: 560,
+    body: [
+      h('div', { class: 'specialist-head' }, avatar({ specialist: x }), h('div', {}, h('b', {}, x.name), h('p', { class: 'muted' }, x.role))),
+      h('label', { class: 'field' }, h('span', {}, 'First message'), ask),
+      h('div', { class: 'row', style: { marginBottom: '8px' } },
+        h('label', { class: 'field', style: { flex: 1, margin: 0 } }, h('span', {}, `Model${x.model ? ` (usually ${x.model})` : ''}`), model),
+        h('label', { class: 'toggle', style: { marginTop: '18px' } }, worktree, 'Own git worktree')),
+    ],
+    actions: [{ label: 'Cancel' }, { label: `Start ${x.name}`, primary: true, onClick: () =>
+      newSession({ agent: 'claude', specialist: x.id, model: model.value, prompt: ask.value.trim(), worktree: worktree.checked }) }],
+  });
+}
+actions.startSpecialist = startSpecialist;
+on('specialists', () => {
+  for (const x of state.specialists) {
+    if (!commands.some(c => c.specialist === x.id)) command(`Start ${x.name}`, () => startSpecialist(state.specialists.find(y => y.id === x.id) ?? x), { icon: 'sparkles', specialist: x.id });
+  }
 });
 
 actions.startLead = () => {
@@ -189,11 +222,72 @@ function retheme() {
     if (p.kind !== 'term') continue;
     p.term.options.theme = state.termTheme;
     p.term.options.fontSize = Number(state.settings.fontSize) || 13;
+    Object.assign(p.peek.options, lookOf(p.term));
     p.fit();
   }
 }
 
 // ---------- Terminal panes ----------
+// Scroll like Terminal and iTerm: smoothly, pixel by pixel, exactly as far as the trackpad or wheel says,
+// momentum included. xterm only draws whole rows, so between rows the text is shifted up by the leftover
+// pixels, and a one-row "peek" below it (a copy of the next line, colours and all) slides into view.
+// Full-screen programs (vim, less) and programs that read the mouse get the wheel from xterm as before.
+function smoothScroll(term, host) {
+  const screen = host.querySelector('.xterm-screen');
+  const peekEl = h('div', { class: 'term-peek', 'aria-hidden': 'true' });
+  screen.append(peekEl);
+  const peek = new Terminal({ ...lookOf(term), rows: 1, cols: term.cols, scrollback: 0, disableStdin: true, cursorInactiveStyle: 'none' });
+  peek.open(peekEl);
+  const copy = new SerializeAddon.SerializeAddon();
+  term.loadAddon(copy);
+
+  let f = 0; // pixels past the top row on screen, 0 up to one row
+  let top = -1; // the row we put at the top, so we can tell our scrolling from xterm's own
+  let peekRow = -1;
+  const rowPx = () => screen.offsetHeight / term.rows;
+  const show = () => {
+    const below = term.buffer.active.viewportY + term.rows;
+    const visible = f > 0 && below < term.buffer.active.length;
+    screen.style.transform = f ? `translateY(${-f}px)` : '';
+    peekEl.style.top = `${screen.offsetHeight}px`;
+    peekEl.style.visibility = visible ? 'visible' : 'hidden';
+    if (visible && below !== peekRow) {
+      peekRow = below;
+      peek.reset();
+      peek.write(`\x1b[?25l${copy.serialize({ range: { start: below, end: below } })}`);
+    }
+  };
+  // New output at the bottom, typing, a resize or a full-screen program moves the view itself: line up again.
+  const settle = () => {
+    if (term.buffer.active.viewportY === top && term.buffer.active.type === 'normal') return;
+    f = 0;
+    peekRow = -1;
+    show();
+  };
+  term.onScroll(settle);
+  term.buffer.onBufferChange(settle);
+  term.onResize(({ cols }) => { peek.resize(cols, 1); peekRow = -1; settle(); });
+
+  host.addEventListener('wheel', e => {
+    if (e.ctrlKey || !e.deltaY || term.buffer.active.type !== 'normal' || term.modes.mouseTrackingMode !== 'none') return;
+    e.preventDefault();
+    e.stopPropagation(); // in the capture phase, so xterm's own handler never sees it
+    const ch = rowPx();
+    if (!ch) return;
+    const buf = term.buffer.active;
+    const px = e.deltaMode === 1 ? e.deltaY * ch : e.deltaMode === 2 ? e.deltaY * ch * term.rows : e.deltaY;
+    const pos = Math.max(0, Math.min(buf.viewportY * ch + f + px, buf.baseY * ch));
+    top = Math.floor(pos / ch);
+    f = pos - top * ch;
+    if (top !== buf.viewportY) term.scrollToLine(top);
+    show();
+  }, { capture: true, passive: false });
+  return peek;
+}
+
+// What a terminal looks like, shared with its peek row so the two match.
+const lookOf = term => Object.fromEntries(['fontFamily', 'fontSize', 'lineHeight', 'letterSpacing', 'fontWeight', 'fontWeightBold', 'theme'].map(k => [k, term.options[k]]));
+
 function terminalPane(s) {
   const term = new Terminal({
     fontFamily: MONO, fontSize: Number(state.settings.fontSize) || 13, lineHeight: 1.2, cursorBlink: true,
@@ -222,6 +316,14 @@ function terminalPane(s) {
   const el = h('div', { class: 'pane', 'data-id': id }, head, h('div', { class: 'pane-body' }, host, blocks), exitBar);
   grid.append(el);
   term.open(host);
+  // Draw on the GPU, as VS Code's terminal does: far less work per frame than the default renderer, which
+  // rebuilds every row as page text on each scroll step. A page gets about 16 WebGL contexts, so a pane
+  // that loses its context (or a Mac without WebGL) falls back to the default renderer and keeps working.
+  try {
+    const webgl = new WebglAddon.WebglAddon();
+    webgl.onContextLoss(() => webgl.dispose());
+    term.loadAddon(webgl);
+  } catch {}
 
   const p = { id, kind: 'term', el, term, dot, state: state_, stateText, title, sub, face, exitBar, blocksEl: blocks, session: s, lastData: 0, ws: null, size: '' };
   p.send = data => p.ws?.readyState === WebSocket.OPEN && p.ws.send(JSON.stringify({ t: 'in', d: data }));
@@ -236,6 +338,7 @@ function terminalPane(s) {
   };
   term.onData(d => p.send(d));
   host.addEventListener('focusin', () => setFocus(id));
+  p.peek = smoothScroll(term, host);
   new ResizeObserver(() => p.fit()).observe(host);
   if (s.kind === 'shell') commandBlocks(p);
   connect(p);
@@ -264,7 +367,7 @@ function renderHead(p) {
   const s = p.session;
   p.title.textContent = chatTitle(s);
   p.face.replaceChildren(avatar(s));
-  const kind = s.role === 'lead' ? 'Lead agent' : s.kind === 'shell' ? 'Shell' : agentLabel(s.agent);
+  const kind = s.specialist ? `${s.specialist.role.split(':')[0]}${s.model ? ` · ${s.model}` : ''}` : s.role === 'lead' ? 'Lead agent' : s.kind === 'shell' ? 'Shell' : agentLabel(s.agent);
   p.sub.replaceChildren(...[
     h('span', {}, kind), h('span', { class: 'sep' }, '/'),
     s.worktree ? h('span', { title: s.worktree.path }, shortBranch(s.worktree.branch)) : h('span', { title: s.cwd }, baseName(s.cwd)),
@@ -338,6 +441,7 @@ function dispose(id) {
   panes.delete(id);
   if (p.ws) { p.ws.onclose = null; p.ws.close(); }
   p.term?.dispose();
+  p.peek?.dispose();
   if (p.el.classList.contains('max')) unmaximise();
   p.el.remove();
   if (focusedId === id) focusedId = null;
