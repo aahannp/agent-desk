@@ -34,6 +34,7 @@ const loaders = {
   settings: async () => { state.settings = await api('GET', '/api/settings'); },
   chats: async () => { state.chats = await api('GET', '/api/chats'); },
   artifacts: async () => { state.artifacts = await api('GET', '/api/artifacts'); },
+  specialists: async () => { state.specialists = await api('GET', '/api/specialists'); },
 };
 
 // Refetch one kind of data. If more changes arrive mid-fetch, fetch once more so nothing stale sticks.
@@ -362,7 +363,7 @@ command('Add a project folder', addProject, { icon: 'folder' });
   }
   buildSidebar();
   showView('agents');
-  for (const kind of ['project', 'settings', 'projects', 'tasks', 'sessions', 'chats', 'artifacts']) emit(kind);
+  for (const kind of ['project', 'settings', 'projects', 'tasks', 'sessions', 'chats', 'artifacts', 'specialists']) emit(kind);
   renderChrome();
   listen();
   setInterval(() => refresh('sessions'), 4000); // keeps "working / idle" fresh for the board and agents

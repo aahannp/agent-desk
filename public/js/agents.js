@@ -1,5 +1,5 @@
 // Agents view: every agent, shell and browser pane for the project, tiled in a grid of real terminals.
-import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, menu, modal, confirmDialog, agentLabel, shortBranch, baseName, copy, chatTitle, DRAG, STATUS_LABEL } from './ui.js';
+import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, commands, menu, modal, confirmDialog, agentLabel, shortBranch, baseName, copy, chatTitle, DRAG, STATUS_LABEL } from './ui.js';
 
 const MONO = '"JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace';
 const panes = new Map(); // id -> pane (a session's terminal, or a browser)
@@ -44,6 +44,8 @@ export function toolbar() {
         ...installed.map(a => ({ label: a.label, icon: 'terminal', onClick: () => newSession({ agent: a.id }) })),
         { heading: 'In its own git worktree' },
         ...installed.map(a => ({ label: a.label, icon: 'branch', onClick: () => newSession({ agent: a.id, worktree: true }) })),
+        ...(claudeReady() && state.specialists.length ? [{ heading: 'Specialists' },
+          ...state.specialists.map(x => ({ label: x.name, sub: x.role.split(':')[0], icon: 'sparkles', onClick: () => startSpecialist(x) }))] : []),
         'sep',
         { label: 'Shell', icon: 'terminal', onClick: () => newSession({ kind: 'shell' }) },
         { label: 'Browser pane', icon: 'globe', onClick: () => newBrowser() },
@@ -76,6 +78,37 @@ actions.openChat = guard(async (chatId, place = null) => {
   saveOrder();
   layout();
   focusSession(session.id);
+});
+
+// ---------- Specialists ----------
+const claudeReady = () => state.agents.some(a => a.id === 'claude' && a.installed);
+const MODELS = [['', 'Their usual model'], ['opus', 'Opus: the most capable'], ['sonnet', 'Sonnet: everyday work'], ['haiku', 'Haiku: quick and cheap']];
+export const modelSelect = value => h('select', { class: 'input' }, MODELS.map(([id, label]) => h('option', { value: id, selected: id === value }, label)));
+
+// Starts a specialist. The first message is optional: Christie, say, starts by asking what you want to learn.
+function startSpecialist(x) {
+  if (!state.project) return toast('Add a project folder first', 'error');
+  const ask = h('textarea', { class: 'input', rows: 4, placeholder: `What should ${x.name} help with? You can leave this empty and tell them in the pane.` });
+  const model = modelSelect('');
+  const worktree = h('input', { type: 'checkbox' });
+  modal({
+    title: `Start ${x.name}`, width: 560,
+    body: [
+      h('div', { class: 'specialist-head' }, avatar({ specialist: x }), h('div', {}, h('b', {}, x.name), h('p', { class: 'muted' }, x.role))),
+      h('label', { class: 'field' }, h('span', {}, 'First message'), ask),
+      h('div', { class: 'row', style: { marginBottom: '8px' } },
+        h('label', { class: 'field', style: { flex: 1, margin: 0 } }, h('span', {}, `Model${x.model ? ` (usually ${x.model})` : ''}`), model),
+        h('label', { class: 'toggle', style: { marginTop: '18px' } }, worktree, 'Own git worktree')),
+    ],
+    actions: [{ label: 'Cancel' }, { label: `Start ${x.name}`, primary: true, onClick: () =>
+      newSession({ agent: 'claude', specialist: x.id, model: model.value, prompt: ask.value.trim(), worktree: worktree.checked }) }],
+  });
+}
+actions.startSpecialist = startSpecialist;
+on('specialists', () => {
+  for (const x of state.specialists) {
+    if (!commands.some(c => c.specialist === x.id)) command(`Start ${x.name}`, () => startSpecialist(state.specialists.find(y => y.id === x.id) ?? x), { icon: 'sparkles', specialist: x.id });
+  }
 });
 
 actions.startLead = () => {
@@ -272,7 +305,7 @@ function renderHead(p) {
   const s = p.session;
   p.title.textContent = chatTitle(s);
   p.face.replaceChildren(avatar(s));
-  const kind = s.role === 'lead' ? 'Lead agent' : s.kind === 'shell' ? 'Shell' : agentLabel(s.agent);
+  const kind = s.specialist ? `${s.specialist.role.split(':')[0]}${s.model ? ` · ${s.model}` : ''}` : s.role === 'lead' ? 'Lead agent' : s.kind === 'shell' ? 'Shell' : agentLabel(s.agent);
   p.sub.replaceChildren(...[
     h('span', {}, kind), h('span', { class: 'sep' }, '/'),
     s.worktree ? h('span', { title: s.worktree.path }, shortBranch(s.worktree.branch)) : h('span', { title: s.cwd }, baseName(s.cwd)),

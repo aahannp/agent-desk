@@ -20,6 +20,11 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
   whether it's working, idle, needs you, or finished, and you get a notification when an agent needs you.
 - **Lead agent**: give it a goal and it plans tasks on the board, then starts a worker for each one in its
   own git worktree.
+- **Team**: named specialists, each a Claude agent with one area of expertise, its own instructions and,
+  if you like, a model (Opus, Sonnet or Haiku). Christie is a learning coach who teaches you anything step by
+  step, Browner a frontend expert, and Scout a quick code finder on Haiku. Add your own in Settings, and start
+  one from the New Claude Code menu. Every agent knows who is on the team and what each running agent was
+  asked, and can start a specialist on a model it picks for part of its job (turn that off in Settings).
 - **Board**: To do / In progress / Review / Done with drag and drop. Run hands a task to an agent. Agents post
   comments and move their own cards through the board's MCP tools.
 - **Review**: side-by-side diffs of each worktree against where it branched, then commit, merge, or discard.

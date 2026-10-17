@@ -441,6 +441,9 @@ textarea.input { resize: vertical; min-height: 84px; line-height: 1.55; }
 .thumb img { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; background: var(--bg); }
 .thumb span { display: block; padding: 7px 10px; font: 10.5px var(--mono); color: var(--dim); }
 
+.specialist-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.specialist-head p { margin: 2px 0 0; font-size: 12.5px; }
+
 /* ---------- Artifacts ---------- */
 .arts { position: absolute; inset: 0; display: grid; grid-template-columns: 290px 1fr; padding: 12px; gap: 12px; }
 .art-list { overflow: auto; display: flex; flex-direction: column; gap: 6px; }

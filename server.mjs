@@ -13,6 +13,7 @@ import * as G from './lib/git.mjs';
 import { mcpTools, handleMcp } from './lib/mcp.mjs';
 import * as TN from './lib/tasknotes.mjs';
 import * as A from './lib/artifacts.mjs';
+import * as T from './lib/team.mjs';
 
 const DIR = import.meta.dirname;
 const MIME = {
@@ -143,10 +144,10 @@ route('PATCH', '/api/settings', ({ body }) => {
 route('GET', '/api/agents', () => S.availableAgents());
 route('GET', '/api/sessions', () => [...S.sessions.values()].map(S.info));
 route('POST', '/api/sessions', async ({ req, body }) => {
-  const { kind = 'agent', agent = db.settings.defaultAgent, prompt = '', name, worktree = false, role = null } = body;
+  const { kind = 'agent', agent = db.settings.defaultAgent, prompt = '', name, worktree = false, role = null, specialist = null, model = '' } = body;
   const project = projectFor(req, body.project);
   if (!isDir(project)) throw fail(400, `Not a folder: ${project}`);
-  return S.info(await S.createSession({ project, kind, agent, prompt, name, worktree, role }));
+  return S.info(await S.createSession({ project, kind, agent, prompt, name, worktree, role, specialist, model }));
 });
 route('DELETE', '/api/sessions/:id', ({ params }) => (S.stop(findSession(params.id)), {}));
 
@@ -216,6 +217,12 @@ function addTask(req, body) {
 }
 route('POST', '/api/tasks', ({ req, body }) => addTask(req, { ...body, tasknotes: null }));
 
+// The team: named specialists with their own instructions and model
+route('GET', '/api/specialists', () => T.list());
+route('POST', '/api/specialists', ({ body }) => T.add(body));
+route('PATCH', '/api/specialists/:id', ({ params, body }) => T.update(params.id, body));
+route('DELETE', '/api/specialists/:id', ({ params }) => (T.remove(params.id), {}));
+
 // Artifacts: pages and reports agents saved. You view them, open them in your browser and publish them.
 const findArtifact = id => A.find(id) ?? (() => { throw fail(404, 'No such artifact'); })();
 route('GET', '/api/artifacts', () => db.artifacts);
@@ -284,7 +291,7 @@ route('POST', '/api/tasks/:id/start', async ({ params, body }) => {
   const agent = body.agent || task.agent || db.settings.defaultAgent;
   const worktree = body.worktree ?? task.worktree;
   const prompt = task.description ? `${task.title}\n\n${task.description}` : task.title;
-  const s = await S.createSession({ project: task.project, agent, prompt, name: task.title, taskId: task.id, worktree });
+  const s = await S.createSession({ project: task.project, agent, prompt, name: task.title, taskId: task.id, worktree, specialist: body.specialist || null, model: body.model || '' });
   Object.assign(task, { status: 'doing', sessionId: s.id, agent, worktree, branch: s.worktree?.branch ?? null, worktreePath: s.worktree?.path ?? null, updatedAt: Date.now() });
   changed('tasks');
   return { task, session: S.info(s) };

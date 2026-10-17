@@ -136,7 +136,7 @@ try {
   assert.equal((await request('POST', '/mcp', { body: { jsonrpc: '2.0', method: 'notifications/initialized' } })).status, 202, 'notifications get 202');
   assert.equal((await request('POST', '/mcp', { token: '', body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } })).status, 401, 'MCP needs the token');
   const tools = (await rpc('tools/list', {})).result.tools.map(t => t.name);
-  assert.equal(tools.length, 13, `13 MCP tools, got ${tools.join(', ')}`);
+  assert.equal(tools.length, 14, `14 MCP tools, got ${tools.join(', ')}`);
   assert.ok(!tools.some(t => /publish/.test(t)), 'agents can save artifacts but have no tool to publish them');
   assert.match((await rpc('tools/call', { name: 'list_tasks', arguments: {} })).result.content[0].text, /Add a greeting/, 'MCP list_tasks reads the board');
   assert.match((await rpc('tools/call', { name: 'list_agents', arguments: {} })).result.content[0].text, new RegExp(shell.id), 'MCP list_agents sees the shell');
@@ -196,7 +196,7 @@ try {
     }
     throw new Error(`session ${id} never exited`);
   };
-  const outputOf = async id => (await ok('GET', `/api/sessions/${id}/output?lines=40`)).text;
+  const outputOf = async id => (await ok('GET', `/api/sessions/${id}/output?lines=200`)).text.replace(/\n/g, '');
   const first = await ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: repo, name: 'Lifecycle chat' });
   await exited(first.id);
   const record = () => db.chats.find(c => c.id === first.chatId);
@@ -225,6 +225,50 @@ try {
 
   await ok('DELETE', `/api/chats/${first.chatId}`);
   assert.ok(!(await ok('GET', '/api/sessions')).some(x => x.chatId === first.chatId), 'removing a chat also closes its finished pane');
+
+  // The team: named specialists with their own instructions and model, who know about each other
+  assert.deepEqual((await ok('GET', '/api/specialists')).map(x => [x.name, x.model]), [['Christie', ''], ['Browner', ''], ['Scout', 'haiku']], 'three built-in specialists');
+  const scout = await ok('POST', '/api/sessions', { specialist: 'scout', project: repo, prompt: 'where is the README?' });
+  assert.deepEqual([scout.name, scout.agent, scout.model, scout.specialist.name, scout.asked], ['Scout', 'claude', 'haiku', 'Scout', 'where is the README?'], 'a specialist is Claude with their own model');
+  await exited(scout.id);
+  const scoutRan = await outputOf(scout.id);
+  assert.match(scoutRan, /--model haiku/, 'claude runs on the specialist\'s model');
+  assert.match(scoutRan, /You are Scout/, 'with their own instructions');
+  assert.match(scoutRan, /- Christie: Learning coach.*- Browner: Frontend.*- Scout \(you\)/, 'and knows who else is on the team');
+  const coach = await ok('POST', '/api/sessions', { specialist: 'Christie', model: 'opus', project: repo });
+  assert.equal(coach.model, 'opus', 'you can pick a model for one run');
+  await exited(coach.id);
+  const coachChat = db.chats.find(c => c.id === coach.chatId);
+  assert.deepEqual([coachChat.specialist, coachChat.model], ['christie', 'opus'], 'the chat remembers who and which model');
+  const coachAgain = await ok('POST', `/api/chats/${coach.chatId}/open`);
+  assert.deepEqual([coachAgain.session.specialist?.name, coachAgain.session.model], ['Christie', 'opus'], 'reopening the chat keeps both');
+  await exited(coachAgain.session.id);
+  assert.equal((await request('POST', '/api/sessions', { body: { specialist: 'nobody', project: repo } })).status, 500, 'unknown specialists are refused');
+  assert.equal((await request('POST', '/api/sessions', { body: { specialist: 'scout', model: 'gpt-9', project: repo } })).status, 500, 'only Claude models');
+
+  const rhea = await ok('POST', '/api/specialists', { name: 'Rhea', role: 'Code reviewer: finds bugs before you merge', model: 'opus', instructions: 'Review carefully.' });
+  assert.equal((await request('POST', '/api/specialists', { body: { name: 'rhea', role: 'Twin' } })).status, 409, 'names are unique');
+  assert.equal((await request('POST', '/api/specialists', { body: { name: 'Max', role: 'x', model: 'gpt-9' } })).status, 400, 'only known models');
+  await ok('PATCH', `/api/specialists/${rhea.id}`, { model: 'sonnet' });
+  const viaTool = async (name, args) => (await rpc('tools/call', { name, arguments: args }, { 'x-desk-session': shell.id })).result;
+  const teamNow = JSON.parse((await viaTool('list_team', {})).content[0].text);
+  assert.deepEqual(teamNow.map(x => [x.name, x.model]), [['Christie', 'default'], ['Browner', 'default'], ['Scout', 'haiku'], ['Rhea', 'sonnet']], 'agents see the whole team');
+  const started = JSON.parse((await viaTool('start_agent', { prompt: 'Review the README', specialist: 'Rhea', model: 'haiku' })).content[0].text);
+  assert.deepEqual([started.specialist.name, started.model], ['Rhea', 'haiku'], 'an agent can start a specialist on a chosen model');
+  await exited(started.id);
+  const listed = JSON.parse((await viaTool('list_agents', {})).content[0].text).find(x => x.id === started.id);
+  assert.deepEqual([listed.specialist, listed.model, listed.asked], ['Rhea, Code reviewer: finds bugs before you merge', 'haiku', 'Review the README'], 'agents see who the others are and what each was asked');
+
+  await ok('PATCH', '/api/settings', { agentsCanSpawn: false });
+  const refused = await viaTool('start_agent', { prompt: 'x', specialist: 'Scout' });
+  assert.ok(refused.isError && /turned off/.test(refused.content[0].text), 'with the setting off, agents cannot start agents');
+  const quiet = await ok('POST', '/api/sessions', { specialist: 'scout', project: repo });
+  await exited(quiet.id);
+  assert.match(await outputOf(quiet.id), /Starting other agents is turned off/, 'and they are told so');
+  await ok('PATCH', '/api/settings', { agentsCanSpawn: true });
+  await ok('DELETE', `/api/specialists/${rhea.id}`);
+  assert.equal((await ok('GET', '/api/specialists')).length, 3);
+  for (const x of await ok('GET', '/api/sessions')) if (x.exited) await ok('DELETE', `/api/sessions/${x.id}`);
 
   // Past the limit, the chats used longest ago go first, however old the favourite is
   const now = Date.now();
