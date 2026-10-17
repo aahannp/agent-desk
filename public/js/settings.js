@@ -92,7 +92,11 @@ function render() {
       setting('Agents can start other agents', s.agentsCanSpawn !== false
         ? 'On: an agent can start a specialist or a worker, on a model it picks, for part of its job. A lead agent needs this.'
         : 'Off: agents can see the team but only you start agents.',
-      h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.agentsCanSpawn !== false, onChange: e => set({ agentsCanSpawn: e.target.checked }) })))),
+      h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.agentsCanSpawn !== false, onChange: e => set({ agentsCanSpawn: e.target.checked }) }))),
+      setting('Agents can edit the team', s.agentsCanEditTeam !== false
+        ? 'On: when you ask ("Scout, make your answers shorter"), an agent can change a specialist\'s profile. It asks you first each time. Applies to agents started from then on.'
+        : 'Off: agents can read the team\'s profiles but only you change them.',
+      h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.agentsCanEditTeam !== false, onChange: e => set({ agentsCanEditTeam: e.target.checked }) })))),
 
     section('Voice', state.info.voice ? 'On-device speech recognition from macOS. Nothing you say leaves your Mac.'
       : window.webkitSpeechRecognition ? 'Uses your browser\'s speech recognition, which sends audio to the browser maker. The Mac app does it on-device instead.'

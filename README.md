@@ -38,6 +38,8 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
   step, Browner a frontend expert, and Scout a quick code finder on Haiku. Add your own in Settings, and start
   one from the New Claude Code menu. Every agent knows who is on the team and what each running agent was
   asked, and can start a specialist on a model it picks for part of its job (turn that off in Settings).
+  Agents can read each specialist's full profile, and when you ask ("Scout, make your answers shorter") change
+  one, their own included, after asking you; agents started after that get the change (turn that off in Settings too).
 - **Board**: To do / In progress / Review / Done with drag and drop. Run hands a task to an agent. Agents post
   comments and move their own cards through the board's MCP tools.
 - **Review**: side-by-side diffs of each worktree against where it branched, then commit, merge, or discard.

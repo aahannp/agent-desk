@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import tls from 'node:tls';
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
 import { WebSocketServer } from 'ws';
@@ -66,8 +67,8 @@ const findTask = id => db.tasks.find(t => t.id === id) ?? (() => { throw fail(40
 const findSession = id => S.sessions.get(id) ?? (() => { throw fail(404, 'No such session'); })();
 const caller = req => S.sessions.get(req.headers['x-desk-session']);
 const starter = req => (s => s && { id: s.id, name: s.name })(caller(req)); // the agent asking, if it's one of ours
-// Requests an agent makes through its tools. They may not change settings or the team, and may only start
-// agents while Settings allows it. (An agent runs as you and could reach the API some other way; this keeps
+// Requests an agent makes through its tools. They may not change settings or add or remove specialists, and
+// may only start agents or edit a specialist while Settings allows it. (An agent runs as you and could reach the API some other way; this keeps
 // the tools, the way agents actually work, inside the lines you set.)
 const fromAgent = req => req.headers['x-desk-via'] === 'mcp' || Boolean(req.headers['x-desk-session']);
 const notFromAgent = (req, what) => { if (fromAgent(req)) throw fail(403, `Agents can't ${what}. Ask the user to do it in Agent Desk.`); };
@@ -140,7 +141,7 @@ route('PATCH', '/api/settings', ({ req, body }) => {
   notFromAgent(req, 'change Agent Desk\'s settings');
   for (const [key, value] of Object.entries(body)) {
     if (!(key in db.settings)) continue;
-    if (['agentsCanSpawn', 'agentsCanMessage', 'agentsAutonomous', 'fancyCursor', 'worktreeByDefault', 'sidebarHidden'].includes(key) && typeof value !== 'boolean') throw fail(400, `${key} is true or false`);
+    if (['agentsCanSpawn', 'agentsCanMessage', 'agentsCanEditTeam', 'agentsAutonomous', 'fancyCursor', 'worktreeByDefault', 'sidebarHidden'].includes(key) && typeof value !== 'boolean') throw fail(400, `${key} is true or false`);
     if (key === 'scrollSpeed' && !(Number(value) >= 0.25 && Number(value) <= 4)) throw fail(400, 'Scroll speed is between 0.25 and 4');
     if (key === 'agentDefaults') {
       const ok = ['claude', 'lead'].every(k => T.MODELS.includes(value?.[k]?.model) && T.EFFORTS.includes(value?.[k]?.effort));
@@ -224,6 +225,7 @@ route('DELETE', '/api/chats/:id', ({ params }) => {
 const sameProject = (req, id) => {
   const s = findSession(id);
   const from = caller(req);
+  if (fromAgent(req) && !from) throw fail(403, 'Only agents inside Agent Desk can read or copy other agents');
   if (from && s.project !== from.project) throw fail(403, 'Agents can only read or copy agents in their own project');
   return s;
 };
@@ -303,7 +305,14 @@ route('POST', '/api/update/show', () => U.reveal());
 // The team: named specialists with their own instructions and model
 route('GET', '/api/specialists', () => T.list());
 route('POST', '/api/specialists', ({ req, body }) => (notFromAgent(req, 'change the team'), T.add(body)));
-route('PATCH', '/api/specialists/:id', ({ req, params, body }) => (notFromAgent(req, 'change the team'), T.update(params.id, body)));
+route('PATCH', '/api/specialists/:id', ({ req, params, body }) => {
+  if (!fromAgent(req)) return T.update(params.id, body);
+  if (db.settings.agentsCanEditTeam === false) throw fail(403, 'Agents changing the team is turned off in Agent Desk settings.');
+  const was = T.find(params.id)?.name;
+  const s = T.update(params.id, body);
+  bus.emit('event', { type: 'specialist-changed', name: was, by: caller(req)?.name ?? 'An agent' });
+  return s;
+});
 route('DELETE', '/api/specialists/:id', ({ req, params }) => (notFromAgent(req, 'change the team'), T.remove(params.id), {}));
 
 // Artifacts: pages and reports agents saved. You view them, open them in your browser and publish them.
@@ -628,9 +637,19 @@ function upgrade(req, socket, head) {
   }
 }
 
+// A work network that inspects HTTPS installs its own root certificate in the Mac's keychain, which Safari
+// and curl trust but Node doesn't: GitHub calls (updates, publishing) then fail with "self signed certificate
+// in certificate chain". So Node trusts the Mac's roots too, as Task Notes does. Verification stays on.
+function trustTheMac() {
+  try {
+    tls.setDefaultCACertificates([...tls.getCACertificates('default'), ...tls.getCACertificates('system')]);
+  } catch {} // older Node: its own roots only
+}
+
 // Starts Agent Desk. The Mac app calls this with its own data folder; `npm start` runs it directly.
 export async function start({ port = Number(process.env.PORT) || 4747, dataDir = path.join(DIR, 'data'), voiceHelper } = {}) {
   fs.mkdirSync(dataDir, { recursive: true });
+  trustTheMac();
   load(dataDir);
   S.forgetRunningChats();
   A.setDir(dataDir);
