@@ -139,7 +139,7 @@ route('PATCH', '/api/settings', ({ req, body }) => {
   notFromAgent(req, 'change Agent Desk\'s settings');
   for (const [key, value] of Object.entries(body)) {
     if (!(key in db.settings)) continue;
-    if (['agentsCanSpawn', 'fancyCursor', 'worktreeByDefault'].includes(key) && typeof value !== 'boolean') throw fail(400, `${key} is true or false`);
+    if (['agentsCanSpawn', 'agentsCanMessage', 'fancyCursor', 'worktreeByDefault'].includes(key) && typeof value !== 'boolean') throw fail(400, `${key} is true or false`);
     if (key === 'permissionMode' && !PERMISSION_MODES.includes(value)) throw fail(400, 'Unknown permission mode');
     if (key === 'browserPanes') {
       const ok = value && typeof value === 'object' && Object.values(value).every(list => Array.isArray(list)
@@ -229,6 +229,43 @@ function addTask(req, body) {
   return task;
 }
 route('POST', '/api/tasks', ({ req, body }) => addTask(req, { ...body, tasknotes: null }));
+
+// Agents talking to each other: a message goes to a running agent by name or id, typed into its terminal and
+// signed with who sent it. If no one by that name is running but they're on the team, one starts with it.
+const sent = new Map(); // project -> times of its recent messages, to stop agents chatting forever
+route('POST', '/api/messages', async ({ req, body }) => {
+  if (fromAgent(req) && db.settings.agentsCanMessage === false) throw fail(403, 'Agents messaging each other is turned off in Agent Desk settings.');
+  const from = caller(req);
+  const text = String(body.text ?? '').trim();
+  const to = String(body.to ?? '').trim();
+  if (!text || !to) throw fail(400, 'Say who the message is for and what it says');
+  if (text.length > 8000) throw fail(413, 'Keep messages under 8,000 characters');
+  const project = from?.project ?? projectFor(req, body.project);
+  // By name, only agents in the same project; another project's agent only by its exact session id.
+  const name = to.toLowerCase();
+  const matches = [...S.sessions.values()]
+    .filter(s => !s.exited && s.kind === 'agent' && s.id !== from?.id
+      && (s.id === to || (s.project === project && (s.specialist?.name.toLowerCase() === name || s.name.toLowerCase() === name))))
+    .sort((a, b) => b.lastOutputAt - a.lastOutputAt); // the most recently active
+  const sender = from ? `${from.name} (agent ${from.id})` : 'an agent outside Agent Desk';
+  const body_ = text.replace(/\[(message from)/gi, '($1'); // so the text can't pass for another signature
+  const signed = `[Message from ${sender}]\n${body_}${from ? `\n\n(To answer, use message_agent to "${from.name}".)` : ''}`;
+  let target = matches[0];
+  // Counted against the project that receives it, so neither a new agent nor a different project resets it.
+  const bucket = target?.project ?? project;
+  const recent = (sent.get(bucket) ?? []).filter(t => Date.now() - t < 10 * 60_000);
+  if (recent.length >= 20) throw fail(429, 'That is 20 messages between agents in 10 minutes. Check with the user before sending more.');
+  if (target) {
+    S.deliver(target, signed);
+  } else {
+    if (!T.find(to)) throw fail(404, `No running agent is called "${to}", and no one on the team has that name. list_agents and list_team show who there is.`);
+    mayStartAgents(req);
+    target = await S.createSession({ project, specialist: to, prompt: signed });
+  }
+  sent.set(bucket, [...recent, Date.now()]);
+  bus.emit('event', { type: 'agent-message', from: from?.name ?? 'An agent', to: target.name, toId: target.id, started: !matches[0] });
+  return { delivered: Boolean(matches[0]), started: !matches[0], to: S.info(target) };
+});
 
 // Updates: is there a newer release on GitHub, and download it
 route('GET', '/api/update', ({ query }) => U.check(query.get('force') === '1'));
