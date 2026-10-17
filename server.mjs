@@ -16,6 +16,7 @@ import * as TN from './lib/tasknotes.mjs';
 import * as A from './lib/artifacts.mjs';
 import * as T from './lib/team.mjs';
 import * as U from './lib/update.mjs';
+import * as US from './lib/usage.mjs';
 
 const DIR = import.meta.dirname;
 const MIME = {
@@ -495,8 +496,17 @@ route('POST', '/api/artifacts/:id/unpublish', ({ req, params }) => (notFromAgent
 route('POST', '/api/artifacts/:id/publish', ({ params, body }) =>
   A.publish(findArtifact(params.id), { account: String(body.account || ''), repo: String(body.repo || ''), slug: String(body.slug || '') }));
 
+// Spend: what Claude Code cost on this Mac, per day, at API list prices (the page only; not in AGENT_ROUTES)
+route('GET', '/api/usage/days', async () => (await US.scan(), { today: US.today(), days: US.usageDays() }));
+route('GET', '/api/usage', async ({ query }) => {
+  const day = query.get('day') || US.today();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw fail(400, 'day is YYYY-MM-DD');
+  await US.scan();
+  return US.usageDay(day);
+});
+
 // Task Notes, the other app on this Mac: its open tasks, and bringing one onto this board
-route('GET', '/api/tasknotes', () => TN.openTasks());
+route('GET', '/api/tasknotes',() => TN.openTasks());
 route('POST', '/api/tasknotes/import', async ({ req, body }) =>
   addTask(req, await TN.bringOver({ id: String(body.id || ''), date: String(body.date || '') }, projectFor(req, body.project))));
 route('PATCH', '/api/tasks/:id', ({ params, body }) => {

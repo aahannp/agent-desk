@@ -8,6 +8,7 @@ import * as review from './review.js';
 import * as graph from './graph.js';
 import * as artifacts from './artifacts.js';
 import * as shots from './shots.js';
+import * as spend from './spend.js';
 import * as settings from './settings.js';
 import './voice.js';
 import './cursor.js';
@@ -23,6 +24,7 @@ const VIEWS = [
   { id: 'artifacts', label: 'Artifacts', icon: 'layers', module: artifacts, hint: 'Pages and reports your agents made' },
   { id: 'shots', label: 'Screenshots', icon: 'camera', module: shots, hint: 'Capture, mark up and hand to an agent' },
   { id: 'graph', label: 'Graph', icon: 'graph', module: graph, hint: 'Who is doing what, and who is talking to whom' },
+  { id: 'spend', label: 'Spend', icon: 'dollar', module: spend, hint: 'What Claude Code cost each day, and where it went' },
   { id: 'settings', label: 'Settings', icon: 'settings', module: settings, hint: 'Themes, agents, voice and MCP' },
 ];
 const $ = id => document.getElementById(id);
@@ -358,7 +360,7 @@ document.addEventListener('keydown', e => {
   if (mod && !e.shiftKey && key === 'k') { e.preventDefault(); e.stopPropagation(); openPalette(); }
   else if (mod && e.shiftKey && key === 'm') { e.preventDefault(); e.stopPropagation(); actions.toggleVoice(); }
   else if (mod && !e.shiftKey && !e.altKey && key === 'b') { e.preventDefault(); e.stopPropagation(); toggleSidebar(); }
-  else if (mod && !e.shiftKey && !e.altKey && /^[1-8]$/.test(e.key)) { e.preventDefault(); e.stopPropagation(); showView(VIEWS[Number(e.key) - 1].id); }
+  else if (mod && !e.shiftKey && !e.altKey && /^[1-9]$/.test(e.key)) { e.preventDefault(); e.stopPropagation(); showView(VIEWS[Number(e.key) - 1].id); }
 }, true);
 
 command('New task', () => { showView('board'); actions.newTask?.(); }, { icon: 'plus' });
