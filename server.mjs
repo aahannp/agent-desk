@@ -307,8 +307,6 @@ function recentMessages(project) {
   if (recent.length >= 20) throw fail(429, 'That is 20 messages between agents in 10 minutes. Check with the user before sending more.');
   return recent;
 }
-// Signed with who sent it, by a plain name, so the text can't pass for another signature (or for the user): any
-// "[message from" in it, however spaced or disguised (control, zero-width or full-width characters), starts with ( instead.
 // Who messaged whom, when and how (never what), for the Graph's edges. The last 500 are kept.
 function logMessage(project, from, to, via) {
   const entry = { at: Date.now(), project, fromId: from?.id ?? null, fromName: from?.name ?? 'An agent', toId: to.id, toName: to.name, via };
@@ -316,6 +314,8 @@ function logMessage(project, from, to, via) {
   changed('messages');
   return entry;
 }
+// Signed with who sent it, by a plain name, so the text can't pass for another signature (or for the user): any
+// "[message from" in it, however spaced or disguised (control, zero-width or full-width characters), starts with ( instead.
 const sign = (from, text) => `[Message from ${from ? `${S.plain(from.name)} (agent ${from.id})` : 'an agent outside Agent Desk'}]\n${
   text.normalize('NFKC').replace(/\[(?=[^\p{L}\p{N}]*message[^\p{L}\p{N}]*from)/giu, '(')}`;
 route('POST', '/api/messages', async ({ req, body }) => {
