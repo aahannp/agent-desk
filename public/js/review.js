@@ -17,7 +17,7 @@ export function mount(el) {
   hostEl = h('div', { class: 'diff-host' });
   el.append(h('div', { class: 'review' }, listEl, h('div', { class: 'wt-files' }, actionsEl, filesEl), h('div', {}, headEl, hostEl)));
   on('project', () => { selected = null; file = null; if (actions.currentView() === 'review') load(); });
-  on('tasks', () => actions.currentView() === 'review' && load());
+  for (const kind of ['tasks', 'projects']) on(kind, () => actions.currentView() === 'review' && load());
 }
 
 export const show = () => load();
@@ -43,7 +43,11 @@ const item = () => data.items.find(i => i.path === selected);
 
 function render() {
   if (!data.git) {
-    listEl.replaceChildren(h('div', { class: 'pane-empty' }, 'This project is not a git repository, so there is nothing to review. Run git init in a shell to turn on worktrees and review.'));
+    listEl.replaceChildren(...data.elsewhere?.length ? [
+      h('div', { class: 'section-label', style: { margin: '2px 4px 4px' } }, 'Agents in this project changed these repos'),
+      ...data.elsewhere.map(r => h('button', { class: 'wt', title: r.root, onClick: () => actions.openProject(r.root) },
+        h('div', { class: 'wt-top' }, icon('folder', 13), h('span', { class: 'wt-branch' }, r.name)), h('div', { class: 'wt-task' }, 'Open its review'))),
+    ] : [h('div', { class: 'pane-empty' }, 'This project is not a git repository, so there is nothing to review. Run git init in a shell to turn on worktrees and review.')]);
     actionsEl.replaceChildren();
     filesEl.replaceChildren();
     headEl.replaceChildren();
@@ -71,7 +75,7 @@ function card(i) {
       s ? h('span', { class: `dot ${actions.statusOf(s)}` }) : icon(i.main ? 'folder' : 'branch', 13),
       h('span', { class: 'wt-branch' }, i.main ? i.branch : shortBranch(i.branch)), h('span', { class: 'grow' }),
       h('span', { class: 'stat' }, h('span', { class: 'a' }, `+${i.add}`), ' ', h('span', { class: 'd' }, `−${i.del}`))),
-    h('div', { class: 'wt-task' }, i.main ? 'Changes not committed yet' : i.task?.title ?? (i.base ? `from ${i.base}` : baseName(i.path))),
+    h('div', { class: 'wt-task', title: i.path }, i.main ? 'Changes not committed yet' : [baseName(i.path), i.task?.title ?? (i.base && `from ${i.base}`), i.by && `by ${i.by}`].filter(Boolean).join(' · ')),
     h('div', { class: 'row', style: { gap: '6px' } },
       h('span', { class: 'chip' }, `${i.files.length} file${i.files.length === 1 ? '' : 's'}`),
       i.task && h('span', { class: 'chip' }, i.task.status === 'review' ? 'ready for review' : i.task.status),
@@ -87,7 +91,7 @@ function renderActions() {
     h('button', { class: 'btn sm', disabled: !hasChanges, onClick: () => commit(i) }, icon('check', 13), 'Commit'),
     i.session && h('button', { class: 'btn sm', onClick: () => actions.focusSession(i.session.id) }, icon('terminal', 13), 'Terminal'),
     h('button', { class: 'btn sm', onClick: () => actions.browseFolder(i.path) }, icon('folder', 13), 'Files'),
-    !i.main && h('button', { class: 'btn sm danger', onClick: () => discard(i) }, icon('trash', 13), 'Discard'),
+    !i.main && h('button', { class: 'btn sm danger', disabled: !i.recorded, title: i.recorded ? '' : "Agent Desk didn't make this worktree and no agent edited it, so it won't delete it", onClick: () => discard(i) }, icon('trash', 13), 'Discard'),
   ].filter(Boolean));
 }
 
