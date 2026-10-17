@@ -94,7 +94,7 @@ function render() {
         ? 'On: an agent can start a specialist or a worker, on a model it picks, for part of its job. A lead agent needs this.'
         : 'Off: agents can see the team but only you start agents.',
       h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.agentsCanSpawn !== false, onChange: e => set({ agentsCanSpawn: e.target.checked }) }))),
-      leadUpkeep(s.leadUpkeep ?? { on: false, compactAt: 70, replaceAfter: 3 }),
+      leadUpkeep({ on: false, compactAt: 70, windowCap: 200_000, replaceAfter: 3, ...s.leadUpkeep }),
       setting('Agents can edit the team', s.agentsCanEditTeam !== false
         ? 'On: when you ask ("Scout, make your answers shorter"), an agent can change a specialist\'s profile. It asks you first each time. Applies to agents started from then on.'
         : 'Off: agents can read the team\'s profiles but only you change them.',
@@ -127,15 +127,15 @@ function render() {
     h('button', { class: 'btn sm', onClick: () => openUpdates() }, icon('refresh', 13), 'Check for updates')))));
 }
 
-// A switch plus two small numbers: when to compact a lead, and after how many compactions to replace it.
+// A switch plus three small numbers: when to compact a lead (a % of a window in thousands of tokens), and after
+// how many compactions to replace it.
 function leadUpkeep(u) {
   const save = patch => set({ leadUpkeep: { ...u, ...patch } });
-  const number = (key, min, max, title) => h('input', { class: 'input', type: 'number', min, max, value: u[key], title, style: { width: '62px' },
-    onChange: e => save({ [key]: Math.round(Number(e.target.value)) }) });
-  return setting('Keep lead agents fresh', `When a lead is idle with its context ${u.compactAt}% full, Agent Desk compacts it. After ${u.replaceAfter} compaction${u.replaceAfter === 1 ? '' : 's'}, a fresh lead with the same name takes over its work.`,
-    h('div', { class: 'row' },
-      number('compactAt', 50, 95, 'Compact at this % of the context window'), '%',
-      number('replaceAfter', 1, 10, 'Replace after this many compactions'), '×',
+  const number = (key, min, max, scale = 1) => h('input', { class: 'input', type: 'number', min, max, value: u[key] / scale, style: { width: '62px' },
+    onChange: e => save({ [key]: Math.round(Number(e.target.value)) * scale }) });
+  return setting('Keep lead agents fresh', 'When a lead is idle with its context that full, Agent Desk compacts it, and after that many compactions a fresh lead with the same name takes over its work. A smaller window (the model\'s own, or your Claude Code auto-compact window) wins.',
+    h('div', { class: 'row', style: { flexWrap: 'wrap' } },
+      'Compact at', number('compactAt', 50, 95), '% of a', number('windowCap', 50, 2000, 1000), 'K-token window, replace after', number('replaceAfter', 1, 10), 'compactions',
       h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: u.on, onChange: e => save({ on: e.target.checked }) }))));
 }
 

@@ -10,7 +10,7 @@ import WebSocket from 'ws';
 import { start } from './server.mjs';
 import { createWorktree } from './lib/git.mjs';
 import { db, bus } from './lib/store.mjs';
-import { command, sessions, upkeep } from './lib/sessions.mjs';
+import { command, sessions, upkeep, effectiveWindow } from './lib/sessions.mjs';
 import { transcriptContext } from './lib/transcripts.mjs';
 import { isNewer } from './lib/update.mjs';
 import { parseMarkdown } from './public/js/ui.js';
@@ -251,6 +251,7 @@ try {
   // Chats: titles come from Claude's own saved conversations; rename, remove, and a chat whose folder is gone
   const claudeHome = path.join(tmp, 'claude-home');
   process.env.CLAUDE_CONFIG_DIR = claudeHome;
+  delete process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW; // yours would change lead upkeep's window below
   const chatDir = path.join(claudeHome, 'projects', repo.replace(/[^a-zA-Z0-9]/g, '-'));
   fs.mkdirSync(chatDir, { recursive: true });
   const named = randomUUID();
@@ -611,8 +612,10 @@ esac
   // Lead upkeep: a lead over the threshold is compacted only when it is idle at an empty prompt, and once; after
   // replaceAfter compactions a fresh lead with the same name takes over, with a handoff
   {
-    const UP = { on: true, compactAt: 70, replaceAfter: 1 };
+    const UP = { on: true, compactAt: 70, windowCap: 200_000, replaceAfter: 1 };
     assert.equal((await request('PATCH', '/api/settings', { body: { leadUpkeep: { ...UP, compactAt: 30 } } })).status, 400, 'compactAt is 50 to 95');
+    assert.equal((await request('PATCH', '/api/settings', { body: { leadUpkeep: { ...UP, windowCap: 10_000 } } })).status, 400, 'windowCap is 50,000 to 2,000,000');
+    assert.equal((await request('PATCH', '/api/settings', { body: { leadUpkeep: { ...UP, windowCap: '200000' } } })).status, 400, 'and a number');
     assert.equal((await request('PATCH', '/api/settings', { body: { leadUpkeep: { ...UP, replaceAfter: 0 } } })).status, 400, 'replaceAfter is 1 to 10');
     assert.equal((await request('PATCH', '/api/settings', { headers: { 'x-desk-via': 'mcp' }, body: { leadUpkeep: UP } })).status, 403, "agents can't turn it on");
     const leader = await ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: repo, role: 'lead', name: 'leader', prompt: 'Ship the login page' });
@@ -644,8 +647,24 @@ esac
     const report = size => request('POST', '/api/context', { token: s.agentToken, body: { context_window: { context_window_size: size } } });
     assert.equal((await report(5)).status, 200);
     assert.equal(s.contextWindow, undefined, 'a nonsense window size is ignored');
-    await report(120_000);
-    assert.equal(s.contextWindow, 120_000, "its status line reports the real window: now it's 83% full");
+    await report(1_000_000);
+    assert.equal(s.contextWindow, 1_000_000, 'its status line reports the real window');
+    fs.appendFileSync(transcript, `${line({ type: 'assistant', message: { content: [{ type: 'text', text: 'Planning the login work' }], usage: { input_tokens: 0, cache_read_input_tokens: 150_000, cache_creation_input_tokens: 0 } } })}\n`);
+    await ok('PATCH', '/api/settings', { leadUpkeep: { ...UP, windowCap: 1_000_000 } });
+    await paint();
+    await upkeep();
+    assert.ok(!(await compacted()), 'a 1M window at 150K, with the cap at 1M (15%): nothing');
+    await ok('PATCH', '/api/settings', { leadUpkeep: UP });
+    assert.equal(effectiveWindow(s), 200_000, 'with the default cap the threshold is a % of 200K, so 150K is 75%');
+    fs.writeFileSync(path.join(claudeHome, 'settings.json'), JSON.stringify({ autoCompactWindow: 100_000 }));
+    assert.equal(effectiveWindow(s), 100_000, 'your own smaller auto-compact window wins');
+    fs.writeFileSync(path.join(claudeHome, 'settings.json'), JSON.stringify({ autoCompactWindow: 'lots' }));
+    process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = '120000';
+    assert.equal(effectiveWindow(s), 120_000, 'a non-number is ignored; the environment variable counts too');
+    process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = 'soon';
+    assert.equal(effectiveWindow(s), 200_000, 'and a non-number there is ignored as well');
+    delete process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
+    fs.rmSync(path.join(claudeHome, 'settings.json'));
     for (const [why, ...screen] of [['working a moment ago', '', undefined, 5000], ['you are typing', '', ' hello'], ['a spinner is up', '✶ Tempering…'],
       ['a permission prompt is up', 'Do you want to proceed?\r\n❯ 1. Yes\r\n  2. No\r\n']]) {
       await paint(...screen);
@@ -658,6 +677,7 @@ esac
     await paint();
     await upkeep();
     assert.ok(await compacted(), 'idle at an empty prompt: it types /compact');
+    assert.equal(s.upkeep.from, 75, 'at 75% of 200K');
     await paint();
     await upkeep();
     assert.ok(!(await compacted()), 'and not again while that compaction is pending');
@@ -665,7 +685,7 @@ esac
       line({ type: 'user', isCompactSummary: true, message: { content: 'Summary: login form half done' } })].join('\n')}\n`);
     await paint();
     await upkeep();
-    assert.deepEqual(events, ['Compacted leader (83% → 17%)', 'Replaced leader with a fresh session after 1 compaction'], 'compacted, then (after 1) replaced');
+    assert.deepEqual(events, ['Compacted leader (75% of 200K → 10%)', 'Replaced leader with a fresh session after 1 compaction'], 'compacted, then (after 1) replaced');
     assert.ok(!sessions.has(leader.id), 'the old lead is stopped');
     const fresh = (await ok('GET', '/api/sessions')).find(x => x.name === 'leader');
     assert.deepEqual([fresh.role, fresh.model, fresh.effort, fresh.startedBy], ['lead', leader.model, leader.effort, null], 'a fresh lead with the same name, model and starter');

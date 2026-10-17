@@ -167,10 +167,10 @@ route('PATCH', '/api/settings', ({ req, body }) => {
     }
     if (key === 'permissionMode' && !PERMISSION_MODES.includes(value)) throw fail(400, 'Unknown permission mode');
     if (key === 'leadUpkeep') {
-      const { on, compactAt, replaceAfter } = value ?? {};
+      const { on, compactAt, replaceAfter, windowCap } = value ?? {};
       const within = (n, low, high) => Number.isInteger(n) && n >= low && n <= high;
-      if (typeof on !== 'boolean' || !within(compactAt, 50, 95) || !within(replaceAfter, 1, 10)) {
-        throw fail(400, 'Lead upkeep is on or off, compacts at 50 to 95% and replaces after 1 to 10 compactions');
+      if (typeof on !== 'boolean' || !within(compactAt, 50, 95) || !within(replaceAfter, 1, 10) || !within(windowCap, 50_000, 2_000_000)) {
+        throw fail(400, 'Lead upkeep is on or off, compacts at 50 to 95% of a 50,000 to 2,000,000-token window and replaces after 1 to 10 compactions');
       }
     }
     if (key === 'browserPanes') {
