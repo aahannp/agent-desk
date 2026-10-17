@@ -26,6 +26,7 @@ const VENDOR = {
   'xterm.css': '@xterm/xterm/css/xterm.css',
   'addon-fit.js': '@xterm/addon-fit/lib/addon-fit.js',
   'addon-webgl.js': '@xterm/addon-webgl/lib/addon-webgl.js',
+  'addon-serialize.js': '@xterm/addon-serialize/lib/addon-serialize.js',
 };
 const STATUSES = ['todo', 'doing', 'review', 'done'];
 const PERMISSION_MODES = ['default', 'acceptEdits', 'auto', 'plan'];

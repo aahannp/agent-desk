@@ -222,33 +222,71 @@ function retheme() {
     if (p.kind !== 'term') continue;
     p.term.options.theme = state.termTheme;
     p.term.options.fontSize = Number(state.settings.fontSize) || 13;
+    Object.assign(p.peek.options, lookOf(p.term));
     p.fit();
   }
 }
 
 // ---------- Terminal panes ----------
-// Scroll like Terminal and iTerm: the text moves exactly as far as the trackpad or wheel says, in pixels,
-// momentum included. xterm's own wheel handling goes through an old browser field and its own speed
-// factor, so it never quite matches. Leftover pixels carry to the next event (slow scrolls still move),
-// and turning around starts fresh. Full-screen programs (vim, less) and programs that read the mouse
-// still get the wheel from xterm as before.
-function nativeScroll(term, host) {
-  let carry = 0;
+// Scroll like Terminal and iTerm: smoothly, pixel by pixel, exactly as far as the trackpad or wheel says,
+// momentum included. xterm only draws whole rows, so between rows the text is shifted up by the leftover
+// pixels, and a one-row "peek" below it (a copy of the next line, colours and all) slides into view.
+// Full-screen programs (vim, less) and programs that read the mouse get the wheel from xterm as before.
+function smoothScroll(term, host) {
+  const screen = host.querySelector('.xterm-screen');
+  const peekEl = h('div', { class: 'term-peek', 'aria-hidden': 'true' });
+  screen.append(peekEl);
+  const peek = new Terminal({ ...lookOf(term), rows: 1, cols: term.cols, scrollback: 0, disableStdin: true, cursorInactiveStyle: 'none' });
+  peek.open(peekEl);
+  const copy = new SerializeAddon.SerializeAddon();
+  term.loadAddon(copy);
+
+  let f = 0; // pixels past the top row on screen, 0 up to one row
+  let top = -1; // the row we put at the top, so we can tell our scrolling from xterm's own
+  let peekRow = -1;
+  const rowPx = () => screen.offsetHeight / term.rows;
+  const show = () => {
+    const below = term.buffer.active.viewportY + term.rows;
+    const visible = f > 0 && below < term.buffer.active.length;
+    screen.style.transform = f ? `translateY(${-f}px)` : '';
+    peekEl.style.top = `${screen.offsetHeight}px`;
+    peekEl.style.visibility = visible ? 'visible' : 'hidden';
+    if (visible && below !== peekRow) {
+      peekRow = below;
+      peek.reset();
+      peek.write(`\x1b[?25l${copy.serialize({ range: { start: below, end: below } })}`);
+    }
+  };
+  // New output at the bottom, typing, a resize or a full-screen program moves the view itself: line up again.
+  const settle = () => {
+    if (term.buffer.active.viewportY === top && term.buffer.active.type === 'normal') return;
+    f = 0;
+    peekRow = -1;
+    show();
+  };
+  term.onScroll(settle);
+  term.buffer.onBufferChange(settle);
+  term.onResize(({ cols }) => { peek.resize(cols, 1); peekRow = -1; settle(); });
+
   host.addEventListener('wheel', e => {
     if (e.ctrlKey || !e.deltaY || term.buffer.active.type !== 'normal' || term.modes.mouseTrackingMode !== 'none') return;
     e.preventDefault();
     e.stopPropagation(); // in the capture phase, so xterm's own handler never sees it
-    const row = (host.querySelector('.xterm-screen')?.offsetHeight || 0) / term.rows;
-    if (!row) return;
-    const px = e.deltaMode === 1 ? e.deltaY * row : e.deltaMode === 2 ? e.deltaY * row * term.rows : e.deltaY;
-    if (Math.sign(px) !== Math.sign(carry)) carry = 0;
-    carry += px;
-    const lines = Math.trunc(carry / row);
-    if (!lines) return;
-    term.scrollLines(lines);
-    carry -= lines * row;
+    const ch = rowPx();
+    if (!ch) return;
+    const buf = term.buffer.active;
+    const px = e.deltaMode === 1 ? e.deltaY * ch : e.deltaMode === 2 ? e.deltaY * ch * term.rows : e.deltaY;
+    const pos = Math.max(0, Math.min(buf.viewportY * ch + f + px, buf.baseY * ch));
+    top = Math.floor(pos / ch);
+    f = pos - top * ch;
+    if (top !== buf.viewportY) term.scrollToLine(top);
+    show();
   }, { capture: true, passive: false });
+  return peek;
 }
+
+// What a terminal looks like, shared with its peek row so the two match.
+const lookOf = term => Object.fromEntries(['fontFamily', 'fontSize', 'lineHeight', 'letterSpacing', 'fontWeight', 'fontWeightBold', 'theme'].map(k => [k, term.options[k]]));
 
 function terminalPane(s) {
   const term = new Terminal({
@@ -300,7 +338,7 @@ function terminalPane(s) {
   };
   term.onData(d => p.send(d));
   host.addEventListener('focusin', () => setFocus(id));
-  nativeScroll(term, host);
+  p.peek = smoothScroll(term, host);
   new ResizeObserver(() => p.fit()).observe(host);
   if (s.kind === 'shell') commandBlocks(p);
   connect(p);
@@ -403,6 +441,7 @@ function dispose(id) {
   panes.delete(id);
   if (p.ws) { p.ws.onclose = null; p.ws.close(); }
   p.term?.dispose();
+  p.peek?.dispose();
   if (p.el.classList.contains('max')) unmaximise();
   p.el.remove();
   if (focusedId === id) focusedId = null;
