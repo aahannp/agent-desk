@@ -84,24 +84,29 @@ actions.openChat = guard(async (chatId, place = null) => {
 const claudeReady = () => state.agents.some(a => a.id === 'claude' && a.installed);
 const MODELS = [['', 'Their usual model'], ['opus', 'Opus: the most capable'], ['sonnet', 'Sonnet: everyday work'], ['haiku', 'Haiku: quick and cheap']];
 export const modelSelect = value => h('select', { class: 'input' }, MODELS.map(([id, label]) => h('option', { value: id, selected: id === value }, label)));
+const EFFORTS = [['', 'Their usual effort'], ['low', 'Low: quickest'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high'], ['max', 'Max: most thorough']];
+export const effortSelect = value => h('select', { class: 'input' }, EFFORTS.map(([id, label]) => h('option', { value: id, selected: id === value }, label)));
+const usual = x => [x.model || 'default model', x.effort ? `${x.effort} effort` : 'default effort'].join(' · ');
 
 // Starts a specialist. The first message is optional: Christie, say, starts by asking what you want to learn.
 function startSpecialist(x) {
   if (!state.project) return toast('Add a project folder first', 'error');
   const ask = h('textarea', { class: 'input', rows: 4, placeholder: `What should ${x.name} help with? You can leave this empty and tell them in the pane.` });
   const model = modelSelect('');
+  const effort = effortSelect('');
   const worktree = h('input', { type: 'checkbox' });
   modal({
     title: `Start ${x.name}`, width: 560,
     body: [
-      h('div', { class: 'specialist-head' }, avatar({ specialist: x }), h('div', {}, h('b', {}, x.name), h('p', { class: 'muted' }, x.role))),
+      h('div', { class: 'specialist-head' }, avatar({ specialist: x }), h('div', {}, h('b', {}, x.name), h('p', { class: 'muted' }, `${x.role}. Usually ${usual(x)}.`))),
       h('label', { class: 'field' }, h('span', {}, 'First message'), ask),
       h('div', { class: 'row', style: { marginBottom: '8px' } },
-        h('label', { class: 'field', style: { flex: 1, margin: 0 } }, h('span', {}, `Model${x.model ? ` (usually ${x.model})` : ''}`), model),
-        h('label', { class: 'toggle', style: { marginTop: '18px' } }, worktree, 'Own git worktree')),
+        h('label', { class: 'field', style: { flex: 1, margin: 0 } }, h('span', {}, 'Model'), model),
+        h('label', { class: 'field', style: { flex: 1, margin: 0 } }, h('span', {}, 'Effort'), effort)),
+      h('label', { class: 'toggle', style: { margin: '6px 0' } }, worktree, 'Own git worktree'),
     ],
     actions: [{ label: 'Cancel' }, { label: `Start ${x.name}`, primary: true, onClick: () =>
-      newSession({ agent: 'claude', specialist: x.id, model: model.value, prompt: ask.value.trim(), worktree: worktree.checked }) }],
+      newSession({ agent: 'claude', specialist: x.id, model: model.value, effort: effort.value, prompt: ask.value.trim(), worktree: worktree.checked }) }],
   });
 }
 actions.startSpecialist = startSpecialist;
@@ -234,7 +239,9 @@ function retheme() {
 // Scroll like Terminal and iTerm: smoothly, pixel by pixel, exactly as far as the trackpad or wheel says,
 // momentum included. xterm only draws whole rows, so between rows the text is shifted up by the leftover
 // pixels, and a one-row "peek" below it (a copy of the next line, colours and all) slides into view.
-// Full-screen programs (vim, less) and programs that read the mouse get the wheel from xterm as before.
+// Programs that read the mouse (Claude Code does, full screen) get one wheel click per row moved, as
+// Terminal and iTerm send. xterm alone sends a single click per scroll event at 30% of the distance, which
+// is what made scrolling Claude feel so slow. Settings has a scroll speed for the rest.
 function smoothScroll(term, host) {
   const screen = host.querySelector('.xterm-screen');
   const peekEl = h('div', { class: 'term-peek', 'aria-hidden': 'true' });
@@ -247,6 +254,11 @@ function smoothScroll(term, host) {
   let f = 0; // pixels past the top row on screen, 0 up to one row
   let top = -1; // the row we put at the top, so we can tell our scrolling from xterm's own
   let peekRow = -1;
+  let clicks = 0; // wheel clicks owed to a program that reads the mouse, in fractions of a row
+  let sgr = false; // the mouse encoding Claude Code asks for (1006); other encodings are left to xterm
+  const mouseMode = on => params => { if (params.includes(1006)) sgr = on; return false; };
+  term.parser.registerCsiHandler({ prefix: '?', final: 'h' }, mouseMode(true));
+  term.parser.registerCsiHandler({ prefix: '?', final: 'l' }, mouseMode(false));
   const rowPx = () => screen.offsetHeight / term.rows;
   const show = () => {
     const below = term.buffer.active.viewportY + term.rows;
@@ -272,13 +284,31 @@ function smoothScroll(term, host) {
   term.onResize(({ cols }) => { peek.resize(cols, 1); peekRow = -1; settle(); });
 
   host.addEventListener('wheel', e => {
-    if (e.ctrlKey || !e.deltaY || term.buffer.active.type !== 'normal' || term.modes.mouseTrackingMode !== 'none') return;
-    e.preventDefault();
-    e.stopPropagation(); // in the capture phase, so xterm's own handler never sees it
+    if (e.ctrlKey || !e.deltaY) return;
     const ch = rowPx();
     if (!ch) return;
+    const speed = Number(state.settings.scrollSpeed) || 1;
+    const px = (e.deltaMode === 1 ? e.deltaY * ch : e.deltaMode === 2 ? e.deltaY * ch * term.rows : e.deltaY) * speed;
+    if (term.modes.mouseTrackingMode !== 'none') {
+      if (!sgr) return;
+      e.preventDefault();
+      e.stopPropagation(); // in the capture phase, so xterm's own handler never sees it
+      if (Math.sign(px) !== Math.sign(clicks)) clicks = 0;
+      clicks += px / ch;
+      const n = Math.trunc(clicks);
+      if (!n) return;
+      clicks -= n;
+      const r = screen.getBoundingClientRect();
+      const col = Math.min(term.cols, Math.max(1, Math.floor((e.clientX - r.left) / (r.width / term.cols)) + 1));
+      const row = Math.min(term.rows, Math.max(1, Math.floor((e.clientY - r.top) / ch) + 1));
+      const button = (n < 0 ? 64 : 65) + (e.shiftKey ? 4 : 0) + (e.altKey ? 8 : 0); // wheel up or down
+      term.input(`\x1b[<${button};${col};${row}M`.repeat(Math.abs(n)), true);
+      return;
+    }
+    if (term.buffer.active.type !== 'normal') return; // full screen without the mouse: xterm sends arrow keys
+    e.preventDefault();
+    e.stopPropagation();
     const buf = term.buffer.active;
-    const px = e.deltaMode === 1 ? e.deltaY * ch : e.deltaMode === 2 ? e.deltaY * ch * term.rows : e.deltaY;
     const pos = Math.max(0, Math.min(buf.viewportY * ch + f + px, buf.baseY * ch));
     top = Math.floor(pos / ch);
     f = pos - top * ch;
@@ -370,7 +400,7 @@ function renderHead(p) {
   const s = p.session;
   p.title.textContent = chatTitle(s);
   p.face.replaceChildren(avatar(s));
-  const kind = s.specialist ? `${s.specialist.role.split(':')[0]}${s.model ? ` · ${s.model}` : ''}` : s.role === 'lead' ? 'Lead agent' : s.kind === 'shell' ? 'Shell' : agentLabel(s.agent);
+  const kind = [s.specialist ? s.specialist.role.split(':')[0] : s.role === 'lead' ? 'Lead agent' : s.kind === 'shell' ? 'Shell' : agentLabel(s.agent), s.model, s.effort].filter(Boolean).join(' · ');
   p.sub.replaceChildren(...[
     h('span', {}, kind), h('span', { class: 'sep' }, '/'),
     s.worktree ? h('span', { title: s.worktree.path }, shortBranch(s.worktree.branch)) : h('span', { title: s.cwd }, baseName(s.cwd)),

@@ -116,6 +116,17 @@ function renderToolbar() {
   $('viewActions').replaceChildren(...(view?.module.toolbar?.() ?? []));
 }
 actions.renderToolbar = renderToolbar;
+
+// Hiding the sidebar gives the panes the whole window. ⌘B, the button in the top bar, or Settings.
+function applySidebar() {
+  const hidden = state.settings.sidebarHidden === true;
+  document.querySelector('.app').classList.toggle('no-side', hidden);
+  $('sideToggle').replaceChildren(icon('sidebar', 16));
+  $('sideToggle').title = `${hidden ? 'Show' : 'Hide'} the sidebar (⌘B)`;
+}
+const toggleSidebar = () => actions.setSetting({ sidebarHidden: state.settings.sidebarHidden !== true });
+actions.toggleSidebar = toggleSidebar;
+on('settings', applySidebar);
 on('settings', renderToolbar);
 on('project', renderToolbar);
 
@@ -342,10 +353,13 @@ document.addEventListener('keydown', e => {
   const key = e.key.toLowerCase();
   if (mod && !e.shiftKey && key === 'k') { e.preventDefault(); e.stopPropagation(); openPalette(); }
   else if (mod && e.shiftKey && key === 'm') { e.preventDefault(); e.stopPropagation(); actions.toggleVoice(); }
+  else if (mod && !e.shiftKey && !e.altKey && key === 'b') { e.preventDefault(); e.stopPropagation(); toggleSidebar(); }
   else if (mod && !e.shiftKey && !e.altKey && /^[1-7]$/.test(e.key)) { e.preventDefault(); e.stopPropagation(); showView(VIEWS[Number(e.key) - 1].id); }
 }, true);
 
 command('New task', () => { showView('board'); actions.newTask?.(); }, { icon: 'plus' });
+command('Show or hide the sidebar', () => toggleSidebar(), { icon: 'sidebar', sub: '⌘B' });
+$('sideToggle').addEventListener('click', () => toggleSidebar());
 command('Add a project folder', addProject, { icon: 'folder' });
 
 // ---------- Start ----------
