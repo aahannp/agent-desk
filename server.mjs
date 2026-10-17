@@ -246,8 +246,10 @@ route('POST', '/api/sessions/:id/input', ({ req, params, body }) => {
   if (!fromAgent(req)) return (S.send(findSession(params.id), text, body.submit !== false), {});
   mayMessage(req);
   const target = sameProject(req, params.id);
+  const from = caller(req);
+  if (target.id === from.id) throw fail(400, "An agent can't type into itself");
   const recent = recentMessages(target.project);
-  S.deliver(target, text);
+  S.deliver(target, sign(from, text));
   sent.set(target.project, [...recent, Date.now()]);
   return {};
 });
@@ -282,6 +284,10 @@ function recentMessages(project) {
   if (recent.length >= 20) throw fail(429, 'That is 20 messages between agents in 10 minutes. Check with the user before sending more.');
   return recent;
 }
+// Signed with who sent it, by a plain name, so the text can't pass for another signature (or for the user): any
+// "[message from" in it, however spaced or disguised (control, zero-width or full-width characters), starts with ( instead.
+const sign = (from, text) => `[Message from ${from ? `${S.plain(from.name)} (agent ${from.id})` : 'an agent outside Agent Desk'}]\n${
+  text.normalize('NFKC').replace(/\[(?=[^\p{L}\p{N}]*message[^\p{L}\p{N}]*from)/giu, '(')}`;
 route('POST', '/api/messages', async ({ req, body }) => {
   mayMessage(req);
   const from = caller(req);
@@ -298,9 +304,7 @@ route('POST', '/api/messages', async ({ req, body }) => {
       && (s.id === to || (s.project === project && (s.specialist?.name.toLowerCase() === name || s.name.toLowerCase() === name))))
     .filter(s => !asked || (({ model, effort }) => s.model === model && s.effort === effort)(T.settle(asked, T.find(s.specialist?.id) ?? {})))
     .sort((a, b) => b.lastOutputAt - a.lastOutputAt); // the most recently active (on the model asked for, if one was)
-  const sender = from ? `${from.name} (agent ${from.id})` : 'an agent outside Agent Desk';
-  const body_ = text.replace(/\[(message from)/gi, '($1'); // so the text can't pass for another signature
-  const signed = `[Message from ${sender}]\n${body_}${from ? `\n\n(To answer, use message_agent to "${from.name}".)` : ''}`;
+  const signed = `${sign(from, text)}${from ? `\n\n(To answer, use message_agent to "${from.name}".)` : ''}`;
   let target = matches[0];
   const bucket = target?.project ?? project;
   const recent = recentMessages(bucket);
