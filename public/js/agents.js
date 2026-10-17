@@ -120,6 +120,7 @@ actions.startSpecialist = startSpecialist;
 // One agent messaged another: say so, and offer to jump to the pane where it arrived.
 on('agent-message', e => toast(e.started ? `${e.from} started ${e.to} with a message` : `${e.from} → ${e.to}`, 'info',
   { label: 'Show', onClick: () => focusSession(e.toId) }));
+on('specialist-changed', e => toast(`${e.name}'s profile was changed by ${e.by}`, 'info', { label: 'Show', onClick: () => actions.showView('settings') }));
 on('specialists', () => {
   for (const x of state.specialists) {
     if (!commands.some(c => c.specialist === x.id)) command(`Start ${x.name}`, () => startSpecialist(state.specialists.find(y => y.id === x.id) ?? x), { icon: 'sparkles', specialist: x.id });

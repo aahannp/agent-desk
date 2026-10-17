@@ -137,7 +137,7 @@ try {
   assert.equal((await request('POST', '/mcp', { body: { jsonrpc: '2.0', method: 'notifications/initialized' } })).status, 202, 'notifications get 202');
   assert.equal((await request('POST', '/mcp', { token: '', body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } })).status, 401, 'MCP needs the token');
   const tools = (await rpc('tools/list', {})).result.tools.map(t => t.name);
-  assert.equal(tools.length, 17, `17 MCP tools, got ${tools.join(', ')}`);
+  assert.equal(tools.length, 18, `18 MCP tools, got ${tools.join(', ')}`);
   assert.ok(!tools.some(t => /publish/.test(t)), 'agents can save artifacts but have no tool to publish them');
   assert.match((await rpc('tools/call', { name: 'list_tasks', arguments: {} })).result.content[0].text, /Add a greeting/, 'MCP list_tasks reads the board');
   assert.match((await rpc('tools/call', { name: 'list_agents', arguments: {} })).result.content[0].text, new RegExp(shell.id), 'MCP list_agents sees the shell');
@@ -236,6 +236,8 @@ try {
   assert.match(scoutRan, /--model haiku/, 'claude runs on the specialist\'s model');
   assert.match(scoutRan, /You are Scout/, 'with their own instructions');
   assert.match(scoutRan, /- Christie: Learning coach.*- Browner: Frontend.*- Scout \(you\)/, 'and knows who else is on the team');
+  assert.match(scoutRan, /change one with update_specialist/, 'and that it can change a profile when asked');
+  assert.ok(!/update_specialist/.test(scoutRan.match(/--allowedTools (\S+)/)[1]), 'which always asks you first');
   const coach = await ok('POST', '/api/sessions', { specialist: 'Christie', model: 'opus', project: repo });
   assert.equal(coach.model, 'opus', 'you can pick a model for one run');
   await exited(coach.id);
@@ -274,6 +276,16 @@ try {
   const viaTool = async (name, args) => (await rpc('tools/call', { name, arguments: args }, { 'x-desk-session': shell.id })).result;
   const teamNow = JSON.parse((await viaTool('list_team', {})).content[0].text);
   assert.deepEqual(teamNow.map(x => [x.name, x.model]), [['Christie', 'sonnet'], ['Browner', 'opus'], ['Scout', 'haiku'], ['Rhea', 'sonnet']], 'agents see the whole team');
+  assert.deepEqual([teamNow[3].id, teamNow[3].instructions], [rhea.id, 'Review carefully.'], 'with each full profile');
+  const edited = await viaTool('update_specialist', { specialist: 'rhea', instructions: 'Review briefly.' });
+  assert.ok(!edited.isError, 'an agent can edit a specialist when asked');
+  assert.deepEqual((await ok('GET', '/api/specialists')).find(x => x.id === rhea.id).instructions, 'Review briefly.', 'and the change sticks');
+  assert.equal((await request('PATCH', `/api/specialists/${rhea.id}`, { headers: { 'x-desk-via': 'mcp' }, body: { instructions: 'Review carefully.' } })).status, 200, 'through the server too');
+  assert.equal((await request('DELETE', `/api/specialists/${rhea.id}`, { headers: { 'x-desk-via': 'mcp' } })).status, 403, "but can't remove one");
+  await ok('PATCH', '/api/settings', { agentsCanEditTeam: false });
+  assert.equal((await request('PATCH', `/api/specialists/${rhea.id}`, { headers: { 'x-desk-via': 'mcp' }, body: { role: 'Spy' } })).status, 403, 'the switch turns editing off');
+  assert.match((await viaTool('update_specialist', { specialist: 'Rhea', role: 'Spy' })).content[0].text, /turned off/, 'and the tool says so');
+  await ok('PATCH', '/api/settings', { agentsCanEditTeam: true });
   const started = JSON.parse((await viaTool('start_agent', { prompt: 'Review the README', specialist: 'Rhea', model: 'haiku' })).content[0].text);
   assert.deepEqual([started.specialist.name, started.model], ['Rhea', 'haiku'], 'an agent can start a specialist on a chosen model');
   await exited(started.id);
