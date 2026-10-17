@@ -227,6 +227,29 @@ function retheme() {
 }
 
 // ---------- Terminal panes ----------
+// Scroll like Terminal and iTerm: the text moves exactly as far as the trackpad or wheel says, in pixels,
+// momentum included. xterm's own wheel handling goes through an old browser field and its own speed
+// factor, so it never quite matches. Leftover pixels carry to the next event (slow scrolls still move),
+// and turning around starts fresh. Full-screen programs (vim, less) and programs that read the mouse
+// still get the wheel from xterm as before.
+function nativeScroll(term, host) {
+  let carry = 0;
+  host.addEventListener('wheel', e => {
+    if (e.ctrlKey || !e.deltaY || term.buffer.active.type !== 'normal' || term.modes.mouseTrackingMode !== 'none') return;
+    e.preventDefault();
+    e.stopPropagation(); // in the capture phase, so xterm's own handler never sees it
+    const row = (host.querySelector('.xterm-screen')?.offsetHeight || 0) / term.rows;
+    if (!row) return;
+    const px = e.deltaMode === 1 ? e.deltaY * row : e.deltaMode === 2 ? e.deltaY * row * term.rows : e.deltaY;
+    if (Math.sign(px) !== Math.sign(carry)) carry = 0;
+    carry += px;
+    const lines = Math.trunc(carry / row);
+    if (!lines) return;
+    term.scrollLines(lines);
+    carry -= lines * row;
+  }, { capture: true, passive: false });
+}
+
 function terminalPane(s) {
   const term = new Terminal({
     fontFamily: MONO, fontSize: Number(state.settings.fontSize) || 13, lineHeight: 1.2, cursorBlink: true,
@@ -277,6 +300,7 @@ function terminalPane(s) {
   };
   term.onData(d => p.send(d));
   host.addEventListener('focusin', () => setFocus(id));
+  nativeScroll(term, host);
   new ResizeObserver(() => p.fit()).observe(host);
   if (s.kind === 'shell') commandBlocks(p);
   connect(p);
