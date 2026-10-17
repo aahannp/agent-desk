@@ -69,6 +69,9 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
 - The server only listens on 127.0.0.1. Every request needs this install's secret (kept in a file only you
   can read) and must come from Agent Desk's own page, so other websites and other users on the Mac can't
   use it.
+- Each agent gets its own token, which only reaches its board tools and hooks and always acts as that agent;
+  the master secret never goes in its config. An agent with shell access runs as you, though, so it could
+  still read the secret file in the data folder: real isolation would need a separate macOS user.
 - Claude agents start in "Ask me" permission mode by default, and nothing here offers the bypass modes.
 - A lead agent can't type into other agents or stop them without your approval.
 - Agents only see, read, stop and diff agents in their own project, and can't read or stop your shell panes.

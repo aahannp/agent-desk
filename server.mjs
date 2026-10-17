@@ -44,19 +44,26 @@ let voice = null;
 // Every request passes two checks.
 // 1. Host and Origin must be this server. Any website you visit can try to reach localhost, and this
 //    server hands out shells. Checking Host also stops DNS rebinding.
-// 2. It carries this run's secret: a cookie for the page, a header for agents' MCP servers. Other
-//    programs and other users on this Mac can reach the port too.
+// 2. It carries a secret. Other programs and other users on this Mac can reach the port too. The master
+//    token (a cookie for the page, a header for the server's own calls and your own Claude Code) opens
+//    everything. Each agent gets its own token instead, which opens only what its tools and hooks need.
 function sameSite(req) {
   if (!LOCAL.has(req.headers.host)) return false;
   const origin = req.headers.origin;
   return !origin || LOCAL.has(origin.replace(/^https?:\/\//, ''));
 }
 
-function hasToken(req, url) {
+const AGENT_ROUTES = new Set(['POST /mcp', 'POST /api/claude-session', 'POST /api/touched']);
+// { kind: 'ui' } for the master token, { kind: 'agent', session } for an agent's token on one of
+// AGENT_ROUTES (header only, never a cookie or ?t=), otherwise null: anywhere else an agent token counts for nothing.
+function auth(req, url) {
   const cookies = Object.fromEntries((req.headers.cookie || '').split(';').map(c => c.trim().split('=')));
-  const given = Buffer.from(String(req.headers['x-desk-token'] || cookies[COOKIE] || url.searchParams.get('t') || ''));
+  const header = String(req.headers['x-desk-token'] || '');
+  const given = Buffer.from(header || String(cookies[COOKIE] || url.searchParams.get('t') || ''));
   const want = Buffer.from(TOKEN);
-  return want.length >= 32 && given.length === want.length && timingSafeEqual(given, want);
+  if (want.length >= 32 && given.length === want.length && timingSafeEqual(given, want)) return { kind: 'ui' };
+  const session = header && AGENT_ROUTES.has(`${req.method} ${url.pathname}`) && S.sessionForToken(header);
+  return session ? { kind: 'agent', session } : null;
 }
 
 // ---------- Helpers ----------
@@ -65,7 +72,9 @@ const expand = p => path.resolve(String(p || '').trim().replace(/^~(?=$|\/)/, os
 const isDir = p => fs.statSync(p, { throwIfNoEntry: false })?.isDirectory() ?? false;
 const findTask = id => db.tasks.find(t => t.id === id) ?? (() => { throw fail(404, 'No such task'); })();
 const findSession = id => S.sessions.get(id) ?? (() => { throw fail(404, 'No such session'); })();
-const caller = req => S.sessions.get(req.headers['x-desk-session']);
+// x-desk-session is only trusted alongside the master token (the server's own calls from mcp(), or you).
+// An agent's own token names its session, whatever header it sends.
+const caller = req => (req.auth?.kind === 'agent' ? req.auth.session : S.sessions.get(req.headers['x-desk-session']));
 const visibleSessions = req => { // an agent sees only its own project's sessions (see sameProject)
   const all = [...S.sessions.values()];
   if (!fromAgent(req)) return all;
@@ -76,7 +85,7 @@ const starter = req => (s => s && { id: s.id, name: s.name })(caller(req)); // t
 // Requests an agent makes through its tools. They may not change settings or add or remove specialists, and
 // may only start agents or edit a specialist while Settings allows it. (An agent runs as you and could reach the API some other way; this keeps
 // the tools, the way agents actually work, inside the lines you set.)
-const fromAgent = req => req.headers['x-desk-via'] === 'mcp' || Boolean(req.headers['x-desk-session']);
+const fromAgent = req => req.auth?.kind === 'agent' || req.headers['x-desk-via'] === 'mcp' || Boolean(req.headers['x-desk-session']);
 const notFromAgent = (req, what) => { if (fromAgent(req)) throw fail(403, `Agents can't ${what}. Ask the user to do it in Agent Desk.`); };
 const mayStartAgents = req => {
   if (fromAgent(req) && db.settings.agentsCanSpawn === false) throw fail(403, 'Starting other agents is turned off in Agent Desk settings.');
@@ -664,7 +673,8 @@ async function respond(req, res) {
     res.end(JSON.stringify(body));
   };
   if (!sameSite(req)) return json(403, { error: 'Forbidden' });
-  if (url.pathname === '/mcp') return hasToken(req, url) ? mcp(req, res, json) : json(401, { error: 'Missing or wrong Agent Desk token' });
+  req.auth = auth(req, url);
+  if (url.pathname === '/mcp') return req.auth ? mcp(req, res, json) : json(401, { error: 'Missing or wrong Agent Desk token' });
 
   // An artifact opens without the token, so your own browser can show it: its random id is the key. It runs
   // sandboxed in an origin of its own, so its scripts can't reach Agent Desk, and it sends no Referer that
@@ -682,17 +692,17 @@ async function respond(req, res) {
 
   if (!url.pathname.startsWith('/api/')) {
     if (url.pathname === '/' && url.searchParams.has('t')) { // trade the link's secret for a cookie, then drop it from the address bar
-      if (!hasToken(req, url)) return res.writeHead(302, { location: '/' }).end();
+      if (req.auth?.kind !== 'ui') return res.writeHead(302, { location: '/' }).end();
       return res.writeHead(302, { location: '/', 'set-cookie': `${COOKIE}=${TOKEN}; HttpOnly; SameSite=Strict; Path=/` }).end();
     }
-    if (url.pathname === '/' && !hasToken(req, url)) return res.writeHead(401, { 'content-type': 'text/html' }).end(LOCKED_PAGE);
+    if (url.pathname === '/' && req.auth?.kind !== 'ui') return res.writeHead(401, { 'content-type': 'text/html' }).end(LOCKED_PAGE);
     const file = req.method === 'GET' && staticPath(url.pathname);
     if (!file || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return json(404, { error: 'Not found' });
     res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream' });
     return res.end(fs.readFileSync(file));
   }
 
-  if (!hasToken(req, url)) return json(401, { error: 'Missing or wrong Agent Desk token' });
+  if (!req.auth) return json(401, { error: 'Missing or wrong Agent Desk token' });
 
   if (url.pathname === '/api/events') { // server-sent events: the page refetches whatever changed
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
@@ -722,12 +732,13 @@ async function respond(req, res) {
   json(404, { error: 'Not found' });
 }
 
-// MCP over HTTP: each POST carries one JSON-RPC message (or a batch). The tools act as the session named
-// in the x-desk-session header, so "update my task" knows which task. No server-to-client stream is offered.
+// MCP over HTTP: each POST carries one JSON-RPC message (or a batch). The tools act as the session the agent's
+// token belongs to (or, with the master token, the one in x-desk-session), so "update my task" knows which task.
+// Their API calls are the server calling itself, with the master token. No server-to-client stream is offered.
 async function mcp(req, res, json) {
   if (req.method !== 'POST') return json(405, { error: 'POST JSON-RPC messages here' });
   const body = await readBody(req);
-  const session = String(req.headers['x-desk-session'] || '');
+  const session = String(caller(req)?.id ?? req.headers['x-desk-session'] ?? '');
   const api = async (method, apiPath, payload) => {
     const r = await fetch(`${S.serverUrl()}${apiPath}`, {
       method, headers: { 'content-type': 'application/json', 'x-desk-token': TOKEN, 'x-desk-session': session, 'x-desk-via': 'mcp' },
@@ -749,7 +760,7 @@ function upgrade(req, socket, head) {
   try {
     const url = new URL(req.url, 'http://localhost');
     const s = url.pathname === '/ws' && S.sessions.get(url.searchParams.get('id'));
-    if (!sameSite(req) || !hasToken(req, url) || !s) return socket.destroy();
+    if (!sameSite(req) || auth(req, url)?.kind !== 'ui' || !s) return socket.destroy();
     wss.handleUpgrade(req, socket, head, ws => S.attach(s, ws));
   } catch {
     socket.destroy();
@@ -771,10 +782,14 @@ export async function start({ port = Number(process.env.PORT) || 4747, dataDir =
   trustTheMac();
   load(dataDir);
   S.forgetRunningChats();
+  // No session outlives a restart, so neither do its MCP and hook files (left behind by a crash; older ones held the master token).
+  for (const dir of ['mcp', 'hooks']) fs.rmSync(path.join(dataDir, dir), { recursive: true, force: true });
   A.setDir(dataDir);
   TN.watch();
   VOICE_HELPER = [voiceHelper, path.join(DIR, 'native', 'build', 'desk-listen')].find(p => p && fs.existsSync(p)) ?? null;
   // The secret is kept in a file only you can read, so links and MCP setups keep working across restarts.
+  // ponytail: agents run as you, so one with a shell can still read this file; only their own tools and config
+  // files are kept from it. Real isolation needs a separate macOS user or the keychain.
   const tokenFile = path.join(dataDir, 'token');
   TOKEN = fs.existsSync(tokenFile) ? fs.readFileSync(tokenFile, 'utf8').trim() : '';
   if (!/^[A-Za-z0-9_-]{32,}$/.test(TOKEN)) { // missing, empty or damaged: make a new one
@@ -791,7 +806,7 @@ export async function start({ port = Number(process.env.PORT) || 4747, dataDir =
   const actual = server.address().port;
   LOCAL = new Set([`localhost:${actual}`, `127.0.0.1:${actual}`]);
   COOKIE = `desk_${actual}`;
-  S.setServer({ url: `http://127.0.0.1:${actual}`, token: TOKEN, dataDir });
+  S.setServer({ url: `http://127.0.0.1:${actual}`, dataDir });
   // 127.0.0.1, not localhost: localhost may resolve to ::1, where some other program could be listening.
   const url = `http://127.0.0.1:${actual}/?t=${TOKEN}`;
   console.log(`Agent Desk is running. Open ${url}`);
