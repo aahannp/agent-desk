@@ -146,7 +146,7 @@ const commit = guard(async i => {
 
 const merge = guard(async i => {
   const ok = await confirmDialog(`Merge ${shortBranch(i.branch)} into ${i.base}?`,
-    `Agent Desk commits anything left uncommitted in the worktree, then runs git merge in your main folder. If there's a conflict, nothing changes and you'll be told how to resolve it.`, { label: 'Merge' });
+    `Agent Desk commits anything left uncommitted in the worktree, then runs git merge in your main folder (not on GitHub). If there's a conflict, nothing changes and you'll be told how to resolve it. ${i.files.length} file${i.files.length === 1 ? '' : 's'}: ${i.files.slice(0, 8).map(f => f.path).join(', ')}${i.files.length > 8 ? ', …' : ''}.`, { label: 'Merge' });
   if (!ok) return;
   await api('POST', '/api/review/commit', { worktree: i.path, message: i.task?.title ?? `Work from ${shortBranch(i.branch)}` });
   const res = await api('POST', '/api/review/merge', { worktree: i.path });
