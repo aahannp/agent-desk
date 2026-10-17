@@ -92,6 +92,7 @@ const ICONS = {
   layers: '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>',
   sidebar: '<rect x="3" y="4" width="18" height="16" rx="3"/><line x1="9" y1="4" x2="9" y2="20"/>',
   shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  graph: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>',
   zap: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
 };
 
@@ -183,7 +184,7 @@ export function menu(anchor, items, { align = 'left' } = {}) {
 
 // A small coloured tile that says what kind of agent a session is.
 // A specialist gets their initial on a colour of their own; the colour follows the name, so it never changes.
-const TEAM_COLORS = ['#e8590c', '#0ca678', '#7048e8', '#1c7ed6', '#d6336c', '#f59f00', '#0b7285', '#5c940d'];
+export const TEAM_COLORS = ['#e8590c', '#0ca678', '#7048e8', '#1c7ed6', '#d6336c', '#f59f00', '#0b7285', '#5c940d'];
 export const teamColor = name => TEAM_COLORS[[...String(name)].reduce((n, ch) => (n * 31 + ch.codePointAt(0)) >>> 0, 7) % TEAM_COLORS.length];
 export function avatar(s, small = false) {
   if (s.specialist) return h('span', { class: `avatar${small ? ' sm' : ''}`, style: { background: teamColor(s.specialist.name) }, title: s.specialist.role }, s.specialist.name.slice(0, 1).toUpperCase());
