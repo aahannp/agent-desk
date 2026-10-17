@@ -71,6 +71,7 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
   use it.
 - Claude agents start in "Ask me" permission mode by default, and nothing here offers the bypass modes.
 - A lead agent can't type into other agents or stop them without your approval.
+- Agents only see, read, stop and diff agents in their own project, and can't read or stop your shell panes.
 - Merging asks you first, and it stops cleanly on conflicts.
 - The Mac app turns off Electron's run-as-Node and inspector switches, uses the hardened runtime, and only
   lets its own page capture the screen.
