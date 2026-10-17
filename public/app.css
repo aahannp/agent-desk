@@ -61,6 +61,10 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 
 /* ---------- App frame ---------- */
 .app { display: grid; grid-template-columns: 252px 1fr; height: 100vh; }
+.app.no-side { grid-template-columns: 1fr; } /* the sidebar is gone from the layout, so the main area takes the one column */
+.app.no-side .side { display: none; }
+.is-app .app.no-side .topbar { padding-left: 84px; } /* room for the window's traffic lights */
+.side-toggle { -webkit-app-region: no-drag; margin-right: -8px; }
 .side { position: relative; display: flex; flex-direction: column; min-height: 0; padding: 0 12px 12px;
   background: color-mix(in srgb, var(--side) 72%, transparent); backdrop-filter: blur(24px) saturate(150%); border-right: 1px solid var(--hair); }
 .side-top { height: 58px; display: flex; align-items: center; padding: 0 6px; -webkit-app-region: drag; }

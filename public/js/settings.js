@@ -1,6 +1,6 @@
 // Settings view: themes, agents and their guardrails, voice, notifications, and the MCP setup for your own Claude Code.
 import { state, api, h, icon, avatar, on, actions, copy, guard, modal, toast, confirmDialog } from './ui.js';
-import { modelSelect } from './agents.js';
+import { modelSelect, effortSelect } from './agents.js';
 import { openUpdates } from './updates.js';
 import { THEMES } from './themes.js';
 
@@ -44,8 +44,12 @@ function render() {
       setting('Accent colour', 'Used for buttons, focus rings and highlights.', h('div', { class: 'row' },
         h('input', { type: 'color', value: s.accent || THEMES[current].ui.accent, onChange: e => set({ accent: e.target.value }), style: { width: '44px', height: '30px', border: 0, background: 'none', padding: 0 } }),
         s.accent && h('button', { class: 'btn sm ghost', onClick: () => set({ accent: '' }) }, 'Reset'))),
+      setting('Sidebar', 'Hide it to give the panes the whole window. ⌘B or the button at the top left also do it.',
+        h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.sidebarHidden !== true, onChange: e => set({ sidebarHidden: !e.target.checked }) }))),
       setting('Animated cursor', 'A custom cursor that reacts to what you point at. It steps aside over terminals and text.',
         h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.fancyCursor !== false, onChange: e => set({ fancyCursor: e.target.checked }) }))),
+      setting('Scroll speed', `${s.scrollSpeed ?? 1}× how far your trackpad or wheel moves. 1× matches Terminal and iTerm.`,
+        h('input', { type: 'range', min: 0.5, max: 3, step: 0.25, value: s.scrollSpeed ?? 1, onChange: e => set({ scrollSpeed: Number(e.target.value) }) })),
       setting('Terminal and editor text size', `${s.fontSize}px`, h('input', { type: 'range', min: 10, max: 20, value: s.fontSize, onChange: e => set({ fontSize: Number(e.target.value) }) }))),
 
     section('Agents', 'Agent Desk runs each agent\'s own command-line tool with your own login, so Claude Code uses your Claude subscription.',
@@ -53,6 +57,18 @@ function render() {
         avatar({ kind: 'agent', agent: a.id }), h('b', {}, a.label), h('span', { class: 'grow' }),
         a.installed ? h('span', { class: 'chip', style: { color: 'var(--ok)' } }, icon('check', 11), 'Installed') : h('span', { class: 'chip' }, 'Not found on your PATH'),
         a.installed && h('button', { class: `btn xs${s.defaultAgent === a.id ? ' primary' : ''}`, onClick: () => set({ defaultAgent: a.id }) }, s.defaultAgent === a.id ? 'Default' : 'Make default')))),
+      ...[['claude', 'Claude Code agents', 'New Claude Code panes and workers.'], ['lead', 'lead agents', 'The agent that plans and hands out the work.']].map(([kind, title, text]) => {
+        const d = s.agentDefaults?.[kind] ?? { model: '', effort: '' };
+        const save = patch => set({ agentDefaults: { ...s.agentDefaults, [kind]: { ...d, ...patch } } });
+        const model = modelSelect(d.model);
+        const effort = effortSelect(d.effort);
+        model.options[0].textContent = 'Your Claude Code default';
+        effort.options[0].textContent = 'Your Claude Code default';
+        model.addEventListener('change', () => save({ model: model.value }));
+        effort.addEventListener('change', () => save({ effort: effort.value }));
+        return setting(`Model and effort for ${title}`, `${text} Agents can still ask for a lighter or stronger one for a job.`,
+          h('div', { class: 'row' }, model, effort));
+      }),
       setting('Permissions for Claude agents', PERMISSIONS.find(p => p[0] === s.permissionMode)?.[2] ?? '',
         h('div', { class: 'segmented' }, PERMISSIONS.map(([id, label]) => h('button', { class: s.permissionMode === id ? 'on' : '', onClick: () => set({ permissionMode: id }) }, label)))),
       setting('Give new tasks their own git worktree', 'Agents running at the same time then never edit the same files. You merge their work from Review.',
@@ -61,7 +77,7 @@ function render() {
     section('Team', 'Specialists are Claude agents with a name, one area of expertise, their own instructions and, if you like, a model. Every agent knows who is on the team, so it can hand a job to the right one. Start one from the New Claude Code menu.',
       h('div', { class: 'agent-list' }, state.specialists.map(x => h('div', { class: 'agent-row' },
         avatar({ specialist: x }), h('div', { class: 'grow' }, h('b', {}, x.name), h('div', { class: 'muted', style: { fontSize: '12px' } }, x.role)),
-        h('span', { class: 'chip' }, x.model || 'Default model'),
+        h('span', { class: 'chip' }, [x.model || 'default model', x.effort || 'default effort'].join(' · ')),
         h('button', { class: 'btn xs', onClick: () => editSpecialist(x) }, 'Edit'),
         h('button', { class: 'icon-btn', title: `Remove ${x.name}`, onClick: () => removeSpecialist(x) }, icon('trash', 14))))),
       h('div', { class: 'row', style: { margin: '12px 0 4px' } }, h('button', { class: 'btn sm', onClick: () => editSpecialist() }, icon('plus', 13), 'Add a specialist')),
@@ -69,6 +85,10 @@ function render() {
         ? 'On: when you ask, an agent can send another one a message (it\'s typed into their pane, signed with who sent it), and they can answer.'
         : 'Off: agents work alone; only you type into their panes.',
       h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.agentsCanMessage !== false, onChange: e => set({ agentsCanMessage: e.target.checked }) }))),
+      setting('Agents work together without asking', s.agentsAutonomous !== false
+        ? 'On: agents message, read and copy each other without asking you each time. Their edits and commands still ask, as Permissions says. Applies to agents started from now on.'
+        : 'Off: an agent asks you before each message to another agent or each copy it makes.',
+      h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.agentsAutonomous !== false, onChange: e => set({ agentsAutonomous: e.target.checked }) }))),
       setting('Agents can start other agents', s.agentsCanSpawn !== false
         ? 'On: an agent can start a specialist or a worker, on a model it picks, for part of its job. A lead agent needs this.'
         : 'Off: agents can see the team but only you start agents.',
@@ -110,17 +130,20 @@ function editSpecialist(x = null) {
   const role = h('input', { class: 'input', value: x?.role ?? '', placeholder: 'What they are good at, like: Code reviewer: finds bugs before you merge' });
   const model = modelSelect(x?.model ?? '');
   model.options[0].textContent = 'Your Claude Code default';
+  const effort = effortSelect(x?.effort ?? '');
+  effort.options[0].textContent = 'Your Claude Code default';
   const instructions = h('textarea', { class: 'input', rows: 9, value: x?.instructions ?? '', placeholder: 'How they work: what to focus on, what to avoid, how to report back.' });
   modal({
     title: x ? `Edit ${x.name}` : 'Add a specialist', width: 600,
     body: [
-      h('div', { class: 'row' }, h('label', { class: 'field', style: { flex: 1 } }, h('span', {}, 'Name'), name), h('label', { class: 'field', style: { flex: 1 } }, h('span', {}, 'Model'), model)),
+      h('label', { class: 'field' }, h('span', {}, 'Name'), name),
+      h('div', { class: 'row' }, h('label', { class: 'field', style: { flex: 1 } }, h('span', {}, 'Usual model'), model), h('label', { class: 'field', style: { flex: 1 } }, h('span', {}, 'Usual effort'), effort)),
       h('label', { class: 'field' }, h('span', {}, 'Good at'), role),
       h('label', { class: 'field' }, h('span', {}, 'Instructions'), instructions),
     ],
     actions: [{ label: 'Cancel' }, { label: x ? 'Save' : 'Add', primary: true, onClick: async () => {
       try {
-        const body = { name: name.value, role: role.value, model: model.value, instructions: instructions.value };
+        const body = { name: name.value, role: role.value, model: model.value, effort: effort.value, instructions: instructions.value };
         await api(x ? 'PATCH' : 'POST', x ? `/api/specialists/${x.id}` : '/api/specialists', body);
       } catch (e) {
         toast(e.message, 'error');

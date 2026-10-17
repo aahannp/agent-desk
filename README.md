@@ -23,6 +23,14 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
   Christie is running in the project, a new one starts. Each agent asks you before its first message. Messages
   are plain text only (no control keys), are never typed into a pane waiting at a permission prompt or into a
   shell, stay within the project, are capped at 20 per project per 10 minutes, and Settings can turn them off.
+- **Agents work together**: name any agent (the pencil on its pane, or rename its chat) and others reach it by
+  that name: "Emilie, work with Adam on this". Every agent knows who started it and who else is on the board, can
+  read another's conversation to catch up (`read_agent_chat`), and can copy itself or another agent with its
+  whole conversation to take on another part (`clone_agent`). Settings decides whether they do this without
+  asking you each time; their edits and commands still ask.
+- **Model and effort**: defaults for Claude Code agents, lead agents and each specialist (Christie on Sonnet,
+  Browner on Opus, Scout on Haiku). Ask for "a lighter model" or "more effort" and the agent goes one step from
+  its default.
 - **Lead agent**: give it a goal and it plans tasks on the board, then starts a worker for each one in its
   own git worktree.
 - **Team**: named specialists, each a Claude agent with one area of expertise, its own instructions and,
@@ -40,6 +48,7 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
 - **Artifacts**: pages, reports and charts your agents make (they save them with the `save_artifact` tool).
   View them in the app or your browser, and publish one to GitHub Pages with one click, using an account
   you're signed in to with `gh`. Agent Desk keeps them in one repo it makes, and never writes to any other.
+  Unpublish takes a page down again.
 - **Task Notes**: the Board's Task Notes button lists your open tasks from the Task Notes app. Add one to hand
   it to an agent, and Task Notes follows its card (In progress and Review show as in progress, Done marks it
   done). Only tasks you brought over are written back, and only their status.
