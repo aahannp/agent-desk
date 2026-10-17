@@ -10,7 +10,8 @@ import WebSocket from 'ws';
 import { start } from './server.mjs';
 import { createWorktree } from './lib/git.mjs';
 import { db, bus } from './lib/store.mjs';
-import { command } from './lib/sessions.mjs';
+import { command, sessions, upkeep } from './lib/sessions.mjs';
+import { transcriptContext } from './lib/transcripts.mjs';
 import { isNewer } from './lib/update.mjs';
 import { parseMarkdown } from './public/js/ui.js';
 import { stripDeskCookies } from './lib/cookies.mjs';
@@ -279,7 +280,7 @@ try {
   assert.ok(fs.existsSync(path.join(chatDir, `${plain}.jsonl`)), "Claude's own copy is left alone");
 
   // What claude is started with: a fixed id for a new chat, --resume for one Claude has saved
-  const base = { id: 'check001', kind: 'agent', agent: 'claude', role: null, worktree: null, claudeSessionId: named };
+  const base = { id: 'check001', kind: 'agent', agent: 'claude', role: null, worktree: null, cwd: repo, claudeSessionId: named };
   const fresh = command({ ...base, resume: false }, '--sneaky prompt', null).args;
   assert.equal(fresh[0], ' --sneaky prompt', 'a prompt starting with "-" is passed as plain text');
   assert.deepEqual(fresh.slice(1, 3), ['--session-id', named], 'a new chat gets the id we chose');
@@ -288,6 +289,25 @@ try {
   assert.ok(!resumed.includes('--session-id'), 'never both');
   const hooks = JSON.parse(fs.readFileSync(fresh[fresh.indexOf('--settings') + 1], 'utf8')).hooks;
   assert.match(hooks.PostToolUse[0].hooks[0].command, /\/api\/touched/, 'every file an agent edits is reported');
+  fs.writeFileSync(path.join(claudeHome, 'settings.json'), JSON.stringify({ statusLine: { type: 'command', command: 'cat # yours', padding: 1 } }));
+  const bar = JSON.parse(fs.readFileSync((args => args[args.indexOf('--settings') + 1])(command({ ...base, resume: false }, '', null).args), 'utf8')).statusLine;
+  assert.match(bar.command, /\/api\/context/, "the status line reports the context window's size");
+  assert.equal(bar.padding, 1, 'keeping your own status line settings');
+  assert.equal(execFileSync('/bin/sh', ['-c', bar.command], { input: '{"context_window":{}}' }).toString(), '{"context_window":{}}', 'and your own command gets the same input, so your status bar still shows');
+  fs.rmSync(path.join(claudeHome, 'settings.json'));
+
+  // Lead upkeep reads how full a conversation is, how often it was compacted and its latest summary (Claude Code's own shapes)
+  const fixture = path.join(tmp, 'context.jsonl');
+  const reply = (input, read, created, extra = {}) => line({ type: 'assistant', message: { model: 'claude-opus-5-5', content: [{ type: 'text', text: 'ok' }],
+    usage: { input_tokens: input, cache_read_input_tokens: read, cache_creation_input_tokens: created, output_tokens: 50 } }, ...extra });
+  const boundary = (trigger, postTokens) => line({ type: 'system', subtype: 'compact_boundary', content: 'Conversation compacted', compactMetadata: { trigger, preTokens: 150_000, postTokens } });
+  const summary = text => line({ type: 'user', isCompactSummary: true, isVisibleInTranscriptOnly: true, message: { role: 'user', content: text } });
+  fs.writeFileSync(fixture, `${[reply(2, 90_000, 500), reply(9, 9, 9, { isSidechain: true })].join('\n')}\n`);
+  assert.deepEqual(transcriptContext(fixture), { used: 90_502, compactions: 0, summary: '' }, "used = the last reply's input, cached or not; a subagent's doesn't count");
+  fs.appendFileSync(fixture, `${[boundary('manual', 8000), summary('Summary: first')].join('\n')}\n`);
+  assert.deepEqual(transcriptContext(fixture), { used: 8000, compactions: 1, summary: 'Summary: first' }, 'a /compact counts, and its size after stands until the next reply');
+  fs.appendFileSync(fixture, `${[reply(1, 40_000, 0), boundary('auto', 9000), summary('Summary: second'), reply(3, 12_000, 1000)].join('\n')}\n${reply(1, 1, 1).slice(0, 30)}`);
+  assert.deepEqual(transcriptContext(fixture), { used: 13_003, compactions: 2, summary: 'Summary: second' }, "Claude's own auto-compaction counts too, and a half-written line waits");
 
   // The whole chat lifecycle, with a stand-in `claude` on the PATH that prints its arguments and exits
   const fakeBin = path.join(tmp, 'fake-bin');
@@ -588,6 +608,80 @@ esac
     }
     assert.fail(`${what}: ${JSON.stringify((await outputOf(id)).slice(-300))}`);
   };
+  // Lead upkeep: a lead over the threshold is compacted only when it is idle at an empty prompt, and once; after
+  // replaceAfter compactions a fresh lead with the same name takes over, with a handoff
+  {
+    const UP = { on: true, compactAt: 70, replaceAfter: 1 };
+    assert.equal((await request('PATCH', '/api/settings', { body: { leadUpkeep: { ...UP, compactAt: 30 } } })).status, 400, 'compactAt is 50 to 95');
+    assert.equal((await request('PATCH', '/api/settings', { body: { leadUpkeep: { ...UP, replaceAfter: 0 } } })).status, 400, 'replaceAfter is 1 to 10');
+    assert.equal((await request('PATCH', '/api/settings', { headers: { 'x-desk-via': 'mcp' }, body: { leadUpkeep: UP } })).status, 403, "agents can't turn it on");
+    const leader = await ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: repo, role: 'lead', name: 'leader', prompt: 'Ship the login page' });
+    const other = await ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: repo, role: 'lead', name: 'leader 2' });
+    const asLeader = { 'x-desk-session': leader.id };
+    const worker = (await request('POST', '/api/sessions', { headers: asLeader, body: { kind: 'agent', agent: 'claude', project: repo, name: 'Worker' } })).body;
+    const task = (await request('POST', '/api/tasks', { headers: asLeader, body: { title: 'Login form', project: repo } })).body;
+    assert.equal(worker.startedBy?.id, leader.id);
+    const s = sessions.get(leader.id);
+    for (const id of [leader.id, other.id, worker.id]) await screenOf(id, /FAKE-CLAUDE/, 'started');
+    const transcript = path.join(chatDir, `${s.claudeSessionId}.jsonl`);
+    fs.writeFileSync(transcript, `${[line({ type: 'user', message: { content: 'Ship the login page' } }),
+      line({ type: 'assistant', message: { content: [{ type: 'text', text: 'Planning the login work' }], usage: { input_tokens: 0, cache_read_input_tokens: 100_000, cache_creation_input_tokens: 0 } } })].join('\n')}\n`);
+    const events = [];
+    bus.on('event', e => e.type === 'lead-upkeep' && events.push(e.text));
+    const paint = (above = '', typed = '\x1b[2m Try "fix typecheck errors"\x1b[22m', quietFor = 25_000) => new Promise(resolve => s.term.write(
+      `\x1b[3J\x1b[2J\x1b[H${above}\r\n${'─'.repeat(60)}\r\n❯${typed}\r\n${'─'.repeat(60)}\r\n  ⏵⏵ auto mode on\r\n`, () => { s.lastOutputAt = Date.now() - quietFor; resolve(); }));
+    const compacted = async () => { await new Promise(r => setTimeout(r, 400)); return /\/compact/.test(await outputOf(leader.id)); };
+    await ok('PATCH', '/api/settings', { leadUpkeep: { ...UP, on: false } });
+    s.contextWindow = 120_000;
+    await paint();
+    await upkeep();
+    assert.ok(!(await compacted()), 'off by default, it does nothing');
+    s.contextWindow = undefined;
+    await ok('PATCH', '/api/settings', { leadUpkeep: UP });
+    await paint();
+    await upkeep();
+    assert.ok(!(await compacted()), 'under the threshold (100k of the 200k default window): nothing');
+    const report = size => request('POST', '/api/context', { token: s.agentToken, body: { context_window: { context_window_size: size } } });
+    assert.equal((await report(5)).status, 200);
+    assert.equal(s.contextWindow, undefined, 'a nonsense window size is ignored');
+    await report(120_000);
+    assert.equal(s.contextWindow, 120_000, "its status line reports the real window: now it's 83% full");
+    for (const [why, ...screen] of [['working a moment ago', '', undefined, 5000], ['you are typing', '', ' hello'], ['a spinner is up', '✶ Tempering…'],
+      ['a permission prompt is up', 'Do you want to proceed?\r\n❯ 1. Yes\r\n  2. No\r\n']]) {
+      await paint(...screen);
+      await upkeep();
+      assert.ok(!(await compacted()), `over the threshold but ${why}: nothing`);
+    }
+    s.term.write('\x1b[3J\x1b[2J\x1b[H', () => (s.lastOutputAt = Date.now() - 25_000));
+    await upkeep();
+    assert.ok(!(await compacted()), "a screen it can't read: nothing");
+    await paint();
+    await upkeep();
+    assert.ok(await compacted(), 'idle at an empty prompt: it types /compact');
+    await paint();
+    await upkeep();
+    assert.ok(!(await compacted()), 'and not again while that compaction is pending');
+    fs.appendFileSync(transcript, `${[line({ type: 'system', subtype: 'compact_boundary', compactMetadata: { trigger: 'manual', postTokens: 20_000 } }),
+      line({ type: 'user', isCompactSummary: true, message: { content: 'Summary: login form half done' } })].join('\n')}\n`);
+    await paint();
+    await upkeep();
+    assert.deepEqual(events, ['Compacted leader (83% → 17%)', 'Replaced leader with a fresh session after 1 compaction'], 'compacted, then (after 1) replaced');
+    assert.ok(!sessions.has(leader.id), 'the old lead is stopped');
+    const fresh = (await ok('GET', '/api/sessions')).find(x => x.name === 'leader');
+    assert.deepEqual([fresh.role, fresh.model, fresh.effort, fresh.startedBy], ['lead', leader.model, leader.effort, null], 'a fresh lead with the same name, model and starter');
+    for (const [re, what] of [[/taking over from your previous self, leader/, 'it knows it is taking over'], [/Ship the login page/, 'what the old one was asked'],
+      [/Summary: login form half done/, 'its summary'], [new RegExp(`Login form \\(task ${task.id}, todo\\)`), 'its open tasks'],
+      [new RegExp(`Worker \\(agent ${worker.id}\\)`), 'its running workers'], [/agent: Planning the login work/, 'its last messages']]) await screenOf(fresh.id, re, `handoff: ${what}`);
+    assert.equal((await outputOf(fresh.id)).split('Summary: login form half done').length, 2, 'the summary is handed over once, not again among the last messages');
+    assert.equal(sessions.get(worker.id).startedBy.id, fresh.id, 'its workers now report to the new lead');
+    await screenOf(other.id, new RegExp(`\\[Message from Agent Desk\\] leader was refreshed.*agent ${fresh.id}`), 'the other lead is told');
+    assert.ok((await ok('GET', `/api/chats?project=${encodeURIComponent(repo)}`)).some(c => c.id === leader.chatId && !c.running), "the old lead's chat stays");
+    assert.equal(sessions.get(fresh.id).upkeep, undefined, 'the fresh lead starts with no compactions');
+    await ok('PATCH', '/api/settings', { leadUpkeep: { ...UP, on: false } });
+    for (const id of [fresh.id, other.id, worker.id]) await ok('DELETE', `/api/sessions/${id}`);
+    db.tasks.splice(db.tasks.indexOf(db.tasks.find(t => t.id === task.id)), 1);
+  }
+
   const asker = await ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: repo, name: 'Asker' });
   const say = (to, text, from = asker.id) => request('POST', '/api/messages', { headers: { 'x-desk-session': from, 'x-desk-via': 'mcp' }, body: { to, text } });
   const type = (id, text, from = asker.id) => request('POST', `/api/sessions/${id}/input`, { headers: { 'x-desk-session': from, 'x-desk-via': 'mcp' }, body: { text } }); // send_to_agent
