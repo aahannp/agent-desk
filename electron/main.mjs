@@ -2,6 +2,7 @@
 import { app, BrowserWindow, Menu, desktopCapturer, dialog, session, shell } from 'electron';
 import { execFile } from 'node:child_process';
 import path from 'node:path';
+import { stripDeskCookies } from '../lib/cookies.mjs';
 
 const ROOT = path.dirname(import.meta.dirname);
 let server;
@@ -53,13 +54,24 @@ async function boot() {
   // websites. So deny by default, and give Agent Desk's own top-level page only what it uses.
   const ownOrigin = new URL(server.url).origin;
   const ALLOWED = new Set(['clipboard-sanitized-write', 'notifications', 'media', 'display-capture', 'fullscreen']);
-  const isOwnPage = (url, isMainFrame) => {
-    try { return isMainFrame && new URL(url).origin === ownOrigin; } catch { return false; }
-  };
+  const isSameOrigin = url => { try { return new URL(url).origin === ownOrigin; } catch { return false; } };
+  const isOwnPage = (url, isMainFrame) => isMainFrame && isSameOrigin(url);
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) =>
     callback(ALLOWED.has(permission) && isOwnPage(details.requestingUrl, details.isMainFrame)));
   session.defaultSession.setPermissionCheckHandler((_wc, permission, origin, details) =>
     ALLOWED.has(permission) && isOwnPage(details.requestingUrl || origin, details.isMainFrame !== false));
+
+  // Cookies ignore ports, so the browser pane would hand Agent Desk's login cookie (the full token) to any
+  // localhost server it opens, such as a Docker container or a port-forward. Only Agent Desk itself gets it.
+  // (ws:// counts as http:// so the terminals' WebSocket keeps it.) One listener per session: keep it here.
+  session.defaultSession.webRequest.onBeforeSendHeaders(({ url, requestHeaders }, callback) => {
+    const name = Object.keys(requestHeaders).find(k => k.toLowerCase() === 'cookie');
+    if (name && !isSameOrigin(url.replace(/^ws/, 'http'))) {
+      const kept = stripDeskCookies(requestHeaders[name]);
+      if (kept) requestHeaders[name] = kept; else delete requestHeaders[name];
+    }
+    callback({ requestHeaders });
+  });
 
   // Screenshots: only Agent Desk's own page (not a browser pane) may capture the screen. On macOS 15+ the
   // system picker appears so you choose exactly what is shared; older versions get the main screen.

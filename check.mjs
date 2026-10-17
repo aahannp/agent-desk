@@ -12,6 +12,7 @@ import { createWorktree } from './lib/git.mjs';
 import { db } from './lib/store.mjs';
 import { command } from './lib/sessions.mjs';
 import { isNewer } from './lib/update.mjs';
+import { stripDeskCookies } from './lib/cookies.mjs';
 import { randomUUID } from 'node:crypto';
 
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desk-check-')));
@@ -666,6 +667,15 @@ esac
   fs.writeFileSync(path.join(fakeBin, 'claude'), '#!/bin/sh\necho "FAKE-CLAUDE $*"\n', { mode: 0o755 });
 
   // Updates: compare versions, check GitHub's latest release, download its .dmg (following GitHub links only)
+  // The login cookie must never reach other localhost ports (the Mac app strips it on the way out).
+  assert.equal(stripDeskCookies('desk_4848=abc; theme=dark'), 'theme=dark');
+  assert.equal(stripDeskCookies('desk_4848=abc'), '', 'nothing left, so the header is dropped');
+  assert.equal(stripDeskCookies('a=1; desk_5000=x; b=2'), 'a=1; b=2');
+  assert.equal(stripDeskCookies('note=desk_4848'), 'note=desk_4848', 'a value containing desk_ is kept');
+  assert.equal(stripDeskCookies('  a=1 ;desk_1=x;;  b = 2 ;'), 'a=1; b = 2');
+  assert.equal(stripDeskCookies(' desk_1 = x '), '');
+  assert.equal(stripDeskCookies(''), '');
+  assert.equal(stripDeskCookies(undefined), '');
   assert.ok(isNewer('v1.10.0', '1.9.2') && isNewer('2.0.0', '1.99.99') && !isNewer('v1.0.0', '1.0.0') && !isNewer('v1.0.0-beta', '1.0.0'), 'version comparison');
   let release = null;
   const dmgBytes = Buffer.from('not really a dmg');
