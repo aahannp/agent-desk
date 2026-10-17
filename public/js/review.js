@@ -51,6 +51,8 @@ function render() {
     actionsEl.replaceChildren();
     filesEl.replaceChildren();
     headEl.replaceChildren();
+    diff?.setModel(null); // or the last project's diff stays on screen
+    hostEl.querySelector('.pane-empty')?.remove();
     return;
   }
   const agentItems = data.items.filter(i => !i.main);
