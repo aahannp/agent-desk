@@ -516,6 +516,51 @@ try {
   await ok('DELETE', `/api/artifacts/${fromFile.id}`);
   assert.equal((await request('GET', `/a/${fromFile.id}`, { token: '' })).status, 404, 'deleting removes it');
 
+  // Folders: a page can be filed in one; agents file pages but only you manage the folders
+  const folderAgent = { 'x-desk-via': 'mcp', 'x-desk-session': shell.id };
+  const artifactOf = id => ok('GET', '/api/artifacts').then(all => all.find(a => a.id === id));
+  assert.equal((await artifactOf(art.id)).folder, undefined, 'a page starts Unfiled');
+  assert.equal((await request('PATCH', `/api/artifacts/${art.id}`, { body: {} })).status, 400, 'a patch needs a title or a folder');
+  assert.equal((await ok('PATCH', `/api/artifacts/${art.id}`, { folder: 'Agent Desk' })).folder, 'Agent Desk', 'you can file a page by patching it');
+  assert.equal((await artifactOf(art.id)).title, 'Q3 report', 'without touching its title');
+  assert.deepEqual(await ok('GET', '/api/artifact-folders'), [{ name: 'Agent Desk', count: 1 }], 'a new folder is made on the way');
+  assert.equal((await ok('PATCH', `/api/artifacts/${art.id}`, { folder: 'agent desk' })).folder, 'Agent Desk', 'folder names match without regard to case');
+  assert.equal((await request('PATCH', `/api/artifacts/${art.id}`, { body: { folder: 'bad/name' } })).status, 400, 'a bad folder name is refused');
+  assert.equal((await request('PATCH', `/api/artifacts/${art.id}`, { body: { folder: 'x'.repeat(41) } })).status, 400, 'and so is a long one');
+  assert.equal((await artifactOf(art.id)).folder, 'Agent Desk', 'a refused move changes nothing');
+  assert.equal((await ok('PATCH', `/api/artifacts/${art.id}`, { title: 'Q3 numbers' })).folder, 'Agent Desk', 'renaming a page keeps its folder');
+  await ok('PATCH', `/api/artifacts/${art.id}`, { title: 'Q3 report' });
+  const filed = await tool('save_artifact', { title: 'Plan', html: '<h1>plan</h1>', folder: 'Roadmap' });
+  assert.equal((await artifactOf(filed.id)).folder, 'Roadmap', 'an agent can file a page when saving it');
+  assert.deepEqual((await ok('GET', '/api/artifact-folders')).map(f => f.name), ['Agent Desk', 'Roadmap'], 'and the folder is made if new, after the others');
+  await tool('save_artifact', { id: filed.id, title: 'Plan', html: '<h1>plan v2</h1>' });
+  assert.equal((await artifactOf(filed.id)).folder, 'Roadmap', 'a new version keeps its folder');
+  await tool('save_artifact', { id: filed.id, title: 'Plan', html: '<h1>plan v3</h1>', folder: 'Agent Desk' });
+  assert.equal((await artifactOf(filed.id)).folder, 'Agent Desk', 'unless it names another');
+  await assert.rejects(tool('save_artifact', { title: 'Bad', html: '<h1>x</h1>', folder: '../up' }), /folder name/, 'a bad folder name is refused when saving too');
+  assert.equal((await ok('GET', '/api/artifacts')).length, 2, 'and nothing was saved');
+  for (const [method, url, body] of [['POST', '/api/artifact-folders', { name: 'Mine' }], ['PATCH', '/api/artifact-folders/Roadmap', { name: 'Plans' }], ['DELETE', '/api/artifact-folders/Roadmap']]) {
+    assert.equal((await request(method, url, { headers: folderAgent, body })).status, 403, `agents can't ${method} a folder`);
+  }
+  assert.equal((await request('POST', '/api/artifact-folders', { body: { name: '' } })).status, 400, 'a folder needs a name');
+  assert.equal((await request('POST', '/api/artifact-folders', { body: { name: 'a/b' } })).status, 400, 'a folder name is plain');
+  assert.equal((await request('POST', '/api/artifact-folders', { body: { name: 'agent desk' } })).status, 409, 'a folder name is used once');
+  assert.equal((await request('PATCH', '/api/artifact-folders/Nope', { body: { name: 'X' } })).status, 404, 'an unknown folder is not found');
+  assert.deepEqual((await ok('POST', '/api/artifact-folders', { name: 'Empty' })).map(f => f.name), ['Agent Desk', 'Roadmap', 'Empty'], 'you can make an empty folder');
+  assert.equal((await request('PATCH', '/api/artifact-folders/Empty', { body: { name: 'roadmap' } })).status, 409, 'renaming onto another folder is refused');
+  assert.equal((await request('PATCH', '/api/artifact-folders/Agent%20Desk', { body: { name: 'Bad/Name' } })).status, 400, 'and so is a bad new name');
+  assert.deepEqual(await ok('PATCH', '/api/artifact-folders/Agent%20Desk', { name: 'Desk' }), [{ name: 'Desk', count: 2 }, { name: 'Roadmap', count: 0 }, { name: 'Empty', count: 0 }], 'renaming keeps the order');
+  assert.deepEqual((await ok('GET', '/api/artifacts')).map(a => a.folder), ['Desk', 'Desk'], 'and moves its pages');
+  assert.equal((await ok('PATCH', '/api/artifact-folders/Roadmap', { name: 'roadmap' })).find(f => f.count === 0 && /oadmap/.test(f.name)).name, 'roadmap', 'a folder can change case');
+  await ok('DELETE', '/api/artifact-folders/Desk');
+  assert.deepEqual((await ok('GET', '/api/artifact-folders')).map(f => f.name), ['roadmap', 'Empty'], 'deleting removes the folder');
+  const unfiled = await ok('GET', '/api/artifacts');
+  assert.deepEqual(unfiled.map(a => a.folder), [undefined, undefined], 'its pages become Unfiled');
+  assert.equal((await request('GET', `/a/${filed.id}`, { token: '' })).body, '<h1>plan v3</h1>', 'and are kept');
+  await ok('DELETE', '/api/artifact-folders/roadmap');
+  await ok('DELETE', '/api/artifact-folders/Empty');
+  await ok('DELETE', `/api/artifacts/${filed.id}`);
+
   fs.writeFileSync(path.join(fakeBin, 'gh'), `#!/bin/sh
 case "$*" in
   "auth status --hostname github.com --json hosts") echo '{"hosts":{"github.com":[{"login":"me","active":false,"state":"success"},{"login":"work","active":true,"state":"success"}]}}' ;;

@@ -1,6 +1,6 @@
 // Shared by every view: live state, API calls, a tiny DOM builder, icons, toasts, menus and dialogs.
 
-export const state = { project: '', projects: [], tasks: [], sessions: [], chats: [], artifacts: [], specialists: [], agents: [], settings: {}, info: {}, termTheme: {}, theme: null };
+export const state = { project: '', projects: [], tasks: [], sessions: [], chats: [], artifacts: [], artifactFolders: [], specialists: [], agents: [], settings: {}, info: {}, termTheme: {}, theme: null };
 
 // Views register what they can do here, so they can call each other without importing each other.
 export const actions = {};
@@ -70,6 +70,7 @@ const ICONS = {
   search: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
   send: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
   chevron: '<polyline points="6 9 12 15 18 9"/>',
+  dots: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
   chevronRight: '<polyline points="9 18 15 12 9 6"/>',
   refresh: '<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>',
   copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
@@ -204,7 +205,7 @@ export const projectChats = () => state.chats.filter(c => c.project === state.pr
 export const chatTitle = s => state.chats.find(c => c.id === s.chatId)?.title ?? s.name;
 // Drag payloads between the sidebar and the grid.
 export const MONO = '"JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace'; // the terminals' font
-export const DRAG = { chat: 'application/x-desk-chat', pane: 'application/x-desk-pane' };
+export const DRAG = { chat: 'application/x-desk-chat', pane: 'application/x-desk-pane', artifact: 'application/x-desk-artifact' };
 export const baseName = p => p.split('/').filter(Boolean).pop() || p;
 // For text shown cut off on the left (direction: rtl), so leading "~" or "/" stays where it belongs.
 export const ltr = text => `\u200E${text}\u200E`;

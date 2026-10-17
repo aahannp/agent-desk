@@ -52,7 +52,7 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
 - **Browser panes** for your dev server, **command blocks** in shells (each command and its output as a
   block), **screenshots** you can mark up and hand to an agent, **voice input** (on-device in the Mac app),
   **12 themes**, a **command palette** (⌘K) and an animated cursor.
-- **Artifacts**: pages, reports and charts your agents make (they save them with the `save_artifact` tool).
+- **Artifacts**: pages, reports and charts your agents make (they save them with the `save_artifact` tool). Sort them into folders by dragging a page onto one or using its right-click menu, and agents can file a page in a folder as they save it.
   View them in the app or your browser, and publish one to GitHub Pages with one click, using an account
   you're signed in to with `gh`. Agent Desk keeps them in one repo it makes, and never writes to any other.
   Unpublish takes a page down again.

@@ -456,16 +456,23 @@ route('POST', '/api/artifacts', ({ req, body }) => {
     html = fs.readFileSync(file, 'utf8');
   }
   const project = caller(req)?.project || (body.project ? expand(body.project) : db.settings.lastProject) || null;
-  const a = A.save({ id: body.id, title: body.title, html, project, by: caller(req)?.name || 'You' });
+  const a = A.save({ id: body.id, title: body.title, html, project, by: caller(req)?.name || 'You', folder: body.folder });
   return { ...a, url: `${S.serverUrl()}/a/${a.id}` };
 });
 route('PATCH', '/api/artifacts/:id', ({ params, body }) => {
   const a = findArtifact(params.id);
-  if (!String(body.title || '').trim()) throw fail(400, 'Give it a name');
-  a.title = body.title.trim().slice(0, 120);
+  if (body.title === undefined && body.folder === undefined) throw fail(400, 'Give it a name or a folder');
+  if (body.title !== undefined && !String(body.title || '').trim()) throw fail(400, 'Give it a name');
+  if (body.folder !== undefined) A.setFolder(a, body.folder); // checks the name first, so a bad one changes nothing
+  if (body.title !== undefined) a.title = body.title.trim().slice(0, 120);
   changed('artifacts');
   return a;
 });
+// Folders group the Artifacts tab. Agents can file a page in one (save_artifact), but only you make, rename and delete them.
+route('GET', '/api/artifact-folders', () => A.folders());
+route('POST', '/api/artifact-folders', ({ req, body }) => (notFromAgent(req, 'change artifact folders'), A.addFolder(body.name), A.folders()));
+route('PATCH', '/api/artifact-folders/:name', ({ req, params, body }) => (notFromAgent(req, 'change artifact folders'), A.renameFolder(params.name, body.name), A.folders()));
+route('DELETE', '/api/artifact-folders/:name', ({ req, params }) => (notFromAgent(req, 'change artifact folders'), A.removeFolder(params.name), A.folders()));
 route('DELETE', '/api/artifacts/:id', ({ params }) => (A.remove(findArtifact(params.id)), {})); // a published copy stays on GitHub
 route('GET', '/api/github/accounts', () => A.accounts());
 route('POST', '/api/artifacts/:id/unpublish', ({ req, params }) => (notFromAgent(req, 'take pages down'), A.unpublish(findArtifact(params.id))));
