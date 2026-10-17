@@ -286,8 +286,15 @@ try {
   const resumed = command({ ...base, resume: true }, '', null).args;
   assert.deepEqual(resumed.slice(0, 2), ['--resume', named], 'a saved chat is resumed by id');
   assert.ok(!resumed.includes('--session-id'), 'never both');
-  const hooks = JSON.parse(fs.readFileSync(fresh[fresh.indexOf('--settings') + 1], 'utf8')).hooks;
+  const settingsOf = c => JSON.parse(fs.readFileSync(c[c.indexOf('--settings') + 1], 'utf8'));
+  const hooks = settingsOf(fresh).hooks;
   assert.match(hooks.PostToolUse[0].hooks[0].command, /\/api\/touched/, 'every file an agent edits is reported');
+  const savedTheme = db.settings.theme;
+  db.settings.theme = 'latte';
+  assert.equal(settingsOf(command({ ...base, resume: false }, '', null).args).theme, 'light', "claude's panes follow a light Agent Desk theme");
+  db.settings.theme = 'nord';
+  assert.equal(settingsOf(command({ ...base, resume: false }, '', null).args).theme, undefined, "a dark one leaves claude's own theme alone");
+  db.settings.theme = savedTheme;
 
   // The whole chat lifecycle, with a stand-in `claude` on the PATH that prints its arguments and exits
   const fakeBin = path.join(tmp, 'fake-bin');
