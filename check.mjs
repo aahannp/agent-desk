@@ -136,6 +136,8 @@ try {
   const og = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=check', '-c', 'user.email=check@example.com', ...args], { cwd, stdio: 'pipe' }).toString();
   og(other, 'init', '-q', '-b', 'main');
   fs.writeFileSync(path.join(other, 'README.md'), 'hello\n');
+  fs.writeFileSync(path.join(other, '.gitignore'), 'linked/\n'); // ignores the folder, not a symlink of that name
+  fs.mkdirSync(path.join(other, 'linked')); // the main folder's real, ignored node_modules
   og(other, 'add', '.');
   og(other, 'commit', '-qm', 'first');
   const handWt = path.join(tmp, 'other-wt');
@@ -158,7 +160,7 @@ try {
   assert.ok((await ok('GET', '/api/projects')).some(p => p.path === other), 'the repo the agent changed is added as a project');
   assert.equal((await ok('GET', '/api/settings')).lastProject, notRepo, 'without switching you to it');
   const handItem = (await ok('GET', `/api/review?project=${encodeURIComponent(other)}`)).items.find(i => i.path === handWt);
-  assert.deepEqual(handItem.files.map(f => f.path), ['linked', 'notes.txt', 'README.md'], 'review shows its committed and uncommitted changes');
+  assert.deepEqual(handItem.files.map(f => f.path), ['notes.txt', 'README.md'], 'review shows its committed and uncommitted changes, not its linked node_modules');
   assert.ok(handItem.add > 0 && handItem.del > 0, 'with lines added and removed');
   assert.deepEqual([handItem.base, handItem.by], ['main', plainShell.name], 'compared with the branch it came from, and says who made it');
   assert.deepEqual(await ok('GET', `/api/review/file?worktree=${encodeURIComponent(handWt)}&file=README.md`), { original: 'hello\n', modified: 'hello again\n' });
@@ -166,6 +168,7 @@ try {
   await ok('POST', '/api/review/commit', { worktree: handWt, message: 'Add notes' });
   await ok('POST', '/api/review/merge', { worktree: handWt });
   assert.equal(fs.readFileSync(path.join(other, 'notes.txt'), 'utf8'), 'not committed yet\n', 'a hand-made worktree merges like our own');
+  assert.ok(fs.lstatSync(path.join(other, 'linked')).isDirectory(), "merging never replaces the main folder's real node_modules with a worktree's link to it");
   // The main folder hasn't pulled: what its upstream already has isn't counted as the worktree's work
   const pulled = path.join(tmp, 'other-pulled');
   og(other, 'worktree', 'add', '-q', '-b', 'pulled', pulled);
