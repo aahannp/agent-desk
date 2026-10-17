@@ -221,3 +221,113 @@ export async function copy(text) {
   await navigator.clipboard.writeText(text);
   toast('Copied', 'ok');
 }
+
+// ---------- Markdown, for what agents say and for release notes ----------
+// Parsed into a plain tree ([tag, props, ...children], or a string), then built with h() and text nodes only.
+// Never innerHTML: an agent's text is untrusted, so this is where markup stops. Links go only to http(s).
+const ITEM = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/;
+const TABLE_RULE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+const starts = (line, next) => /^\s*(```|~~~|#{1,6}\s|>)/.test(line) || ITEM.test(line) || /^\s*([-*_])(\s*\1){2,}\s*$/.test(line)
+  || (line.includes('|') && TABLE_RULE.test(next ?? '') && next.includes('-'));
+const cells = line => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => inlineMarkdown(c.trim()));
+
+export function parseMarkdown(text) {
+  const lines = String(text ?? '').replace(/\r\n?/g, '\n').split('\n');
+  const out = [];
+  for (let i = 0; i < lines.length;) {
+    const line = lines[i];
+    let m;
+    if (!line.trim()) i++;
+    else if ((m = line.match(/^\s*(```|~~~)/))) { // a fence with no end runs to the end, as on GitHub
+      const body = [];
+      for (i++; i < lines.length && !lines[i].trim().startsWith(m[1]); i++) body.push(lines[i]);
+      i++;
+      out.push(['pre', null, ['code', null, body.join('\n')]]);
+    } else if ((m = line.match(/^\s*(#{1,6})\s+(.*?)\s*#*\s*$/))) {
+      out.push([`h${m[1].length}`, null, ...inlineMarkdown(m[2])]);
+      i++;
+    } else if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) {
+      out.push(['hr', null]);
+      i++;
+    } else if (/^\s*>/.test(line)) {
+      const quoted = [];
+      for (; i < lines.length && /^\s*>/.test(lines[i]); i++) quoted.push(lines[i].replace(/^\s*>\s?/, ''));
+      out.push(['blockquote', null, ...parseMarkdown(quoted.join('\n'))]);
+    } else if (ITEM.test(line)) {
+      let list;
+      [list, i] = parseList(lines, i);
+      out.push(list);
+    } else if (starts(line, lines[i + 1])) { // a table: header, |---| rule, then rows
+      const head = cells(line);
+      const rows = [];
+      for (i += 2; i < lines.length && lines[i].includes('|') && lines[i].trim(); i++) rows.push(cells(lines[i]));
+      out.push(['table', null,
+        ['thead', null, ['tr', null, ...head.map(c => ['th', null, ...c])]],
+        ['tbody', null, ...rows.map(r => ['tr', null, ...head.map((_, k) => ['td', null, ...(r[k] ?? [])])])]]);
+    } else { // a paragraph runs until a blank line or another block; its single newlines are line breaks
+      const said = [line];
+      for (i++; i < lines.length && lines[i].trim() && !starts(lines[i], lines[i + 1]); i++) said.push(lines[i]);
+      out.push(['p', null, ...said.flatMap((l, k) => [...(k ? [['br', null]] : []), ...inlineMarkdown(l.trim())])]);
+    }
+  }
+  return out;
+}
+
+// A list and the lists nested in it, from line i. Returns [tree, the line after it].
+function parseList(lines, i) {
+  const first = lines[i].match(ITEM);
+  const indent = first[1].length;
+  const ordered = /\d/.test(first[2]);
+  const items = [];
+  while (i < lines.length) {
+    const m = lines[i].match(ITEM);
+    if (m && m[1].length > indent + 1 && items.length) { // deeper: a list inside the last item
+      let sub;
+      [sub, i] = parseList(lines, i);
+      items.at(-1).push(sub);
+    } else if (m && m[1].length >= indent && /\d/.test(m[2]) === ordered) {
+      items.push(['li', null, ...inlineMarkdown(m[3])]);
+      i++;
+    } else if (!m && lines[i].trim() && /^\s/.test(lines[i]) && items.length) { // an indented line carries on the item
+      items.at(-1).push(['br', null], ...inlineMarkdown(lines[i].trim()));
+      i++;
+    } else if (!lines[i].trim() && ITEM.test(lines[i + 1] ?? '') && lines[i + 1].match(ITEM)[1].length >= indent) i++; // a blank line between items
+    else break;
+  }
+  const start = ordered && parseInt(first[2], 10);
+  return [[ordered ? 'ol' : 'ul', start > 1 ? { start } : null, ...items], i];
+}
+
+// **bold**, *italic* or _italic_, `code` and [text](https://link). A marker without its pair stays as typed.
+export function inlineMarkdown(text) {
+  const out = [];
+  let plain = '';
+  const put = node => {
+    if (plain) out.push(plain);
+    plain = '';
+    out.push(node);
+  };
+  for (let i = 0; i < text.length;) {
+    const rest = text.slice(i);
+    const word = /\w/.test(text[i - 1] ?? ''); // _ inside snake_case is not italic
+    let m;
+    if ((m = rest.match(/^\\([\\`*_[\]()#|>~-])/))) plain += m[1];
+    else if ((m = rest.match(/^(`+)(.*?[^`]|[^`])\1(?!`)/))) put(['code', null, m[2]]);
+    else if ((m = rest.match(/^\[([^\]]+)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/))) {
+      if (/^https?:\/\//i.test(m[2])) put(['a', { href: m[2], target: '_blank', rel: 'noopener noreferrer' }, ...inlineMarkdown(m[1])]);
+      else plain += m[0]; // javascript:, data:, file: and the rest stay plain text
+    } else if ((m = rest.match(/^(\*\*|__)(?=\S)(.*?\S)\1/)) && !(m[1] === '__' && word)) put(['strong', null, ...inlineMarkdown(m[2])]);
+    else if ((m = rest.match(/^\*(?=[^\s*])(.*?[^\s*])\*(?!\*)/) || (!word && rest.match(/^_(?=[^\s_])(.*?[^\s_])_(?!\w)/)))) put(['em', null, ...inlineMarkdown(m[1])]);
+    else {
+      plain += text[i];
+      i++;
+      continue;
+    }
+    i += m[0].length;
+  }
+  if (plain) out.push(plain);
+  return out;
+}
+
+const build = node => (typeof node === 'string' ? node : h(node[0], node[1] ?? {}, ...node.slice(2).map(build)));
+export const markdown = text => parseMarkdown(text).map(build);

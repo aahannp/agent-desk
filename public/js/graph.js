@@ -1,6 +1,6 @@
 // Graph view: who is doing what. Each agent or shell is a node, messages between them are edges, and named groups
 // are soft bubbles around their members. A small force layout places them, then settles and stops; dragging pins a node.
-import { state, api, h, icon, avatar, on, toast, guard, actions, modal, confirmDialog, menu, ago, agentLabel, chatTitle, projectSessions, MONO, STATUS_LABEL, TEAM_COLORS } from './ui.js';
+import { state, api, h, icon, avatar, on, toast, guard, actions, modal, confirmDialog, menu, ago, agentLabel, chatTitle, projectSessions, markdown, MONO, STATUS_LABEL, TEAM_COLORS } from './ui.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const svg = (tag, attrs = {}) => {
@@ -581,6 +581,7 @@ function openNode(id) {
     screen: h('div', { class: 'graph-term', tabIndex: 0, title: 'Open its pane', 'aria-label': `${chatTitle(s)}'s screen. Enter opens its pane.`,
       onClick: () => actions.focusSession(s.id), onKeydown: e => e.key === 'Enter' && actions.focusSession(s.id) }),
     live: h('span', { class: 'graph-live' }),
+    opened: new Set(), // long messages you've unfolded, by their text
     chat: h('div', { class: 'activity' }),
     input: ask && h('textarea', { class: 'input', rows: 2, placeholder: `Ask ${chatTitle(s)} something…`, 'aria-label': `Ask ${chatTitle(s)}`,
       onKeydown: e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAsk(); } } }),
@@ -637,11 +638,49 @@ async function refreshNode(withChat) {
   try {
     if (withChat && s.kind === 'agent') {
       const chat = await api('GET', `/api/sessions/${s.id}/chat?last=6`);
+      const said = JSON.stringify(chat.messages ?? []);
+      if (said === refs.said) return; // nothing new: leave what you unfolded or selected alone
+      refs.said = said;
       refs.chat.replaceChildren(...(chat.messages?.length ? chat.messages.map(m => h('div', { class: 'note' },
-        h('div', { class: 'who' }, h('b', {}, m.from === 'user' ? 'You (or another agent)' : chatTitle(s))), h('div', { class: 'what' }, m.text.slice(0, 1200))))
+        h('div', { class: 'who' }, h('b', {}, m.from === 'user' ? 'You (or another agent)' : chatTitle(s))), saidOf(m.text)))
         : [h('div', { class: 'muted' }, 'Nothing said yet.')]));
     }
   } catch {} // it stopped or went away; the next refresh catches up
+}
+
+// A message as Markdown, with its "(used <tool>)" lines as small chips. A long one folds to about 10 lines.
+function saidOf(text) {
+  const parts = [];
+  let words = [];
+  const flush = () => {
+    if (words.join('').trim()) parts.push(...markdown(words.join('\n')));
+    words = [];
+  };
+  for (const line of text.split('\n')) {
+    const tool = line.match(/^\(used (.+)\)$/)?.[1];
+    if (!tool) {
+      words.push(line);
+      continue;
+    }
+    flush();
+    if (parts.at(-1)?.className !== 'said-tools') parts.push(h('div', { class: 'said-tools' }));
+    parts.at(-1).append(h('span', { class: 'chip', title: tool }, tool.replace(/^mcp__.+?__/, '')));
+  }
+  flush();
+  const open = refs.opened.has(text);
+  const body = h('div', { class: `md said${open ? '' : ' folded'}` }, parts);
+  const more = h('button', { class: 'linkish said-more', hidden: !open, 'aria-expanded': String(open), onClick: () => {
+    const folded = body.classList.toggle('folded');
+    folded ? refs.opened.delete(text) : refs.opened.add(text);
+    more.textContent = folded ? 'Show more' : 'Show less';
+    more.setAttribute('aria-expanded', String(!folded));
+  } }, open ? 'Show less' : 'Show more');
+  requestAnimationFrame(() => { // once laid out: a short one needs no fold, nor its fade
+    if (open) return;
+    more.hidden = body.scrollHeight <= body.clientHeight + 2;
+    body.classList.toggle('folded', !more.hidden);
+  });
+  return [body, more];
 }
 
 function paintStatus(s) {
