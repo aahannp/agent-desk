@@ -284,8 +284,10 @@ function recentMessages(project) {
   if (recent.length >= 20) throw fail(429, 'That is 20 messages between agents in 10 minutes. Check with the user before sending more.');
   return recent;
 }
-// Signed with who sent it, so the text can't pass for another signature (or for the user).
-const sign = (from, text) => `[Message from ${from ? `${from.name} (agent ${from.id})` : 'an agent outside Agent Desk'}]\n${text.replace(/\[(message from)/gi, '($1')}`;
+// Signed with who sent it, by a plain name, so the text can't pass for another signature (or for the user): any
+// "[message from" in it, however spaced or disguised (control, zero-width or full-width characters), starts with ( instead.
+const sign = (from, text) => `[Message from ${from ? `${S.plain(from.name)} (agent ${from.id})` : 'an agent outside Agent Desk'}]\n${
+  text.normalize('NFKC').replace(/\[(?=[^\p{L}\p{N}]*message[^\p{L}\p{N}]*from)/giu, '(')}`;
 route('POST', '/api/messages', async ({ req, body }) => {
   mayMessage(req);
   const from = caller(req);
