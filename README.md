@@ -33,6 +33,10 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
   its default.
 - **Lead agent**: give it a goal and it plans tasks on the board, then starts a worker for each one in its
   own git worktree.
+- **Lead upkeep** (Settings, off by default): when a lead is idle at its prompt with its context at 70% of a
+  200K-token window (or of a smaller one: its model's, or your Claude Code auto-compact window), Agent Desk types
+  `/compact` into it. After 3 compactions a fresh lead with the same name takes over, handed
+  its summary, open tasks, running workers and last messages; the old chat stays in the sidebar.
 - **Team**: named specialists, each a Claude agent with one area of expertise, its own instructions and,
   if you like, a model (Opus, Sonnet or Haiku). Christie is a learning coach who teaches you anything step by
   step, Browner a frontend expert, and Scout a quick code finder on Haiku. Add your own in Settings, and start

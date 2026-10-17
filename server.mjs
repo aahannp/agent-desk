@@ -53,7 +53,7 @@ function sameSite(req) {
   return !origin || LOCAL.has(origin.replace(/^https?:\/\//, ''));
 }
 
-const AGENT_ROUTES = new Set(['POST /mcp', 'POST /api/claude-session', 'POST /api/touched']);
+const AGENT_ROUTES = new Set(['POST /mcp', 'POST /api/claude-session', 'POST /api/touched', 'POST /api/context']);
 // { kind: 'ui' } for the master token, { kind: 'agent', session } for an agent's token on one of
 // AGENT_ROUTES (header only, never a cookie or ?t=), otherwise null: anywhere else an agent token counts for nothing.
 function auth(req, url) {
@@ -166,6 +166,13 @@ route('PATCH', '/api/settings', ({ req, body }) => {
       if (!ok) throw fail(400, 'Each default needs a known model and effort');
     }
     if (key === 'permissionMode' && !PERMISSION_MODES.includes(value)) throw fail(400, 'Unknown permission mode');
+    if (key === 'leadUpkeep') {
+      const { on, compactAt, replaceAfter, windowCap } = value ?? {};
+      const within = (n, low, high) => Number.isInteger(n) && n >= low && n <= high;
+      if (typeof on !== 'boolean' || !within(compactAt, 50, 95) || !within(replaceAfter, 1, 10) || !within(windowCap, 50_000, 2_000_000)) {
+        throw fail(400, 'Lead upkeep is on or off, compacts at 50 to 95% of a 50,000 to 2,000,000-token window and replaces after 1 to 10 compactions');
+      }
+    }
     if (key === 'browserPanes') {
       const ok = value && typeof value === 'object' && Object.values(value).every(list => Array.isArray(list)
         && list.every(b => typeof b?.id === 'string' && /^https?:\/\//i.test(String(b.url))));
@@ -194,6 +201,15 @@ route('POST', '/api/claude-session', ({ req, body }) => {
   const s = caller(req);
   if (!s) throw fail(404, 'Unknown session');
   S.noteClaudeSession(s, body.session_id);
+  return {};
+});
+
+// Claude's status line reports its context window's size (see statusLine in lib/sessions.mjs), for lead upkeep.
+route('POST', '/api/context', ({ req, body }) => {
+  const s = caller(req);
+  if (!s) throw fail(404, 'Unknown session');
+  const size = Number(body.context_window?.context_window_size);
+  if (size >= 10_000 && size <= 100_000_000) s.contextWindow = size;
   return {};
 });
 
@@ -814,9 +830,10 @@ export async function start({ port = Number(process.env.PORT) || 4747, dataDir =
   // 127.0.0.1, not localhost: localhost may resolve to ::1, where some other program could be listening.
   const url = `http://127.0.0.1:${actual}/?t=${TOKEN}`;
   console.log(`Agent Desk is running. Open ${url}`);
+  const upkeep = setInterval(() => S.upkeep().catch(e => console.error('Lead upkeep failed:', e)), 30_000);
   return {
     port: actual, url, token: TOKEN,
-    close: () => { S.stopAll(); voice?.kill(); server.close(); },
+    close: () => { clearInterval(upkeep); S.stopAll(); voice?.kill(); server.close(); },
   };
 }
 
