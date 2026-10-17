@@ -180,6 +180,12 @@ try {
   assert.deepEqual(lateItem.files.map(f => f.path), ['late.txt'], "commits the main folder hasn't pulled aren't the agent's");
   og(other, 'worktree', 'add', '-q', '--detach', path.join(tmp, 'other-detached'));
   assert.match((await request('POST', '/api/review/merge', { body: { worktree: path.join(tmp, 'other-detached') } })).body.error, /detached/, 'a detached worktree can be reviewed but not merged');
+  assert.equal(lateItem.recorded, false, "a worktree no agent edited isn't marked for Discard");
+  assert.match((await request('POST', '/api/review/remove', { body: { worktree: late } })).body.error, /won't delete it/, "Discard refuses a worktree you made yourself");
+  assert.ok(fs.existsSync(late), 'and leaves its folder alone');
+  assert.equal(handItem.recorded, true);
+  await ok('POST', '/api/review/remove', { worktree: handWt });
+  assert.ok(!fs.existsSync(handWt), 'a worktree an agent edited can be discarded');
   await ok('DELETE', `/api/sessions/${plainShell.id}`);
   await ok('POST', '/api/projects', { path: repo }); // back to the main check project
 

@@ -91,7 +91,7 @@ function renderActions() {
     h('button', { class: 'btn sm', disabled: !hasChanges, onClick: () => commit(i) }, icon('check', 13), 'Commit'),
     i.session && h('button', { class: 'btn sm', onClick: () => actions.focusSession(i.session.id) }, icon('terminal', 13), 'Terminal'),
     h('button', { class: 'btn sm', onClick: () => actions.browseFolder(i.path) }, icon('folder', 13), 'Files'),
-    !i.main && h('button', { class: 'btn sm danger', onClick: () => discard(i) }, icon('trash', 13), 'Discard'),
+    !i.main && h('button', { class: 'btn sm danger', disabled: !i.recorded, title: i.recorded ? '' : "Agent Desk didn't make this worktree and no agent edited it, so it won't delete it", onClick: () => discard(i) }, icon('trash', 13), 'Discard'),
   ].filter(Boolean));
 }
 
