@@ -75,6 +75,9 @@ const notFromAgent = (req, what) => { if (fromAgent(req)) throw fail(403, `Agent
 const mayStartAgents = req => {
   if (fromAgent(req) && db.settings.agentsCanSpawn === false) throw fail(403, 'Starting other agents is turned off in Agent Desk settings.');
 };
+const mayMessage = req => {
+  if (fromAgent(req) && db.settings.agentsCanMessage === false) throw fail(403, 'Agents messaging each other is turned off in Agent Desk settings.');
+};
 const projectFor = (req, value) => {
   const project = value ? expand(value) : caller(req)?.project || db.settings.lastProject;
   if (!project) throw fail(400, 'No project selected');
@@ -221,12 +224,12 @@ route('DELETE', '/api/chats/:id', ({ params }) => {
   changed('chats');
   return {};
 });
-// An agent reads or copies only agents in its own project; you can do either for any of them.
+// An agent reads, copies or types into only agents in its own project; you can do any of them for any agent.
 const sameProject = (req, id) => {
   const s = findSession(id);
   const from = caller(req);
-  if (fromAgent(req) && !from) throw fail(403, 'Only agents inside Agent Desk can read or copy other agents');
-  if (from && s.project !== from.project) throw fail(403, 'Agents can only read or copy agents in their own project');
+  if (fromAgent(req) && !from) throw fail(403, 'Only agents inside Agent Desk can read, copy or type into other agents');
+  if (from && s.project !== from.project) throw fail(403, 'Agents can only read, copy or type into agents in their own project');
   return s;
 };
 route('GET', '/api/sessions/:id/chat', ({ req, params, query }) => S.conversation(sameProject(req, params.id), Math.min(Number(query.get('last')) || 30, 200)));
@@ -236,7 +239,18 @@ route('POST', '/api/sessions/:id/clone', async ({ req, params, body }) => {
   return S.info(await S.clone(src, { prompt: String(body.prompt ?? ''), name: body.name ? String(body.name).slice(0, 60) : undefined, startedBy: starter(req) }));
 });
 route('GET', '/api/sessions/:id/output', ({ params, query }) => ({ text: S.screenText(findSession(params.id), Number(query.get('lines')) || 60) }));
-route('POST', '/api/sessions/:id/input', ({ params, body }) => (S.send(findSession(params.id), String(body.text ?? ''), body.submit !== false), {}));
+// You type anything into any pane. An agent (send_to_agent) gets a message's checks and limit: plain text, into an
+// agent in its own project, never a shell or a permission prompt.
+route('POST', '/api/sessions/:id/input', ({ req, params, body }) => {
+  const text = String(body.text ?? '');
+  if (!fromAgent(req)) return (S.send(findSession(params.id), text, body.submit !== false), {});
+  mayMessage(req);
+  const target = sameProject(req, params.id);
+  const recent = recentMessages(target.project);
+  S.deliver(target, text);
+  sent.set(target.project, [...recent, Date.now()]);
+  return {};
+});
 
 // Tasks
 route('GET', '/api/tasks', ({ req, query }) => {
@@ -261,8 +275,15 @@ route('POST', '/api/tasks', ({ req, body }) => addTask(req, { ...body, tasknotes
 // Agents talking to each other: a message goes to a running agent by name or id, typed into its terminal and
 // signed with who sent it. If no one by that name is running but they're on the team, one starts with it.
 const sent = new Map(); // project -> times of its recent messages, to stop agents chatting forever
+// Counted against the project that receives it, so neither a new agent nor a different project resets it.
+// The caller adds its own time once the message is through.
+function recentMessages(project) {
+  const recent = (sent.get(project) ?? []).filter(t => Date.now() - t < 10 * 60_000);
+  if (recent.length >= 20) throw fail(429, 'That is 20 messages between agents in 10 minutes. Check with the user before sending more.');
+  return recent;
+}
 route('POST', '/api/messages', async ({ req, body }) => {
-  if (fromAgent(req) && db.settings.agentsCanMessage === false) throw fail(403, 'Agents messaging each other is turned off in Agent Desk settings.');
+  mayMessage(req);
   const from = caller(req);
   const text = String(body.text ?? '').trim();
   const to = String(body.to ?? '').trim();
@@ -281,10 +302,8 @@ route('POST', '/api/messages', async ({ req, body }) => {
   const body_ = text.replace(/\[(message from)/gi, '($1'); // so the text can't pass for another signature
   const signed = `[Message from ${sender}]\n${body_}${from ? `\n\n(To answer, use message_agent to "${from.name}".)` : ''}`;
   let target = matches[0];
-  // Counted against the project that receives it, so neither a new agent nor a different project resets it.
   const bucket = target?.project ?? project;
-  const recent = (sent.get(bucket) ?? []).filter(t => Date.now() - t < 10 * 60_000);
-  if (recent.length >= 20) throw fail(429, 'That is 20 messages between agents in 10 minutes. Check with the user before sending more.');
+  const recent = recentMessages(bucket);
   if (target) {
     S.deliver(target, signed);
   } else {
