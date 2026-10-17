@@ -313,6 +313,7 @@ route('PATCH', '/api/artifacts/:id', ({ params, body }) => {
 });
 route('DELETE', '/api/artifacts/:id', ({ params }) => (A.remove(findArtifact(params.id)), {})); // a published copy stays on GitHub
 route('GET', '/api/github/accounts', () => A.accounts());
+route('POST', '/api/artifacts/:id/unpublish', ({ req, params }) => (notFromAgent(req, 'take pages down'), A.unpublish(findArtifact(params.id))));
 route('POST', '/api/artifacts/:id/publish', ({ params, body }) =>
   A.publish(findArtifact(params.id), { account: String(body.account || ''), repo: String(body.repo || ''), slug: String(body.slug || '') }));
 

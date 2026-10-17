@@ -431,6 +431,7 @@ esac
       }
       const f = r.files[m[3]];
       if (req.method === 'GET') return f ? send(200, { sha: f.sha }) : send(404, { message: 'Not Found' });
+      if (req.method === 'DELETE') return f && body.sha === f.sha ? (delete r.files[m[3]], send(200, {})) : send(409, { message: 'sha does not match' });
       if (f && body.sha !== f.sha) return send(409, { message: 'sha does not match' });
       r.files[m[3]] = { sha: `s${seen.length}`, text: Buffer.from(body.content, 'base64').toString() };
       return send(f ? 200 : 201, {});
@@ -453,6 +454,12 @@ esac
   assert.ok(!seen.slice(before).some(r => r.method === 'PUT'), 'and writes nothing there');
   assert.equal((await request('POST', `/api/artifacts/${art.id}/publish`, { body: { account: 'stranger', repo: 'artifacts', slug: 'x' } })).status, 400, 'only signed-in accounts');
   assert.equal((await request('POST', `/api/artifacts/${art.id}/publish`, { body: { account: 'me', repo: 'artifacts', slug: '../up' } })).status, 400, 'page names are plain');
+  assert.equal((await request('POST', `/api/artifacts/${art.id}/unpublish`, { headers: { 'x-desk-via': 'mcp' } })).status, 403, "agents can't take pages down");
+  const takenDown = await ok('POST', `/api/artifacts/${art.id}/unpublish`);
+  assert.equal(takenDown.published, null, 'unpublishing forgets where it was');
+  assert.ok(!repos['me/artifacts'].files['q3-report/index.html'], 'and removes the page from the repo');
+  assert.ok(repos['me/artifacts'].files['.agent-desk'], 'leaving the rest alone');
+  assert.equal((await request('POST', `/api/artifacts/${art.id}/unpublish`)).status, 409, 'an unpublished page has nothing to take down');
   await new Promise(resolve => hub.close(resolve));
 
   // Agents talking to each other: by name, to a running agent or a new one, signed, and never into a prompt

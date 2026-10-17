@@ -23,6 +23,7 @@ export function toolbar() {
   if (!a) return [];
   return [
     a.published && h('button', { class: 'btn', onClick: () => window.open(a.published.url, '_blank'), title: a.published.url }, icon('globe', 15), 'Published page'),
+    a.published && h('button', { class: 'btn', onClick: () => unpublish(a) }, icon('x', 15), 'Unpublish'),
     h('button', { class: 'icon-btn', title: 'Rename', onClick: () => rename(a) }, icon('pen', 15)),
     h('button', { class: 'icon-btn', title: 'Delete', onClick: () => remove(a) }, icon('trash', 15)),
     h('button', { class: 'btn', onClick: () => openInBrowser(a) }, icon('external', 15), 'Open in browser'),
@@ -66,11 +67,19 @@ const rename = guard(async a => {
   if (title?.trim()) await api('PATCH', `/api/artifacts/${a.id}`, { title });
 });
 const remove = guard(async a => {
-  const note = a.published ? ' The published page stays on GitHub until you remove it there.' : '';
+  const note = a.published ? ' Its published page stays online: Unpublish it first to take it down.' : '';
   if (await confirmDialog('Delete artifact?', `“${a.title}” is removed from Agent Desk.${note}`, { label: 'Delete', danger: true })) {
     await api('DELETE', `/api/artifacts/${a.id}`);
   }
 });
+const unpublish = guard(async a => {
+  const { url, account, repo } = a.published;
+  const note = `${url} stops working in about a minute. GitHub keeps earlier versions in the history of ${account}/${repo}, which is public. To erase them too, delete that repo on GitHub (it holds all your published pages).`;
+  if (!(await confirmDialog('Take this page down?', note, { label: 'Unpublish', danger: true }))) return;
+  await api('POST', `/api/artifacts/${a.id}/unpublish`);
+  toast('Unpublished. The page goes offline in about a minute.', 'ok');
+});
+
 const more = (anchor, a) => menu(anchor, [
   { label: 'Open in browser', icon: 'external', onClick: () => openInBrowser(a) },
   { label: 'Rename', icon: 'pen', onClick: () => rename(a) },
