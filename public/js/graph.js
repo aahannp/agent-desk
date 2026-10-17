@@ -1,5 +1,6 @@
 // Graph view: who is doing what. Each agent or shell is a node, messages between them are edges, and named groups
 // are soft bubbles around their members. A small force layout places them, then settles and stops; dragging pins a node.
+// The layout lives in world coordinates; one transform on the world layer pans and zooms it, like a map.
 import { state, api, h, icon, avatar, on, toast, guard, actions, modal, confirmDialog, menu, ago, agentLabel, chatTitle, projectSessions, markdown, MONO, STATUS_LABEL, TEAM_COLORS } from './ui.js';
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -11,8 +12,9 @@ const svg = (tag, attrs = {}) => {
 const still = matchMedia('(prefers-reduced-motion: reduce)');
 const FRESH = 2 * 60_000; // an edge with a message this recent glows
 const PAD = 50; // how far a group's bubble reaches past its members
+const ZOOM = [0.3, 3];
 
-let root, stage, hullLayer, edgeLayer, pulseLayer, nodeLayer, labelLayer, lassoEl, tipEl, legendEl, selBar, panel;
+let root, stage, world, zoomLabel, hullLayer, edgeLayer, pulseLayer, nodeLayer, labelLayer, lassoEl, tipEl, legendEl, selBar, panel;
 let messages = [];
 let groups = [];
 let showExited = false;
@@ -31,6 +33,12 @@ const pos = new Map(); // session id -> { x, y, vx, vy, pinned }
 const nodeEls = new Map();
 const selected = new Set();
 const pulses = []; // messages travelling along their edge: { from, to, start, el }
+let view = { x: 0, y: 0, k: 1 }; // the camera: a world point (x, y) shows at (x * k + view.x, y * k + view.y)
+let aim = null; // a view the camera is gliding to
+let manual = false; // you've panned or zoomed, so the camera stops framing the graph by itself
+let follow = false; // keep framing the graph while its layout settles
+const views = new Map(); // project -> { view, manual }, for this session
+let viewProject = '';
 
 const isShown = () => actions.currentView?.() === 'graph';
 const keyOf = s => s.chatId || s.id; // a group keeps an agent across restarts by its chat
@@ -45,17 +53,32 @@ export function mount(el) {
   pulseLayer = svg('g');
   const drawing = svg('svg', { class: 'graph-svg' });
   drawing.append(hullLayer, edgeLayer, pulseLayer);
-  nodeLayer = h('div', { class: 'graph-nodes' });
+  nodeLayer = h('div', { class: 'graph-nodes', onFocusin: e => e.target.matches(':focus-visible') && reveal(e.target.dataset.id) }); // tabbed to
   labelLayer = h('div', { class: 'graph-labels' });
   lassoEl = h('div', { class: 'graph-lasso', hidden: true });
   tipEl = h('div', { class: 'graph-tip', role: 'tooltip', hidden: true });
-  stage = h('div', { class: 'graph-stage', onPointerdown: lasso }, drawing, labelLayer, nodeLayer, lassoEl, tipEl);
+  world = h('div', { class: 'graph-world' }, drawing, labelLayer, nodeLayer);
+  stage = h('div', { class: 'graph-stage', tabIndex: 0, 'aria-label': 'Graph. Arrow keys pan, plus and minus zoom, 0 fits it all in view.',
+    onPointerdown: e => (e.shiftKey ? lasso(e) : pan(e)), onKeydown: keys }, world, lassoEl, tipEl);
+  stage.addEventListener('wheel', wheel, { passive: false });
+  zoomLabel = h('span', { class: 'graph-zoom-k', 'aria-live': 'polite' }, '100%');
+  const zoomBtn = (label, title, run, child) => h('button', { class: 'icon-btn', title, 'aria-label': label, onClick: run }, child);
+  const zoomBar = h('div', { class: 'graph-zoom', role: 'group', 'aria-label': 'Zoom' },
+    zoomBtn('Zoom out', 'Zoom out (−)', () => zoomBy(1 / 1.25), '−'), zoomLabel, zoomBtn('Zoom in', 'Zoom in (+)', () => zoomBy(1.25), '+'),
+    h('button', { class: 'btn xs', title: 'Fit everything in view (0)', onClick: () => fitNow() }, 'Fit'));
   legendEl = h('div', { class: 'graph-legend' });
   selBar = h('div', { class: 'graph-selbar', hidden: true });
-  root = h('div', { class: 'graph' }, stage, legendEl, selBar);
+  root = h('div', { class: 'graph' }, stage, legendEl, zoomBar, selBar);
   el.append(root);
+  // Focusing a node that's out of view must not scroll these (they hide overflow, but can still scroll): the camera moves instead.
+  root.addEventListener('scroll', e => (e.target === root || e.target === stage) && e.target.scrollTo(0, 0), true);
 
   on('project', () => {
+    views.set(viewProject, { view, manual });
+    viewProject = state.project;
+    ({ view, manual } = views.get(viewProject) ?? { view: { x: 0, y: 0, k: 1 }, manual: false });
+    aim = null;
+    applyView();
     messages = [];
     groups = [];
     pos.clear();
@@ -82,11 +105,13 @@ export function mount(el) {
   new ResizeObserver(() => {
     if (!isShown()) return;
     measure();
+    follow = !manual;
     heat(0.3);
   }).observe(stage);
 }
 
 export const show = () => {
+  viewProject ||= state.project;
   measure();
   load();
   if (open?.kind === 'node' && !mirror && byId(open.id)) screenOf(byId(open.id));
@@ -155,6 +180,7 @@ function render() {
   const now = [nodes.map(s => s.id).join(), edges.map(e => e.key).join(), groups.map(g => g.members.join()).join('|')].join('/');
   if (now !== shape) {
     shape = now;
+    follow = !manual;
     heat(1);
   } else place();
 }
@@ -252,6 +278,8 @@ function drawLegend() {
     dot('working', 'Working'), dot('idle', 'Idle'), dot('needs-input', 'Needs you'), dot('exited', 'Exited'),
     h('span', { class: 'sep' }),
     h('span', { class: 'line' }, h('i', { class: 'solid' }), 'Messages'), h('span', { class: 'line' }, h('i', { class: 'dashed' }), 'Started'),
+    h('span', { class: 'sep' }),
+    h('span', { class: 'graph-hint' }, 'Drag to pan · Pinch or ⌘-scroll to zoom · Shift-drag to select'),
     groups.length > 0 ? h('span', { class: 'sep' }) : '',
     ...groups.map(g => h('button', { class: 'graph-chip', style: `--g: ${g.color}`, onClick: () => openGroup(g.id) }, g.name)));
 }
@@ -309,8 +337,8 @@ function tick() {
     if (p.pinned || dragging === s.id) { p.vx = p.vy = 0; continue; }
     p.vx *= 0.6;
     p.vy *= 0.6;
-    p.x = Math.max(70, Math.min(W - 70, p.x + p.vx));
-    p.y = Math.max(50, Math.min(H - 70, p.y + p.vy));
+    p.x += p.vx;
+    p.y += p.vy;
   }
 }
 
@@ -320,12 +348,17 @@ function heat(a) {
   if (still.matches) { // no motion: settle at once
     for (let i = 0; i < 300 && alpha > 0.005; i++, alpha *= 0.97) tick();
     alpha = 0;
+    if (follow) glideTo(fitView());
+    follow = false;
     return place();
   }
-  if (!running) {
-    running = true;
-    requestAnimationFrame(frame);
-  }
+  kick();
+}
+
+function kick() {
+  if (running || !isShown()) return;
+  running = true;
+  requestAnimationFrame(frame);
 }
 
 function frame(now) {
@@ -333,16 +366,149 @@ function frame(now) {
     tick();
     alpha *= 0.97;
   } else alpha = 0;
+  if (follow && !manual) aim = fitView(); // frame the graph as it settles
+  if (!alpha) follow = false;
+  glide();
   place();
   drawPulses(now);
-  running = isShown() && (alpha > 0 || pulses.length > 0 || dragging !== null);
+  running = isShown() && (alpha > 0 || pulses.length > 0 || dragging !== null || aim !== null);
   if (running) requestAnimationFrame(frame);
 }
 
 function relayout() {
   for (const p of pos.values()) p.pinned = false;
   drawNodes();
+  manual = false;
+  follow = true;
   heat(1);
+}
+
+// ---------- The camera: pan, zoom and fit ----------
+function applyView() {
+  if (!world) return;
+  world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.k})`;
+  stage.style.backgroundPosition = `${view.x}px ${view.y}px`; // the dots move with the world
+  stage.style.backgroundSize = `${24 * view.k}px ${24 * view.k}px`;
+  zoomLabel.textContent = `${Math.round(view.k * 100)}%`;
+}
+
+// Each frame, a fraction of the way to where it's going; with reduced motion, straight there.
+function glide() {
+  if (!aim) return;
+  const t = still.matches ? 1 : 0.2;
+  view = { x: view.x + (aim.x - view.x) * t, y: view.y + (aim.y - view.y) * t, k: view.k + (aim.k - view.k) * t };
+  if (Math.abs(aim.x - view.x) < 0.5 && Math.abs(aim.y - view.y) < 0.5 && Math.abs(aim.k - view.k) < 0.001) {
+    view = aim;
+    aim = null;
+  }
+  applyView();
+}
+function glideTo(v) {
+  aim = v;
+  if (still.matches) glide();
+  else kick();
+}
+
+// The part of the canvas you can see: not under the side panel, and above the legend.
+function room() {
+  const right = panel ? panel.offsetLeft - 10 : size.width;
+  return { left: 0, top: 44, right, bottom: size.height - 52 }; // below the zoom control
+}
+
+// Zoom by f, keeping the world point under (sx, sy) on the screen where it is.
+function zoomed(f, sx, sy, from = view) {
+  const k = Math.min(ZOOM[1], Math.max(ZOOM[0], from.k * f));
+  return { k, x: sx - ((sx - from.x) * k) / from.k, y: sy - ((sy - from.y) * k) / from.k };
+}
+function zoomBy(f) {
+  const r = room();
+  manual = true;
+  glideTo(zoomed(f, (r.left + r.right) / 2, (r.top + r.bottom) / 2, aim ?? view));
+}
+function panBy(dx, dy) {
+  manual = true;
+  aim = null;
+  view = { ...view, x: view.x + dx, y: view.y + dy };
+  applyView();
+}
+
+// The view that shows every node and group bubble, with some room around them. Never zoomed in past 100%.
+function fitView() {
+  const r = room();
+  let box = null;
+  const take = (l, t, rr, b) => (box = box ? { l: Math.min(box.l, l), t: Math.min(box.t, t), r: Math.max(box.r, rr), b: Math.max(box.b, b) } : { l, t, r: rr, b });
+  for (const s of nodes) (p => p && take(p.x - 70, p.y - 32, p.x + 70, p.y + 62))(pos.get(s.id));
+  for (const g of groups) for (const id of g.ids ?? []) (p => p && take(p.x - PAD, p.y + 18 - PAD - 32, p.x + PAD, p.y + 18 + PAD))(pos.get(id));
+  if (!box || r.right - r.left < 120) return { ...view };
+  const k = Math.min(1, Math.max(ZOOM[0], Math.min((r.right - r.left - 48) / (box.r - box.l), (r.bottom - r.top - 48) / (box.b - box.t))));
+  return { k, x: (r.left + r.right) / 2 - ((box.l + box.r) / 2) * k, y: (r.top + r.bottom) / 2 - ((box.t + box.b) / 2) * k };
+}
+const fitNow = () => {
+  manual = false;
+  glideTo(fitView());
+};
+
+// Brings a node into the part of the canvas you can see, when it's outside it.
+function reveal(id) {
+  const p = pos.get(id);
+  if (!p) return;
+  const r = room();
+  const v = aim ?? view;
+  const sx = p.x * v.k + v.x;
+  const sy = p.y * v.k + v.y;
+  if (sx > r.left + 80 && sx < r.right - 80 && sy > r.top + 50 && sy < r.bottom - 70) return;
+  glideTo({ ...v, x: v.x + (r.left + r.right) / 2 - sx, y: v.y + (r.top + r.bottom) / 2 - sy });
+}
+
+// Two fingers or the wheel pan; a pinch (which arrives as ctrl+wheel) or ⌘/ctrl+wheel zooms around the pointer.
+function wheel(e) {
+  e.preventDefault();
+  if (e.ctrlKey || e.metaKey) {
+    const box = stage.getBoundingClientRect();
+    const dy = Math.max(-40, Math.min(40, e.deltaMode ? e.deltaY * 16 : e.deltaY));
+    manual = true;
+    aim = null;
+    view = zoomed(Math.exp(-dy * 0.008), e.clientX - box.left, e.clientY - box.top);
+    applyView();
+  } else panBy(-(e.deltaMode ? e.deltaX * 16 : e.deltaX), -(e.deltaMode ? e.deltaY * 16 : e.deltaY));
+}
+
+// Dragging the empty canvas pans it. A click without a drag clears the selection, as before.
+function pan(e) {
+  if (e.button !== 0 || e.target.closest('.gnode, .graph-group-label, .pane-empty')) return;
+  e.preventDefault(); // no text selection, and no stray focus
+  stage.focus({ preventScroll: true });
+  stage.setPointerCapture(e.pointerId);
+  let last = { x: e.clientX, y: e.clientY };
+  let moved = false;
+  const move = ev => {
+    if (!(ev.buttons & 1)) return end(); // the button came up somewhere we didn't hear about
+    if (!moved && Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) < 4) return;
+    moved = true;
+    stage.classList.add('panning');
+    panBy(ev.clientX - last.x, ev.clientY - last.y);
+    last = { x: ev.clientX, y: ev.clientY };
+  };
+  const end = () => {
+    stage.removeEventListener('pointermove', move);
+    stage.removeEventListener('pointerup', end);
+    stage.removeEventListener('pointercancel', end);
+    stage.classList.remove('panning');
+    if (!moved) setSelection([]);
+  };
+  stage.addEventListener('pointermove', move);
+  stage.addEventListener('pointerup', end);
+  stage.addEventListener('pointercancel', end);
+}
+
+function keys(e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest('input, textarea, select')) return;
+  const step = e.shiftKey ? 240 : 60;
+  const go = { ArrowLeft: () => panBy(step, 0), ArrowRight: () => panBy(-step, 0), ArrowUp: () => panBy(0, step), ArrowDown: () => panBy(0, -step),
+    '+': () => zoomBy(1.25), '=': () => zoomBy(1.25), '-': () => zoomBy(1 / 1.25), _: () => zoomBy(1 / 1.25), 0: fitNow }[e.key];
+  if (!go) return;
+  e.preventDefault();
+  go();
 }
 
 const unpin = id => {
@@ -441,10 +607,11 @@ function grab(e, id) {
     if (!moved) {
       moved = true;
       dragging = id;
+      follow = false; // the camera holds still under your hand
       el.setPointerCapture(e.pointerId);
       el.classList.add('dragging', 'pinned');
     }
-    Object.assign(p, { x: start.px + dx, y: start.py + dy, vx: 0, vy: 0, pinned: true });
+    Object.assign(p, { x: start.px + dx / view.k, y: start.py + dy / view.k, vx: 0, vy: 0, pinned: true });
     heat(0.25);
   };
   const up = () => {
@@ -460,8 +627,10 @@ function grab(e, id) {
   addEventListener('pointerup', up);
 }
 
+// Shift-dragging the empty canvas draws a box that selects the nodes inside it.
 function lasso(e) {
   if (e.button !== 0 || e.target.closest('.gnode, .graph-group-label, .pane-empty')) return;
+  e.preventDefault();
   const box = stage.getBoundingClientRect();
   const x0 = e.clientX - box.left;
   const y0 = e.clientY - box.top;
@@ -479,7 +648,7 @@ function lasso(e) {
     removeEventListener('pointerup', up);
     lassoEl.hidden = true;
     if (!rect) return e.shiftKey || setSelection([]); // a click on empty space clears the selection
-    const inside = nodes.filter(s => (p => p.x >= rect.left && p.x <= rect.right && p.y >= rect.top && p.y <= rect.bottom)(pos.get(s.id))).map(s => s.id);
+    const inside = nodes.filter(s => (p => (x => x >= rect.left && x <= rect.right)(p.x * view.k + view.x) && (y => y >= rect.top && y <= rect.bottom)(p.y * view.k + view.y))(pos.get(s.id))).map(s => s.id);
     setSelection(e.shiftKey ? [...selected, ...inside] : inside);
   };
   addEventListener('pointermove', move);
@@ -602,6 +771,7 @@ function openNode(id) {
     ask && h('div', { class: 'graph-ask' }, refs.input,
       h('button', { class: 'btn primary', title: 'Send (Enter). Typed into its pane as you.', onClick: () => sendAsk() }, icon('send', 14), 'Ask')));
   (refs.input || panel.querySelector('.drawer-head .icon-btn')).focus();
+  reveal(id); // not hidden behind the panel
   screenOf(s);
   refreshNode(true);
   clearInterval(poll);
