@@ -9,9 +9,10 @@ import path from 'node:path';
 import WebSocket from 'ws';
 import { start } from './server.mjs';
 import { createWorktree } from './lib/git.mjs';
-import { db } from './lib/store.mjs';
+import { db, bus } from './lib/store.mjs';
 import { command } from './lib/sessions.mjs';
 import { isNewer } from './lib/update.mjs';
+import { parseMarkdown } from './public/js/ui.js';
 import { stripDeskCookies } from './lib/cookies.mjs';
 import { randomUUID } from 'node:crypto';
 
@@ -95,6 +96,20 @@ try {
   fs.writeFileSync(path.join(tmp, 'x.svg'), '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
   assert.equal((await request('GET', `/api/fs/raw?path=${encodeURIComponent(path.join(tmp, 'x.svg'))}`)).status, 404, 'SVGs are never served same-origin');
 
+  // Markdown in the Graph panel and the Updates dialog: a plain tree that the page builds with text nodes only
+  const md = text => JSON.stringify(parseMarkdown(text));
+  assert.equal(md('<img src=x onerror=alert(1)>'), '[["p",null,"<img src=x onerror=alert(1)>"]]', 'HTML stays literal text');
+  assert.equal(md('[x](javascript:alert(1)) [y](data:text/html,hi)'), '[["p",null,"[x](javascript:alert(1)) [y](data:text/html,hi)"]]', 'only http(s) links become links');
+  assert.equal(md('[docs](https://example.com)'), '[["p",null,["a",{"href":"https://example.com","target":"_blank","rel":"noopener noreferrer"},"docs"]]]');
+  assert.equal(md('**bold**, *it*, `a|b` and snake_case'), '[["p",null,["strong",null,"bold"],", ",["em",null,"it"],", ",["code",null,"a|b"]," and snake_case"]]');
+  assert.equal(md('**not closed and `open'), '[["p",null,"**not closed and `open"]]', 'unclosed markers stay as typed');
+  assert.equal(md('- one\n  - two\n- three'), '[["ul",null,["li",null,"one",["ul",null,["li",null,"two"]]],["li",null,"three"]]]', 'a list with a nested level');
+  assert.equal(md('| a | b |\n|---|---|\n| 1 | 2 |'),
+    '[["table",null,["thead",null,["tr",null,["th",null,"a"],["th",null,"b"]]],["tbody",null,["tr",null,["td",null,"1"],["td",null,"2"]]]]]', 'a table');
+  assert.equal(md('```\n<b>x</b>\n**y**\n```'), '[["pre",null,["code",null,"<b>x</b>\\n**y**"]]]', 'a fenced block keeps its text as is');
+  assert.equal(md('## What\'s new\n\n> said\n\n---'), '[["h2",null,"What\'s new"],["blockquote",null,["p",null,"said"]],["hr",null]]');
+  for (const odd of ['', '*', '**', '`', '[', '[a](', '|', '|\n|-|', '- ', '1.', '```', '> ', '\\', '_a_b_', '***x***']) parseMarkdown(odd); // never throws
+
   // Projects and a shell session with command blocks
   await ok('POST', '/api/projects', { path: repo });
   const shell = await ok('POST', '/api/sessions', { kind: 'shell' });
@@ -102,6 +117,27 @@ try {
   const out = await shellUntil(shell.id, cookie, 'echo ok-$((6*7))', ['ok-42', '\x1b]133;D;0']);
   assert.ok(out.includes('\x1b]633;E;echo ok-$((6*7))'), 'the command text is marked for its block');
   assert.match((await ok('GET', `/api/sessions/${shell.id}/output?lines=20`)).text, /ok-42/, 'screen text is readable');
+
+  // The pty's size is listed (the Graph panel's mirror draws at exactly that size), and a drag's many resizes
+  // reach pages as one change once it settles
+  const sizeOf = async () => (({ cols, rows }) => ({ cols, rows }))((await ok('GET', '/api/sessions')).find(x => x.id === shell.id));
+  assert.deepEqual(await sizeOf(), { cols: 120, rows: 32 }, 'sessions list their terminal size');
+  const sessionEvents = [];
+  const count = e => e.type === 'sessions' && sessionEvents.push(e);
+  bus.on('event', count);
+  await new Promise((resolve, reject) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${desk.port}/ws?id=${shell.id}`, { origin: SELF, headers: { cookie } });
+    ws.on('open', () => {
+      for (const cols of [110, 100, 90]) ws.send(JSON.stringify({ t: 'resize', cols, rows: 30 }));
+      setTimeout(() => { ws.close(); resolve(); }, 100);
+    });
+    ws.on('error', reject);
+  });
+  assert.equal(sessionEvents.length, 0, 'no change is announced while the size is still moving');
+  await new Promise(resolve => setTimeout(resolve, 400));
+  bus.off('event', count);
+  assert.equal(sessionEvents.length, 1, 'one change once it settles');
+  assert.deepEqual(await sizeOf(), { cols: 90, rows: 30 }, 'the new size is listed');
   assert.equal((await request('POST', '/api/sessions', { body: { kind: 'shell', project: '/no/such/folder' } })).status, 400, 'missing folder is rejected');
 
   // Task board

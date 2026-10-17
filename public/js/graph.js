@@ -1,6 +1,7 @@
 // Graph view: who is doing what. Each agent or shell is a node, messages between them are edges, and named groups
 // are soft bubbles around their members. A small force layout places them, then settles and stops; dragging pins a node.
-import { state, api, h, icon, avatar, on, toast, guard, actions, modal, confirmDialog, menu, ago, agentLabel, chatTitle, projectSessions, STATUS_LABEL, TEAM_COLORS } from './ui.js';
+// The layout lives in world coordinates; one transform on the world layer pans and zooms it, like a map.
+import { state, api, h, icon, avatar, on, toast, guard, actions, modal, confirmDialog, menu, ago, agentLabel, chatTitle, projectSessions, markdown, MONO, STATUS_LABEL, TEAM_COLORS } from './ui.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const svg = (tag, attrs = {}) => {
@@ -11,8 +12,9 @@ const svg = (tag, attrs = {}) => {
 const still = matchMedia('(prefers-reduced-motion: reduce)');
 const FRESH = 2 * 60_000; // an edge with a message this recent glows
 const PAD = 50; // how far a group's bubble reaches past its members
+const ZOOM = [0.3, 3];
 
-let root, stage, hullLayer, edgeLayer, pulseLayer, nodeLayer, labelLayer, lassoEl, tipEl, legendEl, selBar, panel;
+let root, stage, world, zoomLabel, hullLayer, edgeLayer, pulseLayer, nodeLayer, labelLayer, lassoEl, tipEl, legendEl, selBar, panel;
 let messages = [];
 let groups = [];
 let showExited = false;
@@ -26,10 +28,17 @@ let dragging = null;
 let suppressClick = false;
 let open = null; // { kind: 'node' | 'group', id }
 let poll = null;
+let mirror = null; // the open node's live screen: { id, term, ws, box, ... }
 const pos = new Map(); // session id -> { x, y, vx, vy, pinned }
 const nodeEls = new Map();
 const selected = new Set();
 const pulses = []; // messages travelling along their edge: { from, to, start, el }
+let view = { x: 0, y: 0, k: 1 }; // the camera: a world point (x, y) shows at (x * k + view.x, y * k + view.y)
+let aim = null; // a view the camera is gliding to
+let manual = false; // you've panned or zoomed, so the camera stops framing the graph by itself
+let follow = false; // keep framing the graph while its layout settles
+const views = new Map(); // project -> { view, manual }, for this session
+let viewProject = '';
 
 const isShown = () => actions.currentView?.() === 'graph';
 const keyOf = s => s.chatId || s.id; // a group keeps an agent across restarts by its chat
@@ -44,17 +53,32 @@ export function mount(el) {
   pulseLayer = svg('g');
   const drawing = svg('svg', { class: 'graph-svg' });
   drawing.append(hullLayer, edgeLayer, pulseLayer);
-  nodeLayer = h('div', { class: 'graph-nodes' });
+  nodeLayer = h('div', { class: 'graph-nodes', onFocusin: e => e.target.matches(':focus-visible') && reveal(e.target.dataset.id) }); // tabbed to
   labelLayer = h('div', { class: 'graph-labels' });
   lassoEl = h('div', { class: 'graph-lasso', hidden: true });
   tipEl = h('div', { class: 'graph-tip', role: 'tooltip', hidden: true });
-  stage = h('div', { class: 'graph-stage', onPointerdown: lasso }, drawing, labelLayer, nodeLayer, lassoEl, tipEl);
+  world = h('div', { class: 'graph-world' }, drawing, labelLayer, nodeLayer);
+  stage = h('div', { class: 'graph-stage', tabIndex: 0, 'aria-label': 'Graph. Arrow keys pan, plus and minus zoom, 0 fits it all in view.',
+    onPointerdown: e => (e.shiftKey ? lasso(e) : pan(e)), onKeydown: keys }, world, lassoEl, tipEl);
+  stage.addEventListener('wheel', wheel, { passive: false });
+  zoomLabel = h('span', { class: 'graph-zoom-k', 'aria-live': 'polite' }, '100%');
+  const zoomBtn = (label, title, run, child) => h('button', { class: 'icon-btn', title, 'aria-label': label, onClick: run }, child);
+  const zoomBar = h('div', { class: 'graph-zoom', role: 'group', 'aria-label': 'Zoom' },
+    zoomBtn('Zoom out', 'Zoom out (−)', () => zoomBy(1 / 1.25), '−'), zoomLabel, zoomBtn('Zoom in', 'Zoom in (+)', () => zoomBy(1.25), '+'),
+    h('button', { class: 'btn xs', title: 'Fit everything in view (0)', onClick: () => fitNow() }, 'Fit'));
   legendEl = h('div', { class: 'graph-legend' });
   selBar = h('div', { class: 'graph-selbar', hidden: true });
-  root = h('div', { class: 'graph' }, stage, legendEl, selBar);
+  root = h('div', { class: 'graph' }, stage, legendEl, zoomBar, selBar);
   el.append(root);
+  // Focusing a node that's out of view must not scroll these (they hide overflow, but can still scroll): the camera moves instead.
+  root.addEventListener('scroll', e => (e.target === root || e.target === stage) && e.target.scrollTo(0, 0), true);
 
   on('project', () => {
+    views.set(viewProject, { view, manual });
+    viewProject = state.project;
+    ({ view, manual } = views.get(viewProject) ?? { view: { x: 0, y: 0, k: 1 }, manual: false });
+    aim = null;
+    applyView();
     messages = [];
     groups = [];
     pos.clear();
@@ -63,6 +87,7 @@ export function mount(el) {
     if (isShown()) load();
   });
   on('sessions', () => isShown() && render());
+  on('theme', () => mirror && (mirror.term.options.theme = state.termTheme));
   on('tasks', () => open?.kind === 'node' && isShown() && refreshNode(false));
   on('groups', () => isShown() && loadGroups());
   on('agent-message', e => {
@@ -80,14 +105,18 @@ export function mount(el) {
   new ResizeObserver(() => {
     if (!isShown()) return;
     measure();
+    follow = !manual;
     heat(0.3);
   }).observe(stage);
 }
 
 export const show = () => {
+  viewProject ||= state.project;
   measure();
   load();
+  if (open?.kind === 'node' && !mirror && byId(open.id)) screenOf(byId(open.id));
 };
+export const hide = () => dropMirror();
 
 export const toolbar = () => [
   h('label', { class: 'toggle', title: 'Show agents and shells that have finished, dimmed' },
@@ -151,6 +180,7 @@ function render() {
   const now = [nodes.map(s => s.id).join(), edges.map(e => e.key).join(), groups.map(g => g.members.join()).join('|')].join('/');
   if (now !== shape) {
     shape = now;
+    follow = !manual;
     heat(1);
   } else place();
 }
@@ -248,7 +278,9 @@ function drawLegend() {
     dot('working', 'Working'), dot('idle', 'Idle'), dot('needs-input', 'Needs you'), dot('exited', 'Exited'),
     h('span', { class: 'sep' }),
     h('span', { class: 'line' }, h('i', { class: 'solid' }), 'Messages'), h('span', { class: 'line' }, h('i', { class: 'dashed' }), 'Started'),
-    groups.length > 0 && h('span', { class: 'sep' }),
+    h('span', { class: 'sep' }),
+    h('span', { class: 'graph-hint' }, 'Drag to pan · Pinch or ⌘-scroll to zoom · Shift-drag to select'),
+    groups.length > 0 ? h('span', { class: 'sep' }) : '',
     ...groups.map(g => h('button', { class: 'graph-chip', style: `--g: ${g.color}`, onClick: () => openGroup(g.id) }, g.name)));
 }
 
@@ -305,8 +337,8 @@ function tick() {
     if (p.pinned || dragging === s.id) { p.vx = p.vy = 0; continue; }
     p.vx *= 0.6;
     p.vy *= 0.6;
-    p.x = Math.max(70, Math.min(W - 70, p.x + p.vx));
-    p.y = Math.max(50, Math.min(H - 70, p.y + p.vy));
+    p.x += p.vx;
+    p.y += p.vy;
   }
 }
 
@@ -316,12 +348,17 @@ function heat(a) {
   if (still.matches) { // no motion: settle at once
     for (let i = 0; i < 300 && alpha > 0.005; i++, alpha *= 0.97) tick();
     alpha = 0;
+    if (follow) glideTo(fitView());
+    follow = false;
     return place();
   }
-  if (!running) {
-    running = true;
-    requestAnimationFrame(frame);
-  }
+  kick();
+}
+
+function kick() {
+  if (running || !isShown()) return;
+  running = true;
+  requestAnimationFrame(frame);
 }
 
 function frame(now) {
@@ -329,16 +366,149 @@ function frame(now) {
     tick();
     alpha *= 0.97;
   } else alpha = 0;
+  if (follow && !manual) aim = fitView(); // frame the graph as it settles
+  if (!alpha) follow = false;
+  glide();
   place();
   drawPulses(now);
-  running = isShown() && (alpha > 0 || pulses.length > 0 || dragging !== null);
+  running = isShown() && (alpha > 0 || pulses.length > 0 || dragging !== null || aim !== null);
   if (running) requestAnimationFrame(frame);
 }
 
 function relayout() {
   for (const p of pos.values()) p.pinned = false;
   drawNodes();
+  manual = false;
+  follow = true;
   heat(1);
+}
+
+// ---------- The camera: pan, zoom and fit ----------
+function applyView() {
+  if (!world) return;
+  world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.k})`;
+  stage.style.backgroundPosition = `${view.x}px ${view.y}px`; // the dots move with the world
+  stage.style.backgroundSize = `${24 * view.k}px ${24 * view.k}px`;
+  zoomLabel.textContent = `${Math.round(view.k * 100)}%`;
+}
+
+// Each frame, a fraction of the way to where it's going; with reduced motion, straight there.
+function glide() {
+  if (!aim) return;
+  const t = still.matches ? 1 : 0.2;
+  view = { x: view.x + (aim.x - view.x) * t, y: view.y + (aim.y - view.y) * t, k: view.k + (aim.k - view.k) * t };
+  if (Math.abs(aim.x - view.x) < 0.5 && Math.abs(aim.y - view.y) < 0.5 && Math.abs(aim.k - view.k) < 0.001) {
+    view = aim;
+    aim = null;
+  }
+  applyView();
+}
+function glideTo(v) {
+  aim = v;
+  if (still.matches) glide();
+  else kick();
+}
+
+// The part of the canvas you can see: not under the side panel, and above the legend.
+function room() {
+  const right = panel ? panel.offsetLeft - 10 : size.width;
+  return { left: 0, top: 44, right, bottom: size.height - 52 }; // below the zoom control
+}
+
+// Zoom by f, keeping the world point under (sx, sy) on the screen where it is.
+function zoomed(f, sx, sy, from = view) {
+  const k = Math.min(ZOOM[1], Math.max(ZOOM[0], from.k * f));
+  return { k, x: sx - ((sx - from.x) * k) / from.k, y: sy - ((sy - from.y) * k) / from.k };
+}
+function zoomBy(f) {
+  const r = room();
+  manual = true;
+  glideTo(zoomed(f, (r.left + r.right) / 2, (r.top + r.bottom) / 2, aim ?? view));
+}
+function panBy(dx, dy) {
+  manual = true;
+  aim = null;
+  view = { ...view, x: view.x + dx, y: view.y + dy };
+  applyView();
+}
+
+// The view that shows every node and group bubble, with some room around them. Never zoomed in past 100%.
+function fitView() {
+  const r = room();
+  let box = null;
+  const take = (l, t, rr, b) => (box = box ? { l: Math.min(box.l, l), t: Math.min(box.t, t), r: Math.max(box.r, rr), b: Math.max(box.b, b) } : { l, t, r: rr, b });
+  for (const s of nodes) (p => p && take(p.x - 70, p.y - 32, p.x + 70, p.y + 62))(pos.get(s.id));
+  for (const g of groups) for (const id of g.ids ?? []) (p => p && take(p.x - PAD, p.y + 18 - PAD - 32, p.x + PAD, p.y + 18 + PAD))(pos.get(id));
+  if (!box || r.right - r.left < 120) return { ...view };
+  const k = Math.min(1, Math.max(ZOOM[0], Math.min((r.right - r.left - 48) / (box.r - box.l), (r.bottom - r.top - 48) / (box.b - box.t))));
+  return { k, x: (r.left + r.right) / 2 - ((box.l + box.r) / 2) * k, y: (r.top + r.bottom) / 2 - ((box.t + box.b) / 2) * k };
+}
+const fitNow = () => {
+  manual = false;
+  glideTo(fitView());
+};
+
+// Brings a node into the part of the canvas you can see, when it's outside it.
+function reveal(id) {
+  const p = pos.get(id);
+  if (!p) return;
+  const r = room();
+  const v = aim ?? view;
+  const sx = p.x * v.k + v.x;
+  const sy = p.y * v.k + v.y;
+  if (sx > r.left + 80 && sx < r.right - 80 && sy > r.top + 50 && sy < r.bottom - 70) return;
+  glideTo({ ...v, x: v.x + (r.left + r.right) / 2 - sx, y: v.y + (r.top + r.bottom) / 2 - sy });
+}
+
+// Two fingers or the wheel pan; a pinch (which arrives as ctrl+wheel) or ⌘/ctrl+wheel zooms around the pointer.
+function wheel(e) {
+  e.preventDefault();
+  if (e.ctrlKey || e.metaKey) {
+    const box = stage.getBoundingClientRect();
+    const dy = Math.max(-40, Math.min(40, e.deltaMode ? e.deltaY * 16 : e.deltaY));
+    manual = true;
+    aim = null;
+    view = zoomed(Math.exp(-dy * 0.008), e.clientX - box.left, e.clientY - box.top);
+    applyView();
+  } else panBy(-(e.deltaMode ? e.deltaX * 16 : e.deltaX), -(e.deltaMode ? e.deltaY * 16 : e.deltaY));
+}
+
+// Dragging the empty canvas pans it. A click without a drag clears the selection, as before.
+function pan(e) {
+  if (e.button !== 0 || e.target.closest('.gnode, .graph-group-label, .pane-empty')) return;
+  e.preventDefault(); // no text selection, and no stray focus
+  stage.focus({ preventScroll: true });
+  stage.setPointerCapture(e.pointerId);
+  let last = { x: e.clientX, y: e.clientY };
+  let moved = false;
+  const move = ev => {
+    if (!(ev.buttons & 1)) return end(); // the button came up somewhere we didn't hear about
+    if (!moved && Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) < 4) return;
+    moved = true;
+    stage.classList.add('panning');
+    panBy(ev.clientX - last.x, ev.clientY - last.y);
+    last = { x: ev.clientX, y: ev.clientY };
+  };
+  const end = () => {
+    stage.removeEventListener('pointermove', move);
+    stage.removeEventListener('pointerup', end);
+    stage.removeEventListener('pointercancel', end);
+    stage.classList.remove('panning');
+    if (!moved) setSelection([]);
+  };
+  stage.addEventListener('pointermove', move);
+  stage.addEventListener('pointerup', end);
+  stage.addEventListener('pointercancel', end);
+}
+
+function keys(e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest('input, textarea, select')) return;
+  const step = e.shiftKey ? 240 : 60;
+  const go = { ArrowLeft: () => panBy(step, 0), ArrowRight: () => panBy(-step, 0), ArrowUp: () => panBy(0, step), ArrowDown: () => panBy(0, -step),
+    '+': () => zoomBy(1.25), '=': () => zoomBy(1.25), '-': () => zoomBy(1 / 1.25), _: () => zoomBy(1 / 1.25), 0: fitNow }[e.key];
+  if (!go) return;
+  e.preventDefault();
+  go();
 }
 
 const unpin = id => {
@@ -437,10 +607,11 @@ function grab(e, id) {
     if (!moved) {
       moved = true;
       dragging = id;
+      follow = false; // the camera holds still under your hand
       el.setPointerCapture(e.pointerId);
       el.classList.add('dragging', 'pinned');
     }
-    Object.assign(p, { x: start.px + dx, y: start.py + dy, vx: 0, vy: 0, pinned: true });
+    Object.assign(p, { x: start.px + dx / view.k, y: start.py + dy / view.k, vx: 0, vy: 0, pinned: true });
     heat(0.25);
   };
   const up = () => {
@@ -456,8 +627,10 @@ function grab(e, id) {
   addEventListener('pointerup', up);
 }
 
+// Shift-dragging the empty canvas draws a box that selects the nodes inside it.
 function lasso(e) {
   if (e.button !== 0 || e.target.closest('.gnode, .graph-group-label, .pane-empty')) return;
+  e.preventDefault();
   const box = stage.getBoundingClientRect();
   const x0 = e.clientX - box.left;
   const y0 = e.clientY - box.top;
@@ -475,7 +648,7 @@ function lasso(e) {
     removeEventListener('pointerup', up);
     lassoEl.hidden = true;
     if (!rect) return e.shiftKey || setSelection([]); // a click on empty space clears the selection
-    const inside = nodes.filter(s => (p => p.x >= rect.left && p.x <= rect.right && p.y >= rect.top && p.y <= rect.bottom)(pos.get(s.id))).map(s => s.id);
+    const inside = nodes.filter(s => (p => (x => x >= rect.left && x <= rect.right)(p.x * view.k + view.x) && (y => y >= rect.top && y <= rect.bottom)(p.y * view.k + view.y))(pos.get(s.id))).map(s => s.id);
     setSelection(e.shiftKey ? [...selected, ...inside] : inside);
   };
   addEventListener('pointermove', move);
@@ -545,6 +718,7 @@ function closePanel(refocus = false) {
   panel?.remove();
   panel = null;
   open = null;
+  dropMirror();
   clearInterval(poll);
   poll = null;
   if (refocus && was?.kind === 'node') nodeEls.get(was.id)?.focus();
@@ -553,6 +727,7 @@ function closePanel(refocus = false) {
 function frameFor(title, head, body, foot) {
   const again = panel?.getAttribute('aria-label') === title; // redrawn in place: no slide-in, and focus stays put
   const focused = again && document.activeElement?.getAttribute('aria-label');
+  dropMirror();
   panel?.remove();
   panel = h('div', { class: `drawer graph-panel${again ? ' still' : ''}`, role: 'dialog', 'aria-label': title },
     h('div', { class: 'drawer-head' }, head, h('span', { class: 'grow' }),
@@ -572,7 +747,10 @@ function openNode(id) {
     status: h('span', { class: 'chip' }),
     facts: h('div', { class: 'graph-facts' }),
     groups: h('div', { class: 'row', style: { flexWrap: 'wrap', gap: '6px' } }),
-    screen: h('pre', { class: 'graph-screen', tabIndex: 0, 'aria-label': 'The end of its screen' }, 'Loading…'),
+    screen: h('div', { class: 'graph-term', tabIndex: 0, title: 'Open its pane', 'aria-label': `${chatTitle(s)}'s screen. Enter opens its pane.`,
+      onClick: () => actions.focusSession(s.id), onKeydown: e => e.key === 'Enter' && actions.focusSession(s.id) }),
+    live: h('span', { class: 'graph-live' }),
+    opened: new Set(), // long messages you've unfolded, by their text
     chat: h('div', { class: 'activity' }),
     input: ask && h('textarea', { class: 'input', rows: 2, placeholder: `Ask ${chatTitle(s)} something…`, 'aria-label': `Ask ${chatTitle(s)}`,
       onKeydown: e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAsk(); } } }),
@@ -585,16 +763,19 @@ function openNode(id) {
         h('button', { class: 'btn sm', onClick: e => addToMenu(e.currentTarget, [s.id]) }, icon('plus', 13), 'Add to group')),
       refs.facts,
       refs.groups,
-      h('div', { class: 'section-label' }, 'Screen'), refs.screen,
+      h('div', { class: 'graph-screen-head' }, h('span', { class: 'section-label' }, 'Screen'), refs.live, h('span', { class: 'grow' }),
+        h('button', { class: 'btn xs', onClick: () => actions.focusSession(s.id) }, 'Open pane ↗')),
+      refs.screen,
       s.kind === 'agent' && [h('div', { class: 'section-label', style: { marginTop: '20px' } }, 'Conversation'), refs.chat],
     ],
     ask && h('div', { class: 'graph-ask' }, refs.input,
       h('button', { class: 'btn primary', title: 'Send (Enter). Typed into its pane as you.', onClick: () => sendAsk() }, icon('send', 14), 'Ask')));
   (refs.input || panel.querySelector('.drawer-head .icon-btn')).focus();
+  reveal(id); // not hidden behind the panel
+  screenOf(s);
   refreshNode(true);
   clearInterval(poll);
-  let n = 0;
-  poll = setInterval(() => isShown() && open?.kind === 'node' && refreshNode(++n % 3 === 0), 2000); // the screen every 2s, the conversation every 6s
+  poll = setInterval(() => isShown() && open?.kind === 'node' && refreshNode(true), 6000); // the conversation; the screen is live
 }
 
 const sendAsk = guard(async () => {
@@ -608,8 +789,12 @@ const sendAsk = guard(async () => {
 async function refreshNode(withChat) {
   const s = open && byId(open.id);
   if (!s) return closePanel();
-  const status = actions.statusOf(s);
-  refs.status.replaceChildren(h('span', { class: `dot ${status}` }), STATUS_LABEL[status] ?? status);
+  paintStatus(s);
+  if (mirror?.id === s.id && s.exited) screenOf(s); // it just finished
+  else if (mirror?.id === s.id && s.cols && (s.cols !== mirror.term.cols || s.rows !== mirror.term.rows)) {
+    mirror.term.resize(s.cols, s.rows);
+    mirror.fit();
+  }
   const task = s.taskId && state.tasks.find(t => t.id === s.taskId);
   const fact = (label, ...value) => h('div', { class: 'graph-fact' }, h('span', { class: 'section-label' }, label), h('div', {}, ...value));
   refs.facts.replaceChildren(...[
@@ -621,17 +806,172 @@ async function refreshNode(withChat) {
   const mine = groupsOf(s);
   refs.groups.replaceChildren(...mine.map(g => h('button', { class: 'graph-chip', style: `--g: ${g.color}`, onClick: () => openGroup(g.id) }, g.name)));
   try {
-    const { text } = await api('GET', `/api/sessions/${s.id}/output?lines=25`);
-    const end = refs.screen.scrollTop + refs.screen.clientHeight >= refs.screen.scrollHeight - 4;
-    refs.screen.textContent = text || '(nothing on screen yet)';
-    if (end) refs.screen.scrollTop = refs.screen.scrollHeight;
     if (withChat && s.kind === 'agent') {
       const chat = await api('GET', `/api/sessions/${s.id}/chat?last=6`);
+      const said = JSON.stringify(chat.messages ?? []);
+      if (said === refs.said) return; // nothing new: leave what you unfolded or selected alone
+      refs.said = said;
       refs.chat.replaceChildren(...(chat.messages?.length ? chat.messages.map(m => h('div', { class: 'note' },
-        h('div', { class: 'who' }, h('b', {}, m.from === 'user' ? 'You (or another agent)' : chatTitle(s))), h('div', { class: 'what' }, m.text.slice(0, 1200))))
+        h('div', { class: 'who' }, h('b', {}, m.from === 'user' ? 'You (or another agent)' : chatTitle(s))), saidOf(m.text)))
         : [h('div', { class: 'muted' }, 'Nothing said yet.')]));
     }
   } catch {} // it stopped or went away; the next refresh catches up
+}
+
+// A message as Markdown, with its "(used <tool>)" lines as small chips. A long one folds to about 10 lines.
+function saidOf(text) {
+  const parts = [];
+  let words = [];
+  const flush = () => {
+    if (words.join('').trim()) parts.push(...markdown(words.join('\n')));
+    words = [];
+  };
+  for (const line of text.split('\n')) {
+    const tool = line.match(/^\(used (.+)\)$/)?.[1];
+    if (!tool) {
+      words.push(line);
+      continue;
+    }
+    flush();
+    if (parts.at(-1)?.className !== 'said-tools') parts.push(h('div', { class: 'said-tools' }));
+    parts.at(-1).append(h('span', { class: 'chip', title: tool }, tool.replace(/^mcp__.+?__/, '')));
+  }
+  flush();
+  const open = refs.opened.has(text);
+  const body = h('div', { class: `md said${open ? '' : ' folded'}` }, parts);
+  const more = h('button', { class: 'linkish said-more', hidden: !open, 'aria-expanded': String(open), onClick: () => {
+    const folded = body.classList.toggle('folded');
+    folded ? refs.opened.delete(text) : refs.opened.add(text);
+    more.textContent = folded ? 'Show more' : 'Show less';
+    more.setAttribute('aria-expanded', String(!folded));
+  } }, open ? 'Show less' : 'Show more');
+  requestAnimationFrame(() => { // once laid out: a short one needs no fold, nor its fade
+    if (open) return;
+    more.hidden = body.scrollHeight <= body.clientHeight + 2;
+    body.classList.toggle('folded', !more.hidden);
+  });
+  return [body, more];
+}
+
+function paintStatus(s) {
+  const flowing = mirror?.id === s.id && mirror.quiet && actions.statusOf(s) === 'idle'; // its screen is moving; the pane may not have heard yet
+  const status = flowing ? 'working' : actions.statusOf(s);
+  refs.status.replaceChildren(h('span', { class: `dot ${status}` }), STATUS_LABEL[status] ?? status);
+}
+
+// ---------- Its screen: a small, read-only copy of its pane, live ----------
+// Exactly the pty's columns and rows, because full-screen programs like Claude Code place text by position.
+// The font shrinks (to 9px) to fit the columns in the panel, and the box shows 22 rows ending at the last line
+// with anything on it, where the prompt and the latest output are (a shell's screen is mostly empty below that).
+function screenOf(s) {
+  dropMirror();
+  const box = refs.screen;
+  box.classList.toggle('done', s.exited);
+  box.style.height = '';
+  refs.live.className = `graph-live${s.exited ? ' done' : ''}`;
+  refs.live.replaceChildren(h('i'), s.exited ? 'finished' : 'live');
+  if (s.exited) {
+    // Nothing more will happen: show how its screen ended, once.
+    const text = h('pre', {}, 'Loading…');
+    box.replaceChildren(text);
+    api('GET', `/api/sessions/${s.id}/output?lines=25`).then(r => {
+      text.textContent = r.text || '(nothing on screen)';
+      box.scrollTop = box.scrollHeight;
+    }, () => (text.textContent = '(its screen is gone)'));
+    return;
+  }
+  box.replaceChildren();
+  const term = new Terminal({
+    fontFamily: MONO, fontSize: 11, lineHeight: 1.2, cols: s.cols || 120, rows: s.rows || 32, scrollback: 500,
+    theme: state.termTheme, disableStdin: true, cursorBlink: false, cursorInactiveStyle: 'none',
+  });
+  term.open(box);
+  term.textarea.tabIndex = -1; // the box takes focus, not xterm's hidden input
+  const m = mirror = { id: s.id, term, box, follow: true, carry: 0 };
+  const screen = box.querySelector('.xterm-screen');
+  const rowPx = () => screen.offsetHeight / term.rows;
+  const end = () => { // the box's scrollTop that puts the last used row at its bottom
+    const buf = term.buffer.active;
+    let last = buf.cursorY;
+    for (let y = term.rows - 1; y > last; y--) if (buf.getLine(buf.viewportY + y)?.translateToString(true).trim()) { last = y; break; }
+    return Math.max(0, Math.min((last + 1) * rowPx() - (box.clientHeight - parseFloat(getComputedStyle(box).paddingTop)), box.scrollHeight - box.clientHeight));
+  };
+  const atEnd = () => term.buffer.active.viewportY === term.buffer.active.baseY && box.scrollTop >= end() - 2;
+  m.toEnd = () => { box.scrollTop = end(); };
+  m.fit = () => {
+    const css = getComputedStyle(box);
+    const room = box.clientWidth - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight);
+    if (room <= 0) return;
+    const perPx = screen.offsetWidth / term.cols / term.options.fontSize; // a column's width per px of font
+    let size = Math.min(12, Math.max(9, Math.floor((room / term.cols / perPx) * 2) / 2));
+    term.options.fontSize = size;
+    while (size > 9 && screen.offsetWidth > room) term.options.fontSize = size -= 0.5; // rounding can leave it a hair wide
+    box.style.height = `${Math.min(term.rows, 22) * rowPx() + parseFloat(css.paddingTop) + parseFloat(css.paddingBottom) + (screen.offsetWidth > room ? 10 : 0)}px`;
+    if (m.follow) m.toEnd();
+  };
+  m.ro = new ResizeObserver(() => requestAnimationFrame(() => mirror === m && m.fit())); // next frame: refitting resizes xterm, which it observes too
+  m.ro.observe(box.parentElement); // the panel's width; the box's own height is set here
+  term.onWriteParsed(() => m.follow && m.toEnd());
+  // Follow the end as output arrives, unless you've scrolled up to read; scrolling back down follows again.
+  box.addEventListener('scroll', () => (m.follow = atEnd()));
+  // One scroll through all of it: going up, the box first moves to the top of the screen, then xterm goes back
+  // through older lines; going down, the reverse. xterm never sees the wheel, so its own scrolling can't fight the box's.
+  box.addEventListener('wheel', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    const row = rowPx();
+    const dy = e.deltaMode ? e.deltaY * row : e.deltaY;
+    box.scrollLeft += e.deltaMode ? e.deltaX * row : e.deltaX;
+    const buf = term.buffer.active;
+    if ((dy < 0 && box.scrollTop <= 0) || (dy > 0 && buf.viewportY < buf.baseY)) {
+      m.carry += dy;
+      const n = Math.trunc(m.carry / row);
+      m.carry -= n * row;
+      if (n) term.scrollLines(n);
+      m.follow = atEnd();
+    } else box.scrollTop += dy;
+  }, { capture: true, passive: false });
+  connectMirror(m);
+}
+
+// Only ever reads. A pane sends keystrokes and its size on this socket, and a size from this small copy would
+// shrink the agent's real terminal and garble its pane, so nothing is ever sent.
+function connectMirror(m) {
+  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws?id=${m.id}`);
+  let first = true;
+  m.ws = ws;
+  ws.onmessage = e => {
+    if (first) {
+      m.term.reset(); // each (re)connect brings a fresh copy of the whole screen
+      first = false;
+    } else busy(m);
+    m.term.write(e.data);
+  };
+  ws.onclose = () => setTimeout(() => mirror === m && connectMirror(m), 1500);
+}
+
+// The "live" dot pulses while output is flowing.
+function busy(m) {
+  const paint = on => {
+    refs.live.classList.toggle('busy', on);
+    if (byId(m.id)) paintStatus(byId(m.id));
+  };
+  if (!m.quiet) paint(true);
+  clearTimeout(m.quiet);
+  m.quiet = setTimeout(() => {
+    m.quiet = null;
+    if (mirror === m) paint(false);
+  }, 2500);
+}
+
+function dropMirror() {
+  const m = mirror;
+  if (!m) return;
+  mirror = null;
+  clearTimeout(m.quiet);
+  m.ro.disconnect();
+  m.ws.close();
+  m.term.dispose();
 }
 
 function openGroup(id) {

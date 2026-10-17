@@ -99,6 +99,7 @@ actions.setSetting = guard(async patch => {
 // ---------- Views ----------
 function showView(id) {
   const view = VIEWS.find(v => v.id === id) || VIEWS[0];
+  if (current !== view.id) VIEWS.find(v => v.id === current)?.module.hide?.();
   current = view.id;
   for (const v of VIEWS) {
     $(`view-${v.id}`).classList.toggle('active', v.id === view.id);
