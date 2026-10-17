@@ -9,3 +9,4 @@ shell/zsh/.zsh_history
 build/art/out/
 build/icon.icns
 build/background.tiff
+.DS_Store
