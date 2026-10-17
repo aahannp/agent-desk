@@ -220,10 +220,18 @@ route('DELETE', '/api/chats/:id', ({ params }) => {
   changed('chats');
   return {};
 });
-route('GET', '/api/sessions/:id/chat', ({ params, query }) => S.conversation(findSession(params.id), Math.min(Number(query.get('last')) || 30, 200)));
+// An agent reads or copies only agents in its own project; you can do either for any of them.
+const sameProject = (req, id) => {
+  const s = findSession(id);
+  const from = caller(req);
+  if (from && s.project !== from.project) throw fail(403, 'Agents can only read or copy agents in their own project');
+  return s;
+};
+route('GET', '/api/sessions/:id/chat', ({ req, params, query }) => S.conversation(sameProject(req, params.id), Math.min(Number(query.get('last')) || 30, 200)));
 route('POST', '/api/sessions/:id/clone', async ({ req, params, body }) => {
   mayStartAgents(req);
-  return S.info(await S.clone(findSession(params.id), { prompt: String(body.prompt ?? ''), name: body.name ? String(body.name).slice(0, 60) : undefined, startedBy: starter(req) }));
+  const src = sameProject(req, params.id);
+  return S.info(await S.clone(src, { prompt: String(body.prompt ?? ''), name: body.name ? String(body.name).slice(0, 60) : undefined, startedBy: starter(req) }));
 });
 route('GET', '/api/sessions/:id/output', ({ params, query }) => ({ text: S.screenText(findSession(params.id), Number(query.get('lines')) || 60) }));
 route('POST', '/api/sessions/:id/input', ({ params, body }) => (S.send(findSession(params.id), String(body.text ?? ''), body.submit !== false), {}));
