@@ -94,6 +94,7 @@ function render() {
         ? 'On: an agent can start a specialist or a worker, on a model it picks, for part of its job. A lead agent needs this.'
         : 'Off: agents can see the team but only you start agents.',
       h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.agentsCanSpawn !== false, onChange: e => set({ agentsCanSpawn: e.target.checked }) }))),
+      leadUpkeep({ on: false, compactAt: 70, windowCap: 200_000, replaceAfter: 3, ...s.leadUpkeep }),
       setting('Agents can edit the team', s.agentsCanEditTeam !== false
         ? 'On: when you ask ("Scout, make your answers shorter"), an agent can change a specialist\'s profile. It asks you first each time. Applies to agents started from then on.'
         : 'Off: agents can read the team\'s profiles but only you change them.',
@@ -124,6 +125,18 @@ function render() {
     section('About', null, h('div', { class: 'row' }, h('p', { class: 'muted grow', style: { margin: 0 } },
       `Agent Desk ${state.info.version ? `v${state.info.version} ` : ''}${state.info.electron ? 'Mac app' : 'in the browser'} · server ${state.info.url}`),
     h('button', { class: 'btn sm', onClick: () => openUpdates() }, icon('refresh', 13), 'Check for updates')))));
+}
+
+// A switch plus three small numbers: when to compact a lead (a % of a window in thousands of tokens), and after
+// how many compactions to replace it.
+function leadUpkeep(u) {
+  const save = patch => set({ leadUpkeep: { ...u, ...patch } });
+  const number = (key, min, max, scale = 1) => h('input', { class: 'input', type: 'number', min, max, value: u[key] / scale, style: { width: '62px' },
+    onChange: e => save({ [key]: Math.round(Number(e.target.value)) * scale }) });
+  return setting('Keep lead agents fresh', 'When a lead is idle with its context that full, Agent Desk compacts it, and after that many compactions a fresh lead with the same name takes over its work. A smaller window (the model\'s own, or your Claude Code auto-compact window) wins.',
+    h('div', { class: 'row', style: { flexWrap: 'wrap' } },
+      'Compact at', number('compactAt', 50, 95), '% of a', number('windowCap', 50, 2000, 1000), 'K-token window, replace after', number('replaceAfter', 1, 10), 'compactions',
+      h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: u.on, onChange: e => save({ on: e.target.checked }) }))));
 }
 
 // The Mac app grants notifications without a prompt; in a browser you turn them on above.
