@@ -36,7 +36,7 @@ const loaders = {
   projects: async () => { state.projects = await api('GET', '/api/projects'); },
   settings: async () => { state.settings = await api('GET', '/api/settings'); },
   chats: async () => { state.chats = await api('GET', '/api/chats'); },
-  artifacts: async () => { state.artifacts = await api('GET', '/api/artifacts'); },
+  artifacts: async () => { [state.artifacts, state.artifactFolders] = await Promise.all([api('GET', '/api/artifacts'), api('GET', '/api/artifact-folders')]); },
   specialists: async () => { state.specialists = await api('GET', '/api/specialists'); },
 };
 

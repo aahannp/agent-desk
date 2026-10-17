@@ -57,7 +57,7 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
   block), **screenshots** you can mark up and hand to an agent, **voice input** (on-device in the Mac app),
   **16 themes**, a **command palette** (⌘K) and an animated cursor. On a light theme, Claude Code panes use
   Claude Code's light colours too (for agents started after you switch); on a dark one they keep your own.
-- **Artifacts**: pages, reports and charts your agents make (they save them with the `save_artifact` tool).
+- **Artifacts**: pages, reports and charts your agents make (they save them with the `save_artifact` tool). Sort them into folders by dragging a page onto one or using its right-click menu, and agents can file a page in a folder as they save it.
   View them in the app or your browser, and publish one to GitHub Pages with one click, using an account
   you're signed in to with `gh`. Agent Desk keeps them in one repo it makes, and never writes to any other.
   Unpublish takes a page down again.
