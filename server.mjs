@@ -66,6 +66,12 @@ const isDir = p => fs.statSync(p, { throwIfNoEntry: false })?.isDirectory() ?? f
 const findTask = id => db.tasks.find(t => t.id === id) ?? (() => { throw fail(404, 'No such task'); })();
 const findSession = id => S.sessions.get(id) ?? (() => { throw fail(404, 'No such session'); })();
 const caller = req => S.sessions.get(req.headers['x-desk-session']);
+const visibleSessions = req => { // an agent sees only its own project's sessions (see sameProject)
+  const all = [...S.sessions.values()];
+  if (!fromAgent(req)) return all;
+  const from = caller(req) ?? (() => { throw fail(403, 'Only agents inside Agent Desk can reach other agents'); })();
+  return all.filter(s => s.project === from.project);
+};
 const starter = req => (s => s && { id: s.id, name: s.name })(caller(req)); // the agent asking, if it's one of ours
 // Requests an agent makes through its tools. They may not change settings or add or remove specialists, and
 // may only start agents or edit a specialist while Settings allows it. (An agent runs as you and could reach the API some other way; this keeps
@@ -164,7 +170,7 @@ route('PATCH', '/api/settings', ({ req, body }) => {
 
 // Sessions
 route('GET', '/api/agents', () => S.availableAgents());
-route('GET', '/api/sessions', () => [...S.sessions.values()].map(S.info));
+route('GET', '/api/sessions', ({ req }) => visibleSessions(req).map(S.info));
 route('POST', '/api/sessions', async ({ req, body }) => {
   const { kind = 'agent', agent = db.settings.defaultAgent, prompt = '', name, worktree = false, role = null, specialist = null, model = '', effort = '' } = body;
   if (kind === 'agent') mayStartAgents(req);
@@ -172,7 +178,7 @@ route('POST', '/api/sessions', async ({ req, body }) => {
   if (!isDir(project)) throw fail(400, `Not a folder: ${project}`);
   return S.info(await S.createSession({ project, kind, agent, prompt, name, worktree, role, specialist, model, effort, startedBy: starter(req) }));
 });
-route('DELETE', '/api/sessions/:id', ({ params }) => (S.stop(findSession(params.id)), {}));
+route('DELETE', '/api/sessions/:id', ({ req, params }) => (S.stop(noShell(req, sameProject(req, params.id), 'stop')), {}));
 
 // Claude's SessionStart hook reports the conversation id a pane is on (it changes on /clear).
 route('POST', '/api/claude-session', ({ req, body }) => {
@@ -246,12 +252,17 @@ route('DELETE', '/api/chats/:id', ({ params }) => {
   changed('chats');
   return {};
 });
-// An agent reads, copies or types into only agents in its own project; you can do any of them for any agent.
+// An agent sees, reads, copies, stops or types into only agents in its own project, and never shells; you can do
+// any of them for any session.
 const sameProject = (req, id) => {
   const s = findSession(id);
   const from = caller(req);
-  if (fromAgent(req) && !from) throw fail(403, 'Only agents inside Agent Desk can read, copy or type into other agents');
-  if (from && s.project !== from.project) throw fail(403, 'Agents can only read, copy or type into agents in their own project');
+  if (fromAgent(req) && !from) throw fail(403, 'Only agents inside Agent Desk can reach other agents');
+  if (from && s.project !== from.project) throw fail(403, 'Agents can only reach agents in their own project');
+  return s;
+};
+const noShell = (req, s, what) => {
+  if (fromAgent(req) && s.kind === 'shell') throw fail(403, `Agents can't ${what} shell panes; ask the user`);
   return s;
 };
 route('GET', '/api/sessions/:id/chat', ({ req, params, query }) => S.conversation(sameProject(req, params.id), Math.min(Number(query.get('last')) || 30, 200)));
@@ -260,7 +271,8 @@ route('POST', '/api/sessions/:id/clone', async ({ req, params, body }) => {
   const src = sameProject(req, params.id);
   return S.info(await S.clone(src, { prompt: String(body.prompt ?? ''), name: body.name ? String(body.name).slice(0, 60) : undefined, startedBy: starter(req) }));
 });
-route('GET', '/api/sessions/:id/output', ({ params, query }) => ({ text: S.screenText(findSession(params.id), Number(query.get('lines')) || 60) }));
+route('GET', '/api/sessions/:id/output', ({ req, params, query }) =>
+  ({ text: S.screenText(noShell(req, sameProject(req, params.id), 'read'), Number(query.get('lines')) || 60) }));
 // You type anything into any pane. An agent (send_to_agent) gets a message's checks and limit: plain text, into an
 // agent in its own project, never a shell or a permission prompt.
 route('POST', '/api/sessions/:id/input', ({ req, params, body }) => {
@@ -314,10 +326,14 @@ function logMessage(project, from, to, via) {
   changed('messages');
   return entry;
 }
-// Signed with who sent it, by a plain name, so the text can't pass for another signature (or for the user): any
-// "[message from" in it, however spaced or disguised (control, zero-width or full-width characters), starts with ( instead.
+// Signed with who sent it, by a plain name, so the text can't pass for another signature (or for the user): invisible
+// characters go, and any "[message from" in it, however spaced or disguised, starts with ( instead. A letter that isn't
+// ASCII counts as one of "message from", so a Cyrillic М can't stand in for M.
+// ponytail: spellings that look different ("fr0m") still pass; fence the body off if those ever matter.
+const like = word => [...word].map(c => `[${c}\\P{ASCII}]`).join('');
+const FAKE_SIGNATURE = new RegExp(`\\[(?=[^\\p{L}\\p{N}]*${like('message')}[^\\p{L}\\p{N}]*${like('from')})`, 'giu');
 const sign = (from, text) => `[Message from ${from ? `${S.plain(from.name)} (agent ${from.id})` : 'an agent outside Agent Desk'}]\n${
-  text.normalize('NFKC').replace(/\[(?=[^\p{L}\p{N}]*message[^\p{L}\p{N}]*from)/giu, '(')}`;
+  text.normalize('NFKC').replace(/\p{Default_Ignorable_Code_Point}/gu, '').replace(FAKE_SIGNATURE, '(')}`;
 route('POST', '/api/messages', async ({ req, body }) => {
   mayMessage(req);
   const from = caller(req);
@@ -510,7 +526,11 @@ const existingDir = p => {
   return dir;
 };
 route('GET', '/api/review/file', ({ query }) => G.fileVersions(existingDir(query.get('worktree')), query.get('file')));
-route('GET', '/api/review/diff', async ({ query }) => ({ text: await G.diffText(existingDir(query.get('worktree'))) }));
+route('GET', '/api/review/diff', async ({ req, query }) => {
+  const dir = existingDir(query.get('worktree'));
+  if (fromAgent(req) && !visibleSessions(req).some(s => s.cwd === dir)) throw fail(403, 'Agents can only see the changes of agents in their own project');
+  return { text: await G.diffText(dir) };
+});
 route('POST', '/api/review/commit', ({ body }) => G.commit(existingDir(body.worktree), String(body.message || 'Agent Desk changes')));
 route('POST', '/api/review/merge', async ({ body }) => {
   const meta = await G.merge(existingDir(body.worktree));

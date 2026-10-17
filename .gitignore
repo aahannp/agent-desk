@@ -1,5 +1,3 @@
-node_modules/
-# also a symlink to another checkout's node_modules, which node_modules/ does not match
 node_modules
 data/
 dist/
