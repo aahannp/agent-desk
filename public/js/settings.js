@@ -31,8 +31,9 @@ function render() {
   const mcpCommand = `claude mcp add --transport http --scope user agent-desk ${state.info.mcpUrl} --header "x-desk-token: ${state.info.token}"`;
 
   root.replaceChildren(h('div', { class: 'settings-inner' },
-    section('Appearance', 'Twelve themes. The accent colour is yours to change.',
-      h('div', { class: 'themes' }, Object.entries(THEMES).map(([id, t]) => h('button', { class: `theme-card${id === current ? ' on' : ''}`, onClick: () => set({ theme: id }) },
+    section('Appearance', `${Object.keys(THEMES).length} themes, dark and light. The accent colour is yours to change.`,
+      ...[['Dark', true], ['Light', false]].flatMap(([label, dark]) => [h('h3', { class: 'theme-group' }, label),
+      h('div', { class: 'themes' }, Object.entries(THEMES).filter(([, t]) => t.dark === dark).map(([id, t]) => h('button', { class: `theme-card${id === current ? ' on' : ''}`, onClick: () => set({ theme: id }) },
         h('div', { class: 'theme-prev', style: { background: t.ui.bg } },
           h('div', { class: 'sb', style: { background: t.ui.side, borderRight: `1px solid ${t.ui.line}` } }),
           h('div', { class: 'body' },
@@ -40,7 +41,7 @@ function render() {
             h('div', { class: 'bar', style: { background: t.ui.line, width: '76%' } }),
             h('div', { class: 'bar', style: { background: t.ui.line, width: '58%' } }),
             h('div', { class: 'ansi' }, ['red', 'green', 'yellow', 'blue', 'magenta', 'cyan'].map(c => h('i', { style: { background: t.term[c] } }))))),
-        h('div', { class: 'theme-name', style: { background: t.ui.panel, color: t.ui.text } }, t.name)))),
+        h('div', { class: 'theme-name', style: { background: t.ui.panel, color: t.ui.text } }, t.name))))]),
       setting('Accent colour', 'Used for buttons, focus rings and highlights.', h('div', { class: 'row' },
         h('input', { type: 'color', value: s.accent || THEMES[current].ui.accent, onChange: e => set({ accent: e.target.value }), style: { width: '44px', height: '30px', border: 0, background: 'none', padding: 0 } }),
         s.accent && h('button', { class: 'btn sm ghost', onClick: () => set({ accent: '' }) }, 'Reset'))),
