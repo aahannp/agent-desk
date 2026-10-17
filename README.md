@@ -69,6 +69,9 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
 - The server only listens on 127.0.0.1. Every request needs this install's secret (kept in a file only you
   can read) and must come from Agent Desk's own page, so other websites and other users on the Mac can't
   use it.
+- Browsers don't separate cookies by port, so in the browser version (`npm start`) Agent Desk's login cookie
+  also goes to any other localhost server you open in that browser. The Mac app keeps it to Agent Desk only;
+  in a browser, use a profile just for Agent Desk.
 - Claude agents start in "Ask me" permission mode by default, and nothing here offers the bypass modes.
 - A lead agent can't type into other agents or stop them without your approval.
 - Merging asks you first, and it stops cleanly on conflicts.
