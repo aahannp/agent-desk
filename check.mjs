@@ -288,7 +288,8 @@ try {
   const resumed = command({ ...base, resume: true }, '', null).args;
   assert.deepEqual(resumed.slice(0, 2), ['--resume', named], 'a saved chat is resumed by id');
   assert.ok(!resumed.includes('--session-id'), 'never both');
-  const hooks = JSON.parse(fs.readFileSync(fresh[fresh.indexOf('--settings') + 1], 'utf8')).hooks;
+  const settingsOf = c => JSON.parse(fs.readFileSync(c[c.indexOf('--settings') + 1], 'utf8'));
+  const hooks = settingsOf(fresh).hooks;
   assert.match(hooks.PostToolUse[0].hooks[0].command, /\/api\/touched/, 'every file an agent edits is reported');
   fs.writeFileSync(path.join(claudeHome, 'settings.json'), JSON.stringify({ statusLine: { type: 'command', command: 'cat # yours', padding: 1 } }));
   const bar = JSON.parse(fs.readFileSync((args => args[args.indexOf('--settings') + 1])(command({ ...base, resume: false }, '', null).args), 'utf8')).statusLine;
@@ -309,6 +310,12 @@ try {
   assert.deepEqual(transcriptContext(fixture), { used: 8000, compactions: 1, summary: 'Summary: first' }, 'a /compact counts, and its size after stands until the next reply');
   fs.appendFileSync(fixture, `${[reply(1, 40_000, 0), boundary('auto', 9000), summary('Summary: second'), reply(3, 12_000, 1000)].join('\n')}\n${reply(1, 1, 1).slice(0, 30)}`);
   assert.deepEqual(transcriptContext(fixture), { used: 13_003, compactions: 2, summary: 'Summary: second' }, "Claude's own auto-compaction counts too, and a half-written line waits");
+  const savedTheme = db.settings.theme;
+  db.settings.theme = 'latte';
+  assert.equal(settingsOf(command({ ...base, resume: false }, '', null).args).theme, 'light', "claude's panes follow a light Agent Desk theme");
+  db.settings.theme = 'nord';
+  assert.equal(settingsOf(command({ ...base, resume: false }, '', null).args).theme, undefined, "a dark one leaves claude's own theme alone");
+  db.settings.theme = savedTheme;
 
   // The whole chat lifecycle, with a stand-in `claude` on the PATH that prints its arguments and exits
   const fakeBin = path.join(tmp, 'fake-bin');
