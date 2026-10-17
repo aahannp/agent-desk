@@ -1,13 +1,14 @@
-// Twelve themes. Each sets the app colours and the terminal's 16 ANSI colours.
+// Dark and light themes. Each sets the app colours and the terminal's 16 ANSI colours.
 import { state, emit } from './ui.js';
 
 const ANSI = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white',
   'brightBlack', 'brightRed', 'brightGreen', 'brightYellow', 'brightBlue', 'brightMagenta', 'brightCyan', 'brightWhite'];
 
-// ui: background, sidebar, panel, raised panel, lines, text, muted text, accent
+// ui: background, sidebar, panel, raised panel, lines, text, muted text, accent.
+// Light terminals sit on the panel colour, so a pane reads as a white sheet on a slightly darker page.
 const theme = (name, dark, [bg, side, panel, panel2, line, text, dim, accent], colors) => ({
   name, dark, ui: { bg, side, panel, panel2, line, text, dim, accent },
-  term: { background: bg, foreground: text, ...Object.fromEntries(ANSI.map((key, i) => [key, colors[i]])) },
+  term: { background: dark ? bg : panel, foreground: text, ...Object.fromEntries(ANSI.map((key, i) => [key, colors[i]])) },
 });
 
 export const THEMES = {
@@ -31,10 +32,19 @@ export const THEMES = {
     ['#272822', '#f92672', '#a6e22e', '#f4bf75', '#66d9ef', '#ae81ff', '#a1efe4', '#f8f8f2', '#75715e', '#f92672', '#a6e22e', '#f4bf75', '#66d9ef', '#ae81ff', '#a1efe4', '#f9f8f5']),
   solarized: theme('Solarized Dark', true, ['#002b36', '#00252e', '#073642', '#0a3d4a', '#174652', '#93a1a1', '#6c8288', '#268bd2'],
     ['#073642', '#dc322f', '#859900', '#b58900', '#268bd2', '#d33682', '#2aa198', '#eee8d5', '#002b36', '#cb4b16', '#586e75', '#657b83', '#839496', '#6c71c4', '#93a1a1', '#fdf6e3']),
-  paper: theme('Solarized Light', false, ['#fdf6e3', '#f5eedb', '#eee8d5', '#e8e1cc', '#ddd6c1', '#586e75', '#8a9a9c', '#d33682'],
-    ['#073642', '#dc322f', '#859900', '#b58900', '#268bd2', '#d33682', '#2aa198', '#93a1a1', '#586e75', '#cb4b16', '#586e75', '#657b83', '#839496', '#6c71c4', '#93a1a1', '#002b36']),
-  daylight: theme('Daylight', false, ['#ffffff', '#f6f7f9', '#f6f7f9', '#eef1f4', '#dde1e6', '#1f2328', '#656d76', '#e0218a'],
-    ['#24292f', '#cf222e', '#116329', '#7d4e00', '#0969da', '#8250df', '#1b7c83', '#6e7781', '#57606a', '#a40e26', '#1a7f37', '#633c01', '#218bff', '#a475f9', '#3192aa', '#8c959f']),
+  // Light themes. ANSI colours are each theme's own, darkened where needed so terminal text reads on its background.
+  daylight: theme('Daylight', false, ['#f5f6f8', '#eceef2', '#ffffff', '#f9fafb', '#dfe2e8', '#1b1e24', '#5c6370', '#d6336c'],
+    ['#1b1e24', '#c62a4b', '#1a7f4b', '#9a6700', '#2563c9', '#b5338a', '#0e7c86', '#6b7280', '#59606c', '#a8203f', '#157a3f', '#7a5200', '#1d4fb8', '#9b2c7a', '#0a6872', '#7b828c']),
+  github: theme('GitHub Light', false, ['#ffffff', '#f6f8fa', '#ffffff', '#f6f8fa', '#d1d9e0', '#1f2328', '#59636e', '#0969da'],
+    ['#24292f', '#cf222e', '#116329', '#4d2d00', '#0969da', '#8250df', '#1b7c83', '#6e7781', '#57606a', '#a40e26', '#1a7f37', '#633c01', '#1e7ee6', '#9168dd', '#2e89a0', '#818993']),
+  latte: theme('Catppuccin Latte', false, ['#eff1f5', '#e6e9ef', '#f9fafc', '#f3f4f8', '#ccd0da', '#4c4f69', '#5c5f77', '#8839ef'],
+    ['#5c5f77', '#d20f39', '#317b21', '#986114', '#1d62eb', '#9f508a', '#137a80', '#7c7f8a', '#6a6d82', '#de293e', '#37842e', '#9f6b1e', '#426af5', '#aa5990', '#258289', '#7b7e85']),
+  dawn: theme('Rosé Pine Dawn', false, ['#faf4ed', '#f2e9e1', '#fffaf3', '#f4ede8', '#dfdad9', '#575279', '#696680', '#b4637a'],
+    ['#575279', '#a3596e', '#286983', '#966521', '#45777f', '#7b6890', '#9c5e5b', '#84808f', '#706c88', '#ad5f75', '#286983', '#a36d24', '#4b808a', '#826e99', '#a96663', '#84808f']),
+  onelight: theme('One Light', false, ['#fafafa', '#eeeeef', '#ffffff', '#f3f3f4', '#dcdcde', '#383a42', '#696c77', '#526eff'],
+    ['#383a42', '#c2493e', '#40813f', '#9b6a01', '#3a6cdb', '#a626a4', '#017aad', '#838488', '#4f525e', '#bf5c64', '#658251', '#90794d', '#467fad', '#a262b5', '#40868f', '#838383']),
+  paper: theme('Solarized Light', false, ['#fdf6e3', '#f3ebd3', '#fffbf0', '#f5eedb', '#e4dcc5', '#3b5058', '#5f747b', '#d33682'],
+    ['#073642', '#d3302d', '#687800', '#8e6c00', '#2076b3', '#c7337a', '#217e77', '#788484', '#586e75', '#cb4b16', '#586e75', '#657b83', '#6d7b7d', '#6c71c4', '#6f7979', '#002b36']),
 };
 
 const ink = hex => { // black or white text, whichever reads better on this colour

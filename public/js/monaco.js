@@ -20,11 +20,13 @@ function paint() {
   window.monaco.editor.defineTheme('desk', {
     base: t.dark ? 'vs-dark' : 'vs', inherit: true, rules: [],
     colors: {
-      'editor.background': t.ui.bg, 'editorGutter.background': t.ui.bg, 'minimap.background': t.ui.bg,
+      'editor.background': t.term.background, 'editorGutter.background': t.term.background, 'minimap.background': t.term.background,
       'editor.lineHighlightBackground': t.ui.panel, 'editorWidget.background': t.ui.panel, 'editor.selectionBackground': `${state.settings.accent || t.ui.accent}44`,
       'diffEditor.insertedLineBackground': `${t.term.green}1c`, 'diffEditor.insertedTextBackground': `${t.term.green}38`,
       'diffEditor.removedLineBackground': `${t.term.red}1c`, 'diffEditor.removedTextBackground': `${t.term.red}38`,
       'diffEditorGutter.insertedLineBackground': `${t.term.green}2a`, 'diffEditorGutter.removedLineBackground': `${t.term.red}2a`,
+      // Monaco's light scrollbar and diff-overview slider are a heavy grey slab; a faint tint of the text reads cleaner.
+      ...(t.dark ? {} : { 'scrollbarSlider.background': `${t.ui.text}1f`, 'scrollbarSlider.hoverBackground': `${t.ui.text}33`, 'scrollbarSlider.activeBackground': `${t.ui.text}47` }),
     },
   });
   window.monaco.editor.setTheme('desk');
