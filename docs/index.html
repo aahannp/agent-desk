@@ -597,6 +597,8 @@
         <a class="pill" data-download href="https://github.com/aahannp/agent-desk/releases/latest">Download for Mac</a>
         <a class="more" href="https://github.com/aahannp/agent-desk">View on GitHub</a>
       </div>
+      <p class="fine">Or install from Terminal, with no macOS warning:</p>
+      <div class="cmd"><code>curl -fsSL https://aahannp.github.io/agent-desk/install.sh | bash</code><button type="button" class="copy">Copy</button></div>
       <p class="fine">First launch: macOS will warn you because the app isn't notarized yet. <a href="#notarize">Here's the 10-second fix ›</a></p>
       <p class="fine first">Free and open source. For Mac with Apple silicon. Requires <a href="https://code.claude.com/docs/en/overview">Claude Code</a>.</p>
     </div>
@@ -1831,12 +1833,12 @@
   }
 </script>
 <script>
-  // The first-launch link opens the not-notarized FAQ entry; Copy puts its Terminal command on the clipboard.
+  // The first-launch link opens the not-notarized FAQ entry; each Copy puts its Terminal command on the clipboard.
   const fix = $('#notarize');
   $('a[href="#notarize"]').addEventListener('click', () => (fix.open = true));
   if (location.hash === '#notarize') fix.open = true;
-  $('.copy', fix).addEventListener('click', e => {
-    const b = e.currentTarget, code = $('.cmd code', fix);
+  for (const btn of $$('.cmd .copy')) btn.addEventListener('click', e => {
+    const b = e.currentTarget, code = $('code', b.parentElement);
     navigator.clipboard.writeText(code.textContent).then(() => { b.textContent = 'Copied'; setTimeout(() => (b.textContent = 'Copy'), 1500); }, () => getSelection().selectAllChildren(code));
   });
 
