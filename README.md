@@ -7,12 +7,12 @@ Multiple coding agents. Isolated workspaces. One place to review and ship.
 A Mac app for running a team of coding agents side by side, like BridgeMind's BridgeSpace. Every pane is a
 real terminal running the agent's own CLI, so Claude Code uses your normal Claude login and subscription.
 
-[Download](https://github.com/aahannp/agent-desk/releases/latest) ·
-[Releases](https://github.com/aahannp/agent-desk/releases) ·
-[Issues](https://github.com/aahannp/agent-desk/issues) ·
-[Report a bug](https://github.com/aahannp/agent-desk/issues/new) ·
+[Download](https://github.com/aahannp/relay/releases/latest) ·
+[Releases](https://github.com/aahannp/relay/releases) ·
+[Issues](https://github.com/aahannp/relay/issues) ·
+[Report a bug](https://github.com/aahannp/relay/issues/new) ·
 [Verify a release](#verify-a-release) ·
-[Website](https://aahannp.github.io/agent-desk/)
+[Website](https://aahannp.github.io/relay/)
 
 <img src="docs/assets/demo.gif" alt="A lead agent is given a goal, plans three tasks on the Board, three workers edit files side by side in their own worktrees, and Review shows the diff" width="900">
 
@@ -21,10 +21,10 @@ replies are scripted, so no model ran; the board, worktrees, edits and diff are 
 
 ## Install
 
-Download `Relay-<version>-arm64.dmg` from the [latest release](https://github.com/aahannp/agent-desk/releases/latest),
+Download `Relay-<version>-arm64.dmg` from the [latest release](https://github.com/aahannp/relay/releases/latest),
 open it and drag Relay into Applications. Or install from Terminal:
 
-    curl -fsSL https://aahannp.github.io/agent-desk/install.sh | bash
+    curl -fsSL https://aahannp.github.io/relay/install.sh | bash
 
 The installer ([docs/install.sh](docs/install.sh)) stops unless it's on macOS with Apple silicon, asks GitHub's
 API for the latest release, downloads its DMG with curl into a temporary folder, mounts it read-only, stops
@@ -49,7 +49,7 @@ Each release lists its DMG's SHA-256 in the notes. From v1.9.0, GitHub Actions b
 Run these in the folder with the download (`<name>` is the DMG's file name):
 
     shasum -a 256 -c <name>.dmg.sha256
-    gh attestation verify <name>.dmg -R aahannp/agent-desk
+    gh attestation verify <name>.dmg -R aahannp/relay
 
 ## Requirements
 
@@ -197,13 +197,13 @@ The board, settings and the secret live in `data/` (browser version) or `~/Libra
 
 Relay isn't notarized, so macOS can't vouch for it. You can check a download yourself. Full guide, with what
 each command printed for 1.8.2 (when Relay was still called Agent Desk, so its file was `Agent-Desk-1.8.2-arm64.dmg`
-and its app `Agent Desk.app`): [aahannp.github.io/agent-desk/verify.html](https://aahannp.github.io/agent-desk/verify.html).
+and its app `Agent Desk.app`): [aahannp.github.io/relay/verify.html](https://aahannp.github.io/relay/verify.html).
 
 1. **Checksum.** Compare the SHA-256 of your file with the one GitHub shows for it on the release page, the
    website's Download section, or the API:
 
        shasum -a 256 ~/Downloads/Relay-*.dmg
-       gh release view v1.8.2 -R aahannp/agent-desk --json assets --jq '.assets[] | .name + "  " + .digest'
+       gh release view v1.8.2 -R aahannp/relay --json assets --jq '.assets[] | .name + "  " + .digest'
 
    For 1.8.2 both print `9e9daaa1ee23ff2f80a9a02ce1fc43b5d3a0de8ff1ad055333d51a5ea138ac0e`.
 2. **Signature.** `codesign -dv --verbose=2 "/Applications/Relay.app"` shows `Signature=adhoc`, flags
@@ -215,7 +215,7 @@ and its app `Agent Desk.app`): [aahannp.github.io/agent-desk/verify.html](https:
 
        v=$(defaults read "/Applications/Relay.app/Contents/Info" CFBundleShortVersionString)
        npx --yes @electron/asar@4.3.1 extract "/Applications/Relay.app/Contents/Resources/app.asar" app
-       git clone --branch "v$v" --depth 1 https://github.com/aahannp/agent-desk src
+       git clone --branch "v$v" --depth 1 https://github.com/aahannp/relay src
        for d in electron lib public shell server.mjs; do diff -r "src/$d" "app/$d" && echo "$d: identical"; done
 
    For 1.8.2 all five are identical. What legitimately differs: `package.json` loses its `scripts`,
@@ -223,7 +223,7 @@ and its app `Agent Desk.app`): [aahannp.github.io/agent-desk/verify.html](https:
    source maps and unused builds; node-pty's `pty.node` and `spawn-helper` are re-signed ad-hoc, so the files
    differ but their machine code (`otool -t`) is the same.
 4. **Build attestation** (1.9.0 and later; not available for 1.8.3 or earlier, which were built on a Mac):
-   `gh attestation verify Relay-<version>-arm64.dmg -R aahannp/agent-desk`. It prints nothing and exits 0 when the
+   `gh attestation verify Relay-<version>-arm64.dmg -R aahannp/relay`. It prints nothing and exits 0 when the
    DMG matches; add `--format json` to see the workflow, commit and runner that built it.
 
 ## Build from source
@@ -231,8 +231,8 @@ and its app `Agent Desk.app`): [aahannp.github.io/agent-desk/verify.html](https:
 From a clean clone of a release tag, on a Mac with Apple silicon, git, Node.js and npm (tested with Node 25.5.0
 and npm 11.8.0) and the Xcode Command Line Tools (`swiftc` builds the voice helper):
 
-    git clone --branch v1.9.0 --depth 1 https://github.com/aahannp/agent-desk
-    cd agent-desk
+    git clone --branch v1.9.0 --depth 1 https://github.com/aahannp/relay
+    cd relay
     npm ci               # exact versions from package-lock.json
     npm run app          # run it
     npm run dist         # or build dist/Relay-1.9.0-arm64.dmg (under 3 minutes here)
@@ -247,8 +247,8 @@ included. A different Xcode or macOS may compile the voice helper or sign binari
 
 ## Roadmap
 
-From the code and the [release notes](https://github.com/aahannp/agent-desk/releases). Ideas and bugs go in
-[Issues](https://github.com/aahannp/agent-desk/issues).
+From the code and the [release notes](https://github.com/aahannp/relay/releases). Ideas and bugs go in
+[Issues](https://github.com/aahannp/relay/issues).
 
 **Implemented, stable**
 - Claude Code and shell panes, up to 16 at once, with status and notifications

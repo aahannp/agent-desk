@@ -1101,7 +1101,7 @@ esac
   const dmgBytes = Buffer.from('not really a dmg');
   const gh = http.createServer((req, res) => {
     const send = (status, body, headers = {}) => res.writeHead(status, { 'content-type': 'application/json', ...headers }).end(body === undefined ? '' : JSON.stringify(body));
-    if (req.url === '/repos/aahannp/agent-desk/releases/latest') return release ? send(200, release) : send(404, { message: 'Not Found' });
+    if (req.url === '/repos/aahannp/relay/releases/latest') return release ? send(200, release) : send(404, { message: 'Not Found' });
     if (req.url === '/dl/agent.dmg') return send(302, undefined, { location: '/files/agent.dmg' });
     if (req.url === '/files/agent.dmg') return res.writeHead(200, { 'content-length': dmgBytes.length }).end(dmgBytes);
     if (req.url === '/dl/elsewhere.dmg') return send(302, undefined, { location: 'https://example.invalid/agent.dmg' });
@@ -1111,7 +1111,7 @@ esac
   const hubUrl = `http://127.0.0.1:${gh.address().port}`;
   process.env.AGENT_DESK_GITHUB_API = hubUrl;
   assert.equal((await ok('GET', '/api/update?force=1')).none, true, 'no releases yet is not an error');
-  release = { tag_name: 'v99.0.0', body: 'Smoother scrolling', html_url: 'https://github.com/aahannp/agent-desk/releases/tag/v99.0.0',
+  release = { tag_name: 'v99.0.0', body: 'Smoother scrolling', html_url: 'https://github.com/aahannp/relay/releases/tag/v99.0.0',
     assets: [{ name: 'Relay-99.0.0-arm64.dmg', browser_download_url: `${hubUrl}/dl/agent.dmg`, size: dmgBytes.length }] };
   const up = await ok('GET', '/api/update?force=1');
   assert.deepEqual([up.newer, up.latest, up.notes, up.asset.name], [true, 'v99.0.0', 'Smoother scrolling', 'Relay-99.0.0-arm64.dmg'], 'a newer release is found');
