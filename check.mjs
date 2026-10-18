@@ -34,7 +34,9 @@ process.env.CLAUDE_CONFIG_DIR = path.join(tmp, 'claude-home'); // and never your
 fs.writeFileSync(path.join(tmp, 'data', 'token'), ''); // an empty secret file must never mean "no secret"
 fs.mkdirSync(path.join(tmp, 'data', 'mcp'));
 fs.writeFileSync(path.join(tmp, 'data', 'mcp', 'gone1234.json'), 'left by a crash');
+fs.writeFileSync(path.join(tmp, 'data', 'desk.json'), JSON.stringify({ settings: { agentDefaults: { claude: { model: '', effort: '' }, lead: { model: 'opus', effort: 'high' } } } }));
 const desk = await start({ port: 0, dataDir: path.join(tmp, 'data') });
+assert.deepEqual(db.settings.agentDefaults, { claude: { model: 'sonnet', effort: '' }, lead: { model: 'opus', effort: 'high' } }, "an old install's workers move to Sonnet; leads stay on Opus");
 assert.ok(desk.token.length >= 32, 'an empty token file is replaced with a real secret');
 assert.ok(!fs.existsSync(path.join(tmp, 'data', 'mcp', 'gone1234.json')), "a session's MCP file never outlives a restart");
 const SELF = `http://127.0.0.1:${desk.port}`;
@@ -427,15 +429,23 @@ try {
   assert.deepEqual((await runOf({ specialist: 'christie', model: 'stronger', effort: 'higher' })).slice(0, 2), ['opus', 'high'], 'stronger and higher go up a step');
   assert.deepEqual((await runOf({ specialist: 'scout', model: 'lighter', effort: 'lower' })).slice(0, 2), ['haiku', 'low'], 'and stop at the lightest');
   const [pm, pe, pOut] = await runOf({ kind: 'agent', agent: 'claude' });
-  assert.deepEqual([pm, pe], ['', ''], 'a plain Claude agent uses your own Claude Code defaults');
-  assert.doesNotMatch(pOut, /--model|--effort/, 'so no flags are passed');
-  assert.deepEqual((await runOf({ kind: 'agent', agent: 'claude', model: 'lighter' })).slice(0, 2), ['sonnet', ''], 'lighter than the default (Opus) is Sonnet');
+  assert.deepEqual([pm, pe], ['sonnet', ''], 'a plain Claude agent (a worker) runs on Sonnet, with your own effort');
+  assert.match(pOut, /--model sonnet/, 'passed to claude');
+  assert.doesNotMatch(pOut, /--effort/, 'and no effort flag');
+  assert.deepEqual((await runOf({ kind: 'agent', agent: 'claude', model: 'lighter' })).slice(0, 2), ['haiku', ''], 'lighter than the worker default (Sonnet) is Haiku');
   assert.deepEqual((await runOf({ kind: 'agent', agent: 'claude', role: 'lead' })).slice(0, 2), ['opus', 'high'], 'a lead agent has its own defaults');
   assert.equal((await request('PATCH', '/api/settings', { body: { agentDefaults: { claude: { model: 'gpt', effort: '' }, lead: { model: '', effort: '' } } } })).status, 400, 'defaults must be known models');
   assert.equal((await request('PATCH', '/api/settings', { body: { scrollSpeed: 10 } })).status, 400, 'scroll speed has a sensible range');
   await ok('PATCH', '/api/settings', { agentDefaults: { claude: { model: 'sonnet', effort: 'low' }, lead: { model: 'opus', effort: 'high' } } });
   assert.deepEqual((await runOf({ kind: 'agent', agent: 'claude' })).slice(0, 2), ['sonnet', 'low'], 'and you can change them in Settings');
+  const plainSpec = await ok('POST', '/api/specialists', { name: 'Plain', role: 'Left on the default model' });
+  assert.deepEqual((await runOf({ specialist: 'Plain' })).slice(0, 2), ['sonnet', 'low'], 'a specialist left on the default runs as a worker does');
+  assert.equal((await ok('GET', '/api/specialists')).find(x => x.id === plainSpec.id).model, '', 'without its profile being rewritten');
+  await ok('DELETE', `/api/specialists/${plainSpec.id}`);
   await ok('PATCH', '/api/settings', { agentDefaults: { claude: { model: '', effort: '' }, lead: { model: 'opus', effort: 'high' } } });
+  const [, , yoursOut] = await runOf({ kind: 'agent', agent: 'claude' });
+  assert.doesNotMatch(yoursOut, /--model|--effort/, "set to your Claude Code's own default, no flags are passed");
+  await ok('PATCH', '/api/settings', { agentDefaults: { claude: { model: 'sonnet', effort: '' }, lead: { model: 'opus', effort: 'high' } } });
   for (const x of await ok('GET', '/api/sessions')) if (x.exited) await ok('DELETE', `/api/sessions/${x.id}`);
 
   const rhea = await ok('POST', '/api/specialists', { name: 'Rhea', role: 'Code reviewer: finds bugs before you merge', model: 'opus', instructions: 'Review carefully.' });
