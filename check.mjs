@@ -12,6 +12,7 @@ import { createWorktree } from './lib/git.mjs';
 import { db, bus } from './lib/store.mjs';
 import { command, sessions, upkeep, effectiveWindow } from './lib/sessions.mjs';
 import { transcriptContext } from './lib/transcripts.mjs';
+import { priceReply } from './lib/usage.mjs';
 import { isNewer } from './lib/update.mjs';
 import { parseMarkdown } from './public/js/ui.js';
 import { stripDeskCookies } from './lib/cookies.mjs';
@@ -28,6 +29,7 @@ sh('-c', 'user.name=check', '-c', 'user.email=check@example.com', 'commit', '-qm
 
 fs.mkdirSync(path.join(tmp, 'data'));
 process.env.TASKNOTES_DATA = path.join(tmp, 'tasknotes'); // a stand-in Task Notes, never the real one
+process.env.CLAUDE_CONFIG_DIR = path.join(tmp, 'claude-home'); // and never your real transcripts (the Spend scan reads them all)
 fs.writeFileSync(path.join(tmp, 'data', 'token'), ''); // an empty secret file must never mean "no secret"
 fs.mkdirSync(path.join(tmp, 'data', 'mcp'));
 fs.writeFileSync(path.join(tmp, 'data', 'mcp', 'gone1234.json'), 'left by a crash');
@@ -249,8 +251,7 @@ try {
   assert.match(self.result.content[0].text, new RegExp(shell.id), 'MCP tools know which session is asking');
 
   // Chats: titles come from Claude's own saved conversations; rename, remove, and a chat whose folder is gone
-  const claudeHome = path.join(tmp, 'claude-home');
-  process.env.CLAUDE_CONFIG_DIR = claudeHome;
+  const claudeHome = process.env.CLAUDE_CONFIG_DIR;
   delete process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW; // yours would change lead upkeep's window below
   const chatDir = path.join(claudeHome, 'projects', repo.replace(/[^a-zA-Z0-9]/g, '-'));
   fs.mkdirSync(chatDir, { recursive: true });
@@ -310,6 +311,27 @@ try {
   assert.deepEqual(transcriptContext(fixture), { used: 8000, compactions: 1, summary: 'Summary: first' }, 'a /compact counts, and its size after stands until the next reply');
   fs.appendFileSync(fixture, `${[reply(1, 40_000, 0), boundary('auto', 9000), summary('Summary: second'), reply(3, 12_000, 1000)].join('\n')}\n${reply(1, 1, 1).slice(0, 30)}`);
   assert.deepEqual(transcriptContext(fixture), { used: 13_003, compactions: 2, summary: 'Summary: second' }, "Claude's own auto-compaction counts too, and a half-written line waits");
+
+  // Spend: one API response is several lines sharing message.id, a clone copies them into another file, and 1h cache writes cost more
+  const close = (a, b, what) => assert.ok(Math.abs(a - b) < 1e-9, `${what}: ${a} vs ${b}`);
+  close(priceReply('claude-haiku-5-5', { cache_read_input_tokens: 1000, output_tokens: 100 }).cost, 0.00006, 'haiku up to 100K');
+  close(priceReply('claude-haiku-5-5', { cache_read_input_tokens: 200_000, output_tokens: 100 }).cost, 0.01025, 'haiku above 100K');
+  assert.equal(priceReply('claude-mystery-9', { output_tokens: 7 }).cost, null, 'a model not in the table is unpriced, never guessed');
+  const spentAt = new Date(2026, 0, 5, 14, 30).toISOString();
+  const said = (id, model, usage, extra = {}) => line({ type: 'assistant', timestamp: spentAt, sessionId: named, cwd: repo, requestId: `req_${id}`, message: { id, model, usage }, ...extra });
+  const opus = output => ({ input_tokens: 10, cache_creation_input_tokens: 1000, cache_creation: { ephemeral_5m_input_tokens: 600, ephemeral_1h_input_tokens: 400 }, cache_read_input_tokens: 100_000, output_tokens: output });
+  fs.appendFileSync(path.join(chatDir, `${named}.jsonl`), `\n${[said('msg_a', 'claude-opus-5-5', opus(5)), said('msg_a', 'claude-opus-5-5', opus(500)),
+    said('msg_b', '<synthetic>', { output_tokens: 99 }), said('msg_c', 'claude-mystery-9', { input_tokens: 3, output_tokens: 7 }, { isSidechain: true })].join('\n')}\n`);
+  fs.writeFileSync(path.join(chatDir, `${randomUUID()}.jsonl`), `${said('msg_a', 'claude-opus-5-5', opus(500), { sessionId: 'the-clone' })}\n`);
+  const spent = await ok('GET', `/api/usage?day=2026-01-05`);
+  close(spent.cost, 0.03624, 'msg_a counted once, at its final output, with 400 tokens at the 1h price: 10×4 + 600×5 + 400×8 + 100000×0.2 + 500×20 per million');
+  assert.deepEqual([spent.replies, spent.unpriced, spent.byType.write1h.tokens, spent.byType.output.tokens], [2, 1, 400, 507], 'a <synthetic> reply is skipped; an unpriced one still counts its tokens');
+  assert.deepEqual(spent.sessions.map(s => [s.id, s.title, s.subagents]), [[named, 'Login bug', 1]], "the clone's copy stays on the session that made it, with its title");
+  close(db.usageDays['2026-01-05'].cost, 0.03624, 'a finished day is saved for when Claude Code deletes its transcripts');
+  db.usageDays['2026-01-05'].cost = 5;
+  assert.equal((await ok('GET', '/api/usage?day=2026-01-05')).saved, true, 'and a bigger saved total is never replaced by a smaller live one');
+  assert.equal((await ok('GET', '/api/usage/days')).days.find(d => d.day === '2026-01-05').cost, 5);
+  assert.equal((await request('GET', '/api/usage?day=../etc')).status, 400, 'day must be a date');
   const savedTheme = db.settings.theme;
   db.settings.theme = 'latte';
   assert.equal(settingsOf(command({ ...base, resume: false }, '', null).args).theme, 'light', "claude's panes follow a light Agent Desk theme");
