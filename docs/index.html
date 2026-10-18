@@ -357,6 +357,65 @@
     .motion .faq details[open]::details-content { block-size: auto; }
   }
 
+  /* Board, Spend and Artifacts tiles as crisp mocks */
+  .mock { border-bottom: 0; box-shadow: none; }
+  .tile .mock { border-radius: 14px 14px 0 0; }
+  .tile.full .mock { border-right: 0; border-radius: 14px 0 0 0; }
+  .bmock .board { gap: 8px; padding: 12px; }
+  .bmock .col { min-height: 210px; }
+  .bmock .card { padding: 8px 9px; cursor: grab; }
+  .bmock .card .t { flex: 1 0 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: inherit; }
+  .bmock .card.held, .bmock .col.drop, .afold.drop { border-color: var(--t-accent); box-shadow: inset 0 0 0 1px var(--t-accent); }
+  .bmock .run { min-height: 24px; margin-left: auto; padding: 0 8px; font-size: 11px; }
+  .bmock .col:not(:first-child) .run { display: none; }
+  .bhint { padding: 0 16px 14px; }
+  .tag { padding: 1px 6px; border-radius: 5px; background: color-mix(in srgb, var(--t-text) 8%, transparent); color: var(--t-dim); font: 600 10px var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+  .smock { display: grid; gap: 16px; padding: 16px; font-family: var(--sans); }
+  .stats3 { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 8px; }
+  .stats3 div { padding: 10px 12px; border: 1px solid var(--t-line); border-radius: 10px; background: var(--t-pane); }
+  .stats3 small, .types h4 { display: block; margin: 0; color: var(--t-dim); font: 600 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+  .stats3 b { display: block; margin-top: 4px; font-size: 21px; font-weight: 600; letter-spacing: -.02em; }
+  .stats3 div:first-child b { font-size: 27px; }
+  .stats3 span { color: var(--t-dim); font-size: 11.5px; }
+  .readout { margin: 0 0 8px; font-size: 13px; font-weight: 500; }
+  .bars { display: flex; align-items: flex-end; gap: 3px; height: 96px; border-bottom: 1px solid var(--t-line); outline-offset: 4px; cursor: crosshair; touch-action: pan-y; }
+  .bars i { flex: 1; min-width: 0; height: var(--v); border-radius: 2px 2px 0 0; background: color-mix(in srgb, var(--t-dim) 50%, transparent); }
+  .bars i:hover { background: var(--t-dim); }
+  .bars i.on { background: var(--t-accent); }
+  .types h4 { margin-bottom: 6px; }
+  .ty { display: grid; grid-template-columns: 88px 1fr 46px; align-items: center; gap: 10px; padding: 3px 0; font-size: 12.5px; }
+  .ty i { position: relative; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--t-line) 70%, transparent); }
+  .ty i::before { content: ""; position: absolute; inset: 0 auto 0 0; width: var(--w); border-radius: 3px; background: var(--t-dim); }
+  .ty b { font-weight: 600; text-align: right; }
+  .sample { margin: 0; color: var(--t-dim); font-size: 11px; }
+  .amock { display: grid; grid-template-columns: 200px minmax(0, 1fr); font: 12.5px/1.45 var(--sans); }
+  .alist { display: grid; align-content: start; gap: 3px; padding: 12px; border-right: 1px solid var(--t-line); }
+  .afolds { display: grid; gap: 3px; }
+  .afold, .aitem { display: block; width: 100%; padding: 7px 9px; border: 1px solid transparent; border-radius: 8px; background: none; color: var(--t-dim); font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
+  .afold { display: flex; justify-content: space-between; }
+  .afold:hover, .aitem:hover { background: color-mix(in srgb, var(--t-text) 5%, transparent); text-decoration: none; }
+  .afold b, .aitem b { color: var(--t-text); font-weight: 500; }
+  .aitem { cursor: grab; }
+  .aitem[hidden] { display: none; }
+  .aitem b { display: block; }
+  .aitem small { color: var(--t-dim); font-size: 11px; }
+  .afold[aria-checked="true"], .aitem[aria-current="true"] { border-color: var(--t-line); background: var(--t-pane); }
+  .ahint { margin: 8px 9px 0; }
+  .abar select { max-width: 40%; padding: 3px 6px; border: 1px solid var(--t-line); border-radius: 7px; background: var(--t-pane); color: var(--t-text); font: 11.5px var(--sans); }
+  .alist h4 { margin: 10px 9px 2px; color: var(--t-dim); font: 600 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+  .aview { display: flex; flex-direction: column; min-width: 0; }
+  .abar { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--t-line); color: var(--t-dim); }
+  .abar span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .abar i { padding: 3px 9px; border: 1px solid var(--t-line); border-radius: 7px; color: var(--t-text); font-size: 11.5px; font-style: normal; white-space: nowrap; }
+  .abar .pub { border-color: transparent; background: var(--t-btn); color: #fff; }
+  .apage { flex: 1; margin: 12px 0 0 12px; padding: 22px 24px; border-radius: 10px 0 0 0; background: #fafaf9; color: #1d1b19; box-shadow: 0 0 0 1px var(--t-line); } /* a saved page is its own white document, as in the app */
+  .apage small { color: #5f5a54; font: 600 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+  .apage h5 { margin: 6px 0; font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
+  .apage p { margin: 0 0 14px; color: #55504a; }
+  .apage table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .apage td { padding: 7px 0; border-top: 1px solid #e6e2dc; }
+  .apage td + td { padding-left: 12px; font-weight: 600; text-align: right; }
+
   /* ⌘K palette and the confirm dialog */
   .kbd { display: inline-flex; align-items: center; justify-content: center; height: 28px; padding: 0 9px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 500; cursor: pointer; }
   .kbd:hover { color: var(--text); }
@@ -422,7 +481,7 @@
     .nav-links { display: none; }
     .stats { grid-template-columns: 1fr 1fr; gap: 40px 24px; }
     .tiles { grid-template-columns: 1fr; }
-    .tile.full { grid-column: auto; grid-template-columns: 1fr; padding: 40px 0 0 40px; gap: 0; }
+    .tile.full { grid-column: auto; grid-template-columns: minmax(0, 1fr); padding: 40px 0 0 40px; gap: 0; }
     .tile.full .text { padding-right: 40px; }
     .tile { padding: 40px 40px 0; }
     .minis, .safe { grid-template-columns: 1fr 1fr; }
@@ -462,15 +521,25 @@
     .app .pane[data-p="api"], .app .pane[data-p="page"], .sugs [data-p="api"], .app .top .b { display: none; }
     .lid { border-radius: 16px; padding: 8px; }
     .base { display: none; }
+    .bmock .board { grid-template-columns: repeat(4, minmax(150px, 1fr)); overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding: 16px; }
+    .bmock .col { scroll-snap-align: start; }
+    .stats3 { grid-template-columns: 1fr 1fr; }
+    .stats3 div:first-child { grid-column: span 2; }
+    .amock { grid-template-columns: minmax(0, 1fr); }
+    .alist { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); border-right: 0; border-bottom: 1px solid var(--t-line); }
+    .afolds { grid-column: span 2; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .alist h4 { grid-column: span 2; }
+    .ahint, .abar .pub { display: none; }
+    .apage { padding: 18px; }
     .stage:modal .app { height: auto; }
     .stage:modal .app .pane[data-p] { display: flex; }
     .controls { justify-content: center; }
-    .board { gap: 5px; padding: 10px; }
-    .col { min-height: 96px; padding: 6px; }
-    .col .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-    .card { flex-wrap: nowrap; gap: 4px; padding: 5px; }
-    .card .t { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-    .card .chip { display: none; }
+    .win .board { gap: 5px; padding: 10px; }
+    .win .col { min-height: 96px; padding: 6px; }
+    .win .col .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .win .card { flex-wrap: nowrap; gap: 4px; padding: 5px; }
+    .win .card .t { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .win .card .chip { display: none; }
     .run { flex: none; justify-content: center; width: 32px; height: 32px; padding: 0; }
     .run span { display: none; }
     .panes { grid-template-columns: minmax(0, 1fr); padding: 0 10px 10px; }
@@ -660,7 +729,7 @@
             <h3>Give it a goal. Watch it split the work.</h3>
             <p>The lead writes tasks on a shared board and starts a worker for each one. Agents comment on their cards and move them to Review when they're done.</p>
           </div>
-          <div class="pic"><img src="assets/board.webp" width="1400" height="1105" loading="lazy" alt="The Board, with tasks in To do, In progress, Review and Done. Each card shows its agent and worktree branch."></div>
+          <div class="pic"><div class="desk mock bmock" role="group" aria-label="Board demo"><div class="board"><div class="col"><h3><i class="dot" style="--c: var(--t-dim)"></i>To do <span class="n">2</span></h3><ol aria-label="To do"><li class="card" draggable="true"><button type="button" class="t" aria-pressed="false">Product search</button><span class="tag">Claude Code</span><span class="chip">⑂ search</span><button type="button" class="run" aria-label="Run Product search"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 0l9 5-9 5z" fill="currentColor"/></svg><span>Run</span></button></li><li class="card" draggable="true"><button type="button" class="t" aria-pressed="false">Order email</button><span class="tag">Codex</span><span class="chip">⑂ order-email</span><button type="button" class="run" aria-label="Run Order email"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 0l9 5-9 5z" fill="currentColor"/></svg><span>Run</span></button></li></ol></div><div class="col"><h3><i class="dot" style="--c: var(--t-accent)"></i>In progress <span class="n">2</span></h3><ol aria-label="In progress"><li class="card" draggable="true"><button type="button" class="t" aria-pressed="false">Wishlist page</button><span class="tag">Claude Code</span><span class="chip">⑂ wishlist-ui</span><button type="button" class="run" aria-label="Run Wishlist page"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 0l9 5-9 5z" fill="currentColor"/></svg><span>Run</span></button></li><li class="card" draggable="true"><button type="button" class="t" aria-pressed="false">Wishlist tests</button><span class="tag">Claude Code</span><span class="chip">⑂ wish-tests</span><button type="button" class="run" aria-label="Run Wishlist tests"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 0l9 5-9 5z" fill="currentColor"/></svg><span>Run</span></button></li></ol></div><div class="col"><h3><i class="dot" style="--c: var(--t-text)"></i>Review <span class="n">1</span></h3><ol aria-label="Review"><li class="card" draggable="true"><button type="button" class="t" aria-pressed="false">Wishlist API</button><span class="tag">Claude Code</span><span class="chip">⑂ wish-api</span><button type="button" class="run" aria-label="Run Wishlist API"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 0l9 5-9 5z" fill="currentColor"/></svg><span>Run</span></button></li></ol></div><div class="col"><h3><i class="dot" style="--c: var(--t-dim)"></i>Done <span class="n">1</span></h3><ol aria-label="Done"><li class="card" draggable="true"><button type="button" class="t" aria-pressed="false">Fix cart rounding</button><span class="tag">Gemini CLI</span><span class="chip">⑂ rounding</span><button type="button" class="run" aria-label="Run Fix cart rounding"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 0l9 5-9 5z" fill="currentColor"/></svg><span>Run</span></button></li></ol></div></div><p class="sample bhint" aria-live="polite">Drag a card to a column, or click it and then a column. Arrow keys move a focused card.</p></div></div>
         </article>
 
         <article class="tile reveal">
@@ -682,7 +751,17 @@
           <span class="kicker">Spend</span>
           <h3>Know what every day cost.</h3>
           <p>Your Claude Code use at API list prices, with 35 days of history and a breakdown by model, hour, project and session.</p>
-          <div class="pic"><img src="assets/spend.webp" width="1400" height="1105" loading="lazy" alt="Spend: today's, this week's and this month's totals, daily bars for the last 35 days, and breakdowns by token type and hour."></div>
+          <div class="pic"><div class="desk mock smock" role="group" aria-label="Spend demo with sample data">
+            <div class="stats3"><div><small>Today</small><b>$13.58</b><span>217 replies</span></div><div><small>This week</small><b id="sWeek">$45.29</b></div><div><small>This month</small><b id="sMonth">$119.73</b></div></div>
+            <div><p class="readout" id="sRead" aria-hidden="true">Today · $13.58</p><div class="bars" id="sBars" tabindex="0" role="slider" aria-label="Spend per day, last 35 days" aria-valuemin="1" aria-valuemax="35" aria-valuenow="35" aria-valuetext="Today, $13.58"></div></div>
+            <div class="types"><h4 id="sType">Today by token type</h4>
+              <div class="ty"><span>Input</span><i style="--w: 1%"></i><b>$0.03</b></div>
+              <div class="ty"><span>Cache write</span><i style="--w: 53%"></i><b>$7.25</b></div>
+              <div class="ty"><span>Cache read</span><i style="--w: 17%"></i><b>$2.26</b></div>
+              <div class="ty"><span>Output</span><i style="--w: 30%"></i><b>$4.04</b></div>
+            </div>
+            <p class="sample">Sample data · estimated at API list prices</p>
+          </div></div>
         </article>
 
         <article class="tile full reveal">
@@ -691,7 +770,22 @@
             <h3>The pages your agents make, kept.</h3>
             <p>Reports, checklists and charts land in one place. Sort them into folders, open them in a browser, or publish one to GitHub Pages in a click.</p>
           </div>
-          <div class="pic"><img src="assets/artifacts.webp" width="1400" height="1105" loading="lazy" alt="Artifacts: saved pages beside a keyboard accessibility report an agent wrote."></div>
+          <div class="pic"><div class="desk mock amock" role="group" aria-label="Artifacts demo">
+            <div class="alist">
+              <div class="afolds" role="radiogroup" aria-label="Folders"><button type="button" class="afold" role="radio" aria-checked="true" data-f=""><b>All</b><span>4</span></button><button type="button" class="afold" role="radio" aria-checked="false" tabindex="-1" data-f="Wishlist"><b>Wishlist</b><span>2</span></button><button type="button" class="afold" role="radio" aria-checked="false" tabindex="-1" data-f="Reports"><b>Reports</b><span>1</span></button></div>
+              <h4>Pages</h4>
+              <a href="#" class="aitem" draggable="true" data-f="Wishlist" aria-current="true"><b>Heart button: keyboard check</b><small>Browner · 3m ago</small></a>
+              <a href="#" class="aitem" draggable="true" data-f="Wishlist" aria-current="false"><b>Wishlist plan</b><small>Lead · 12m ago</small></a>
+              <a href="#" class="aitem" draggable="true" data-f="Reports" aria-current="false"><b>Spend this week</b><small>Lead · 1h ago</small></a>
+              <a href="#" class="aitem" draggable="true" data-f="" aria-current="false"><b>Cart rounding fix</b><small>Gemini CLI · 2h ago</small></a>
+              <p class="sample ahint">Drag a page onto a folder to file it.</p>
+            </div>
+            <div class="aview"><div class="abar"><span id="aTitle">Heart button: keyboard check</span><select id="aMove" aria-label="Folder for this page"><option value="">No folder</option><option selected>Wishlist</option><option>Reports</option></select><i class="pub">Publish</i></div>
+              <div class="apage"><small>Review · wishlist page</small><h5>Heart button: keyboard check</h5><p>Every way to reach and press the new heart button, checked with only a keyboard and VoiceOver.</p><table><tr><td>Tab reaches the heart after Add to cart</td><td>Pass</td></tr><tr><td>Space and Enter toggle it</td><td>Pass</td></tr><tr><td>VoiceOver reads “Save to wishlist, toggle button”</td><td>Pass</td></tr><tr><td>aria-pressed updates after saving</td><td>Fixed</td></tr><tr><td>Focus ring visible in dark mode</td><td>Pass</td></tr></table></div>
+              <div class="apage" hidden><small>Plan · wishlist</small><h5>Wishlist plan</h5><p>How the lead split “add a wishlist” into tasks, and where each one is.</p><table><tr><td>Wishlist API</td><td>Review</td></tr><tr><td>Wishlist page</td><td>In progress</td></tr><tr><td>Wishlist tests</td><td>In progress</td></tr><tr><td>Order email</td><td>To do</td></tr></table></div>
+              <div class="apage" hidden><small>Report · spend</small><h5>Spend this week</h5><p>What the last five working days of agent work cost, at API list prices.</p><table><tr><td>Monday</td><td>$11.20</td></tr><tr><td>Tuesday</td><td>$8.60</td></tr><tr><td>Wednesday</td><td>$14.20</td></tr><tr><td>Thursday</td><td>$9.70</td></tr><tr><td>Friday</td><td>$13.58</td></tr></table></div>
+              <div class="apage" hidden><small>Notes · rounding</small><h5>Cart rounding fix</h5><p>Why cart totals were off by a cent, and what changed.</p><table><tr><td>Cause</td><td>Float maths on prices</td></tr><tr><td>Fix</td><td>Prices kept in cents</td></tr><tr><td>Tests</td><td>6 added, all pass</td></tr><tr><td>Branch</td><td>rounding</td></tr></table></div></div>
+          </div></div>
         </article>
       </div>
 
@@ -936,6 +1030,13 @@
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const el = (tag, cls, html) => Object.assign(document.createElement(tag), { className: cls, innerHTML: html });
+  const glide = (item, list) => { // FLIP: the item slides from where it was to its new list
+    const a = item.getBoundingClientRect();
+    list.append(item);
+    if (calm) return;
+    const b = item.getBoundingClientRect();
+    item.animate([{ transform: `translate(${a.left - b.left}px, ${a.top - b.top}px)` }, { transform: 'none' }], { duration: 350, easing: 'cubic-bezier(.2, .7, .2, 1)' });
+  };
   const line = (log, html, cls = '') => { // a terminal line; the log keeps its last 7
     log.append(el('li', cls, html));
     while (log.children.length > 7) log.firstChild.remove();
@@ -1053,13 +1154,7 @@
     const say = text => { if (!quiet) sayEl.textContent = text; };
 
     const pill = (pane, s) => { const st = $('.st', pane); st.dataset.s = s; st.textContent = s === 'working' ? 'Working' : 'Idle'; };
-    const move = (card, col) => { // FLIP: the card glides from its old column to the new one
-      const a = card.getBoundingClientRect();
-      cols[col].ol.append(card);
-      if (calm) return;
-      const b = card.getBoundingClientRect();
-      card.animate([{ transform: `translate(${a.left - b.left}px, ${a.top - b.top}px)` }, { transform: 'none' }], { duration: 350, easing: 'cubic-bezier(.2, .7, .2, 1)' });
-    };
+    const move = (card, col) => glide(card, cols[col].ol);
 
     function sync() {
       cols.forEach(c => (c.n.textContent = c.ol.children.length));
@@ -1564,6 +1659,110 @@
       let i = 0;
       const t = setInterval(() => { input.value = text.slice(0, ++i); if (i >= text.length) { clearInterval(t); form.requestSubmit(); } }, 28);
     });
+  }
+
+  // Drag and drop inside a mock: drop(item, target) when an item matching from lands on a target matching to.
+  function dnd(box, from, to, drop) {
+    let held = null;
+    const mark = t => $$(to, box).forEach(x => x.classList.toggle('drop', x === t));
+    box.addEventListener('dragstart', e => { held = e.target.closest(from); if (held) { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', held.textContent); } });
+    box.addEventListener('dragover', e => { const t = held && e.target.closest(to); if (t) e.preventDefault(); mark(t); });
+    box.addEventListener('drop', e => { const t = held && e.target.closest(to); if (t) { e.preventDefault(); drop(held, t); } });
+    box.addEventListener('dragend', () => { held = null; mark(null); });
+  }
+
+  // Board tile: drag a card, or click it and then a column; arrows move a focused card. Run starts a To do card.
+  const bmock = $('.bmock');
+  if (bmock) {
+    const cols = $$('.col', bmock), lists = $$('ol', bmock), ns = $$('.n', bmock), say = $('.bhint', bmock);
+    const col = card => lists.indexOf(card.parentElement);
+    let held = null;
+    const hold = card => {
+      if (held) { held.classList.remove('held'); $('.t', held).setAttribute('aria-pressed', 'false'); }
+      held = card === held ? null : card;
+      if (held) { held.classList.add('held'); $('.t', held).setAttribute('aria-pressed', 'true'); }
+    };
+    const put = (card, i) => {
+      const had = card.contains(document.activeElement), t = $('.t', card);
+      if (held === card) hold(card);
+      glide(card, lists[i]);
+      lists.forEach((l, j) => (ns[j].textContent = l.children.length));
+      say.textContent = `${t.textContent} moved to ${lists[i].getAttribute('aria-label')}`;
+      if (had) t.focus();
+    };
+    bmock.addEventListener('click', e => {
+      const card = e.target.closest('.card'), c = e.target.closest('.col');
+      if (e.target.closest('.run')) { put(card, 1); setTimeout(() => col(card) === 1 && put(card, 2), 2500); } // the agent finishes and asks for review
+      else if (held && c && c !== held.closest('.col')) put(held, cols.indexOf(c));
+      else if (card) hold(card);
+    });
+    bmock.addEventListener('keydown', e => {
+      const d = { ArrowLeft: -1, ArrowRight: 1 }[e.key], card = e.target.matches('.t') && e.target.closest('.card');
+      if (!d || !card || !lists[col(card) + d]) return;
+      e.preventDefault();
+      put(card, col(card) + d);
+    });
+    dnd(bmock, '.card', '.col', (card, c) => put(card, cols.indexOf(c)));
+  }
+
+  // Spend tile: 35 days of sample spend, quieter at weekends. Hover shows a day; click or arrow keys select it.
+  const sbars = $('#sBars');
+  if (sbars) {
+    const RAW = [9.4, 11.8, 7.6, 12.9, 10.1, 4.2, 3.1, 8.8, 14.6, 12.2, 6.9, 11.5, 3.8, 2.6, 10.7, 9.9, 13.4, 15.1, 8.2, 4.4, 2.2, 7.4, 12.6, 10.8, 9.1, 13.9, 3.5, 1.9, 11.2, 8.6, 14.2, 9.7, 12.4, 6.1, 13.58];
+    const date = i => new Date(Date.now() - (34 - i) * 864e5);
+    const V = RAW.map((v, i) => (i < 34 && [0, 6].includes(date(i).getDay()) ? v * 0.25 : v)), max = Math.max(...V), read = $('#sRead'), types = $$('.ty');
+    sbars.innerHTML = V.map(v => `<i style="--v: ${Math.max(3, v / max * 100)}%"></i>`).join('');
+    const bars = [...sbars.children];
+    const day = i => (i === 34 ? 'Today' : date(i).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }));
+    const show = i => (read.textContent = `${day(i)} · $${V[i].toFixed(2)}`);
+    let sel = 34;
+    const pick = i => {
+      sel = Math.max(0, Math.min(34, i));
+      bars.forEach((b, j) => b.classList.toggle('on', j === sel));
+      show(sel);
+      sbars.setAttribute('aria-valuenow', sel + 1);
+      sbars.setAttribute('aria-valuetext', `${day(sel)}, $${V[sel].toFixed(2)}`);
+      $('#sType').textContent = `${day(sel)} by token type`;
+      const w = 0.47 + sel % 5 * 0.02, r = 0.13 + sel % 3 * 0.03, parts = [0.01, w, r, 0.99 - w - r]; // Input, Cache write, Cache read, Output
+      types.forEach((t, j) => { $('i', t).style.setProperty('--w', `${parts[j] * 100}%`); $('b', t).textContent = `$${(V[sel] * parts[j]).toFixed(2)}`; });
+    };
+    const under = e => Math.max(0, Math.min(34, Math.floor((e.clientX - sbars.getBoundingClientRect().left) / sbars.offsetWidth * 35)));
+    sbars.addEventListener('pointermove', e => show(under(e)));
+    sbars.addEventListener('pointerleave', () => show(sel));
+    sbars.addEventListener('pointerdown', e => pick(under(e)));
+    sbars.addEventListener('keydown', e => {
+      const to = { ArrowLeft: sel - 1, ArrowDown: sel - 1, ArrowRight: sel + 1, ArrowUp: sel + 1, Home: 0, End: 34 }[e.key];
+      if (to !== undefined) { e.preventDefault(); pick(to); }
+    });
+    const sum = n => `$${V.slice(-n).reduce((a, b) => a + b, 0).toFixed(2)}`;
+    $('#sWeek').textContent = sum(7);
+    $('#sMonth').textContent = sum(new Date().getDate());
+    pick(34);
+  }
+
+  // Artifacts tile: folders filter the pages, a page opens in the preview, and dragging (or the menu) files it.
+  const amock = $('.amock');
+  if (amock) {
+    const items = $$('.aitem', amock), pages = $$('.apage', amock), folds = $$('.afold', amock), menu = $('#aMove');
+    let filter = '', open = 0;
+    const sync = () => {
+      folds.forEach(f => ($('span', f).textContent = items.filter(a => !f.dataset.f || a.dataset.f === f.dataset.f).length));
+      items.forEach(a => (a.hidden = !!filter && a.dataset.f !== filter));
+    };
+    const file = (a, f) => { a.dataset.f = f; if (items.indexOf(a) === open) menu.value = f; sync(); };
+    radios($('.afolds', amock), f => { filter = f.dataset.f; sync(); });
+    amock.addEventListener('click', e => {
+      const a = e.target.closest('.aitem');
+      if (!a) return;
+      e.preventDefault();
+      open = items.indexOf(a);
+      items.forEach(x => x.setAttribute('aria-current', x === a));
+      pages.forEach((p, i) => (p.hidden = i !== open));
+      $('#aTitle').textContent = $('b', a).textContent;
+      menu.value = a.dataset.f;
+    });
+    menu.addEventListener('change', () => file(items[open], menu.value));
+    dnd(amock, '.aitem', '.afold', (a, f) => file(a, f.dataset.f));
   }
 
   // 2. ⌘K: a command palette like the app's, and the menu on phones.
