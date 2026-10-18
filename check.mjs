@@ -294,6 +294,12 @@ try {
   assert.ok(!resumed.includes('--session-id'), 'never both');
   const settingsOf = c => JSON.parse(fs.readFileSync(c[c.indexOf('--settings') + 1], 'utf8'));
   const hooks = settingsOf(fresh).hooks;
+  assert.equal(settingsOf(fresh).autoCompactWindow, 200_000, 'claude compacts itself at a 200K window');
+  process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = '300000';
+  assert.equal(settingsOf(command({ ...base, resume: false }, '', null).args).autoCompactWindow, undefined, 'unless your environment sets one');
+  delete process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
+  fs.writeFileSync(path.join(claudeHome, 'settings.json'), JSON.stringify({ autoCompactWindow: 500_000 }));
+  assert.equal(settingsOf(command({ ...base, resume: false }, '', null).args).autoCompactWindow, undefined, 'or your settings.json does');
   assert.match(hooks.PostToolUse[0].hooks[0].command, /\/api\/touched/, 'every file an agent edits is reported');
   fs.writeFileSync(path.join(claudeHome, 'settings.json'), JSON.stringify({ statusLine: { type: 'command', command: 'cat # yours', padding: 1 } }));
   const bar = JSON.parse(fs.readFileSync((args => args[args.indexOf('--settings') + 1])(command({ ...base, resume: false }, '', null).args), 'utf8')).statusLine;
@@ -761,9 +767,12 @@ esac
     assert.equal(s.contextWindow, 1_000_000, 'its status line reports the real window');
     fs.appendFileSync(transcript, `${line({ type: 'assistant', message: { content: [{ type: 'text', text: 'Planning the login work' }], usage: { input_tokens: 0, cache_read_input_tokens: 150_000, cache_creation_input_tokens: 0 } } })}\n`);
     await ok('PATCH', '/api/settings', { leadUpkeep: { ...UP, windowCap: 1_000_000 } });
+    assert.equal(effectiveWindow(s), 200_000, "with the cap at 1M, the 200K auto-compact window Agent Desk sets claude still wins");
+    fs.writeFileSync(path.join(claudeHome, 'settings.json'), JSON.stringify({ autoCompactWindow: 1_000_000 }));
     await paint();
     await upkeep();
-    assert.ok(!(await compacted()), 'a 1M window at 150K, with the cap at 1M (15%): nothing');
+    assert.ok(!(await compacted()), 'a 1M window at 150K, with the cap and your auto-compact window at 1M (15%): nothing');
+    fs.rmSync(path.join(claudeHome, 'settings.json'));
     await ok('PATCH', '/api/settings', { leadUpkeep: UP });
     assert.equal(effectiveWindow(s), 200_000, 'with the default cap the threshold is a % of 200K, so 150K is 75%');
     fs.writeFileSync(path.join(claudeHome, 'settings.json'), JSON.stringify({ autoCompactWindow: 100_000 }));

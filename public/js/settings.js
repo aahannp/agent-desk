@@ -133,7 +133,7 @@ function leadUpkeep(u) {
   const save = patch => set({ leadUpkeep: { ...u, ...patch } });
   const number = (key, min, max, scale = 1) => h('input', { class: 'input', type: 'number', min, max, value: u[key] / scale, style: { width: '62px' },
     onChange: e => save({ [key]: Math.round(Number(e.target.value)) * scale }) });
-  return setting('Keep lead agents fresh', 'When a lead is idle with its context that full, Agent Desk compacts it, and after that many compactions a fresh lead with the same name takes over its work. A smaller window (the model\'s own, or your Claude Code auto-compact window) wins.',
+  return setting('Keep lead agents fresh', 'When a lead is idle with its context that full, Agent Desk compacts it, and after that many compactions a fresh lead with the same name takes over its work. A smaller window (the model\'s own, or the auto-compact window: your Claude Code\'s, else 200K) wins.',
     h('div', { class: 'row', style: { flexWrap: 'wrap' } },
       'Compact at', number('compactAt', 50, 95), '% of a', number('windowCap', 50, 2000, 1000), 'K-token window, replace after', number('replaceAfter', 1, 10), 'compactions',
       h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: u.on, onChange: e => save({ on: e.target.checked }) }))));
