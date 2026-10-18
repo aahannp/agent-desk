@@ -254,7 +254,7 @@ From the code and the [release notes](https://github.com/aahannp/agent-desk/rele
 - Lead agent, Board and a git worktree per worker; Review with diffs, commit, merge and discard
 - Agents that message, read and copy each other; the team of specialists
 - Graph, Spend, Files, Artifacts with folders and GitHub Pages publishing, 16 themes, the update check
-- Token meter on each Claude pane, and workers on Sonnet by default (on main, shipping in 1.8.3)
+- Token meter on each Claude pane, and workers on Sonnet by default (since 1.8.3)
 
 **Experimental**
 - Lead upkeep: auto-`/compact` and hand-over to a fresh lead (off by default, Settings → Team)
@@ -266,6 +266,8 @@ From the code and the [release notes](https://github.com/aahannp/agent-desk/rele
 **Planned**
 - Release builds on GitHub Actions with build attestations (from v1.9)
 - Apple notarization (needs a developer account; no date yet)
+- Hooks that tell the lead when something is done, such as a pull request merging, so it can move on without being asked
+- A Windows app
 
 ## License
 
