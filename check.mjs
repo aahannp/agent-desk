@@ -159,7 +159,7 @@ try {
   // Worktree → review → commit → merge → remove
   const wt = await createWorktree(repo, 'greeting', task.id);
   assert.ok(fs.existsSync(wt.path), 'worktree created');
-  assert.ok(!sh('status', '--porcelain').includes('.agent-desk'), "Agent Desk's folder stays out of git status");
+  assert.ok(!sh('status', '--porcelain').includes('.agent-desk'), "Relay's folder stays out of git status");
   fs.writeFileSync(path.join(wt.path, 'hello.txt'), 'hi from the agent\n');
   const review = await ok('GET', `/api/review?project=${encodeURIComponent(repo)}`);
   const item = review.items.find(i => i.path === wt.path);
@@ -344,7 +344,7 @@ try {
   const savedTheme = db.settings.theme;
   const claudeThemeFile = () => JSON.parse(fs.readFileSync(path.join(claudeHome, 'themes', 'agent-desk.json'), 'utf8'));
   db.settings.theme = 'latte';
-  assert.equal(settingsOf(command({ ...base, resume: false }, '', null).args).theme, 'custom:agent-desk', "claude's panes use Agent Desk's own Claude Code theme");
+  assert.equal(settingsOf(command({ ...base, resume: false }, '', null).args).theme, 'custom:agent-desk', "claude's panes use Relay's own Claude Code theme");
   assert.equal(claudeThemeFile().base, 'light', 'made from a light Desk theme, it is a light one');
   await ok('PATCH', '/api/settings', { theme: 'nord' });
   assert.deepEqual([claudeThemeFile().base, claudeThemeFile().overrides.userMessageBackground], ['dark', THEMES.nord.ui.panel2], 'switching the Desk theme rewrites it, which repaints open panes');
@@ -590,7 +590,7 @@ try {
   assert.equal(viewed.status, 200, 'an artifact opens without the token, so your browser can show it');
   assert.equal(viewed.body, page);
   assert.match(viewed.headers['content-security-policy'], /^sandbox allow-scripts/, 'it runs sandboxed');
-  assert.ok(!viewed.headers['content-security-policy'].includes('allow-same-origin'), "so its scripts can't reach Agent Desk");
+  assert.ok(!viewed.headers['content-security-policy'].includes('allow-same-origin'), "so its scripts can't reach Relay");
   assert.equal(viewed.headers['referrer-policy'], 'no-referrer', 'its address is not leaked to the sites it loads');
   assert.equal((await request('GET', `/a/${'x'.repeat(22)}`, { token: '' })).status, 404, 'unknown artifacts are not found');
   assert.equal((await request('GET', '/api/artifacts', { token: '' })).status, 401, 'the list still needs the token');
@@ -697,7 +697,7 @@ esac
   const published = await ok('POST', `/api/artifacts/${art.id}/publish`, { account: 'me', repo: 'artifacts', slug: 'q3-report' });
   assert.equal(published.published.url, 'https://me.github.io/artifacts/q3-report/', 'publishing says where it lives');
   assert.equal(repos['me/artifacts'].files['q3-report/index.html'].text, '<h1>v2</h1>', 'the page is in the repo it made');
-  assert.ok(repos['me/artifacts'].files['.agent-desk'] && repos['me/artifacts'].files['.nojekyll'] && repos['me/artifacts'].pages, 'the repo is marked as made by Agent Desk, and Pages is on');
+  assert.ok(repos['me/artifacts'].files['.agent-desk'] && repos['me/artifacts'].files['.nojekyll'] && repos['me/artifacts'].pages, 'the repo is marked as made by Relay, and Pages is on');
   assert.ok(seen.every(r => r.auth === 'Bearer tok-me'), 'only the chosen account is used');
   await tool('save_artifact', { id: art.id, title: 'Q3 report', html: '<h1>v3</h1>' });
   await ok('POST', `/api/artifacts/${art.id}/publish`, { account: 'me', repo: 'artifacts', slug: 'q3-report' });
@@ -767,7 +767,7 @@ esac
     assert.equal(s.contextWindow, 1_000_000, 'its status line reports the real window');
     fs.appendFileSync(transcript, `${line({ type: 'assistant', message: { content: [{ type: 'text', text: 'Planning the login work' }], usage: { input_tokens: 0, cache_read_input_tokens: 150_000, cache_creation_input_tokens: 0 } } })}\n`);
     await ok('PATCH', '/api/settings', { leadUpkeep: { ...UP, windowCap: 1_000_000 } });
-    assert.equal(effectiveWindow(s), 200_000, "with the cap at 1M, the 200K auto-compact window Agent Desk sets claude still wins");
+    assert.equal(effectiveWindow(s), 200_000, "with the cap at 1M, the 200K auto-compact window Relay sets claude still wins");
     fs.writeFileSync(path.join(claudeHome, 'settings.json'), JSON.stringify({ autoCompactWindow: 1_000_000 }));
     await paint();
     await upkeep();
@@ -813,7 +813,7 @@ esac
       [new RegExp(`Worker \\(agent ${worker.id}\\)`), 'its running workers'], [/agent: Planning the login work/, 'its last messages']]) await screenOf(fresh.id, re, `handoff: ${what}`);
     assert.equal((await outputOf(fresh.id)).split('Summary: login form half done').length, 2, 'the summary is handed over once, not again among the last messages');
     assert.equal(sessions.get(worker.id).startedBy.id, fresh.id, 'its workers now report to the new lead');
-    await screenOf(other.id, new RegExp(`\\[Message from Agent Desk\\] leader was refreshed.*agent ${fresh.id}`), 'the other lead is told');
+    await screenOf(other.id, new RegExp(`\\[Message from Relay\\] leader was refreshed.*agent ${fresh.id}`), 'the other lead is told');
     assert.ok((await ok('GET', `/api/chats?project=${encodeURIComponent(repo)}`)).some(c => c.id === leader.chatId && !c.running), "the old lead's chat stays");
     assert.equal(sessions.get(fresh.id).upkeep, undefined, 'the fresh lead starts with no compactions');
     await ok('PATCH', '/api/settings', { leadUpkeep: { ...UP, on: false } });
@@ -960,7 +960,7 @@ esac
     assert.ok((await fromChristie(name, { id })).isError, `${name} can't reach ${id === shell.id ? 'a shell' : 'another project'}`);
   }
   assert.ok(JSON.parse((await fromChristie('list_team', {})).content[0].text).find(x => x.name === 'Christie').runningNow >= 1, 'list_team still counts who is running');
-  assert.ok(!(await rpc('tools/call', { name: 'list_team', arguments: {} })).result.isError, 'and works outside Agent Desk');
+  assert.ok(!(await rpc('tools/call', { name: 'list_team', arguments: {} })).result.isError, 'and works outside Relay');
   assert.equal((await screen(outsider.id)).status, 200, 'you can read any screen');
   assert.ok((await ok('GET', '/api/sessions')).some(x => x.id === outsider.id), 'see every project');
   assert.equal((await diffOf(elsewhere)).status, 200, 'and see any changes');
@@ -1066,16 +1066,16 @@ esac
   process.env.AGENT_DESK_GITHUB_API = hubUrl;
   assert.equal((await ok('GET', '/api/update?force=1')).none, true, 'no releases yet is not an error');
   release = { tag_name: 'v99.0.0', body: 'Smoother scrolling', html_url: 'https://github.com/aahannp/agent-desk/releases/tag/v99.0.0',
-    assets: [{ name: 'Agent-Desk-99.0.0-arm64.dmg', browser_download_url: `${hubUrl}/dl/agent.dmg`, size: dmgBytes.length }] };
+    assets: [{ name: 'Relay-99.0.0-arm64.dmg', browser_download_url: `${hubUrl}/dl/agent.dmg`, size: dmgBytes.length }] };
   const up = await ok('GET', '/api/update?force=1');
-  assert.deepEqual([up.newer, up.latest, up.notes, up.asset.name], [true, 'v99.0.0', 'Smoother scrolling', 'Agent-Desk-99.0.0-arm64.dmg'], 'a newer release is found');
+  assert.deepEqual([up.newer, up.latest, up.notes, up.asset.name], [true, 'v99.0.0', 'Smoother scrolling', 'Relay-99.0.0-arm64.dmg'], 'a newer release is found');
   assert.equal((await request('POST', '/api/update/download', { headers: { 'x-desk-via': 'mcp' } })).status, 403, "agents can't download updates");
   const realHome = process.env.HOME;
   process.env.HOME = tmp;
   fs.mkdirSync(path.join(tmp, 'Downloads'));
   try {
     const got = await ok('POST', '/api/update/download');
-    assert.equal(got.path, path.join(tmp, 'Downloads', 'Agent-Desk-99.0.0-arm64.dmg'), 'it lands in Downloads');
+    assert.equal(got.path, path.join(tmp, 'Downloads', 'Relay-99.0.0-arm64.dmg'), 'it lands in Downloads');
     assert.deepEqual(fs.readFileSync(got.path), dmgBytes, 'following the redirect, the whole file');
     release.assets[0].browser_download_url = `${hubUrl}/dl/elsewhere.dmg`;
     await ok('GET', '/api/update?force=1');

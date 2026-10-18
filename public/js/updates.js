@@ -57,7 +57,7 @@ async function download(d, button, bar, note) {
     const { name } = await api('POST', '/api/update/download');
     bar.firstChild.style.width = '100%';
     button.lastChild.textContent = 'In your Downloads folder';
-    note.replaceChildren(`${name} is in your Downloads folder. Open it, drag Agent Desk into Applications and choose Replace, then quit Agent Desk and open it again. Your board, chats and settings stay. `,
+    note.replaceChildren(`${name} is in your Downloads folder. Open it, drag Relay into Applications, then quit this app and open Relay. Your board, chats and settings carry over. If you're coming from Agent Desk, you can delete Agent Desk from Applications afterwards. `,
       h('button', { class: 'btn xs', onClick: () => api('POST', '/api/update/show') }, 'Show in Finder'));
   } catch (e) {
     button.disabled = false;

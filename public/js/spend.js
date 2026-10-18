@@ -102,7 +102,7 @@ function sessions(d) {
       h('span', { role: 'cell', class: 'title' },
         h('b', {}, s.title || s.id.slice(0, 8)),
         h('span', { class: 'muted' }, [s.agent, shortPath(s.cwd), s.subagents && `${s.subagents} by subagents`].filter(Boolean).join(' · '))),
-      h('span', { role: 'cell' }, h('span', { class: `spend-tag${s.agent ? ' desk' : ''}` }, s.agent ? 'Agent Desk' : 'Outside')),
+      h('span', { role: 'cell' }, h('span', { class: `spend-tag${s.agent ? ' desk' : ''}` }, s.agent ? 'Relay' : 'Outside')),
       h('span', { role: 'cell', class: 'num' }, String(s.replies)),
       h('span', { role: 'cell', class: 'num' }, count(s.tokens)),
       h('span', { role: 'cell', class: 'num' }, h('b', {}, money(s.cost))))))]);

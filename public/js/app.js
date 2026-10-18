@@ -141,7 +141,7 @@ function renderChrome() {
   $('projectSwitch').querySelector('.project-name').textContent = project?.name ?? 'No project';
   $('projectSwitch').querySelector('.project-avatar').textContent = (project?.name ?? 'A').replace(/[^a-z0-9]/gi, '').slice(0, 1).toUpperCase() || 'A';
   $('projectSwitch').querySelector('.project-path').textContent = project ? ltr(project.path.replace(state.info.home, '~')) : 'Add a folder to start';
-  document.title = project ? `${project.name} · Agent Desk` : 'Agent Desk';
+  document.title = project ? `${project.name} · Relay` : 'Relay';
 
   const sessions = projectSessions();
   const live = sessions.filter(s => !s.exited);
@@ -299,7 +299,7 @@ function showWelcome() {
   document.body.append(h('div', { class: 'welcome' }, h('div', { class: 'welcome-card' },
     document.querySelector('.logo').cloneNode(true),
     h('h1', {}, 'Run a team of ', h('em', {}, 'coding agents'), '.'),
-    h('p', {}, 'Agent Desk runs Claude Code and other coding agents side by side, each in a real terminal using your own login. Pick the project folder to start.'),
+    h('p', {}, 'Relay runs Claude Code and other coding agents side by side, each in a real terminal using your own login. Pick the project folder to start.'),
     field.el,
     h('div', { class: 'row', style: { marginTop: '16px' } }, h('button', { class: 'btn primary', onClick: () => openProject(field.input.value) }, icon('folder', 15), 'Open folder')),
     h('div', { class: 'features' },
@@ -347,7 +347,7 @@ function openPalette() {
   });
   const overlay = h('div', { class: 'overlay', onMousedown: e => e.target === overlay && close() }, h('div', { class: 'modal palette' },
     h('div', { class: 'pal-input' }, icon('search', 18), input, h('kbd', {}, 'esc')), list,
-    h('div', { class: 'pal-foot' }, h('span', {}, h('kbd', {}, '↑'), h('kbd', {}, '↓'), 'move'), h('span', {}, h('kbd', {}, '↵'), 'run'), h('span', { class: 'grow' }), h('span', {}, 'Agent Desk'))));
+    h('div', { class: 'pal-foot' }, h('span', {}, h('kbd', {}, '↑'), h('kbd', {}, '↓'), 'move'), h('span', {}, h('kbd', {}, '↵'), 'run'), h('span', { class: 'grow' }), h('span', {}, 'Relay'))));
   document.body.append(overlay);
   render();
   input.focus();
@@ -390,4 +390,4 @@ command('Add a project folder', addProject, { icon: 'folder' });
   setInterval(() => refresh('sessions'), 4000); // keeps "working / idle" fresh for the board and agents
   setInterval(() => refresh('chats'), 15000); // picks up the titles Claude gives chats as they go
   if (!state.projects.length) showWelcome();
-})().catch(e => toast(`Agent Desk could not start: ${e.message}`, 'error'));
+})().catch(e => toast(`Relay could not start: ${e.message}`, 'error'));

@@ -1,4 +1,4 @@
-/* Agent Desk. Colours come from the active theme (themes.js sets the base variables);
+/* Relay. Colours come from the active theme (themes.js sets the base variables);
    everything else is derived here so every theme gets the same glass and depth. */
 :root {
   --bg: #07080b; --side: #0a0b10; --panel: #11131a; --panel2: #181b24; --line: #232733;

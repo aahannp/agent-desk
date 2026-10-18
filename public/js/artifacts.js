@@ -86,7 +86,7 @@ function render() {
       h('p', {}, state.artifacts.length ? 'Pick a page from the list, or choose another folder.' : 'Ask an agent for a page, a report or a chart, and it saves it here. View it, open it in your browser, and publish it to GitHub Pages when you want to share it.'))));
   } else if (shown !== `${a.id}:${a.updatedAt}`) {
     shown = `${a.id}:${a.updatedAt}`;
-    // Sandboxed with no same-origin: the page's scripts run, but can't reach Agent Desk or its login.
+    // Sandboxed with no same-origin: the page's scripts run, but can't reach Relay or its login.
     stage.replaceChildren(h('iframe', {
       class: 'art-frame', title: a.title, src: `/a/${a.id}?v=${a.updatedAt}`,
       sandbox: 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms allow-modals allow-downloads',
@@ -101,7 +101,7 @@ const rename = guard(async a => {
 });
 const remove = guard(async a => {
   const note = a.published ? ' Its published page stays online: Unpublish it first to take it down.' : '';
-  if (await confirmDialog('Delete artifact?', `“${a.title}” is removed from Agent Desk.${note}`, { label: 'Delete', danger: true })) {
+  if (await confirmDialog('Delete artifact?', `“${a.title}” is removed from Relay.${note}`, { label: 'Delete', danger: true })) {
     await api('DELETE', `/api/artifacts/${a.id}`);
   }
 });
@@ -168,7 +168,7 @@ const moveToNew = guard(async a => {
   if (name) await move(a, name);
 });
 const newFolder = guard(async () => {
-  const name = await askText('New folder', { label: 'Name', placeholder: 'e.g. Agent Desk', ok: 'Create' });
+  const name = await askText('New folder', { label: 'Name', placeholder: 'e.g. Relay', ok: 'Create' });
   if (!name) return;
   await api('POST', '/api/artifact-folders', { name });
   choose(name);
@@ -227,7 +227,7 @@ async function publish(a) {
   modal({
     title: a.published ? 'Publish again' : 'Publish to GitHub Pages', width: 540,
     body: [
-      h('p', { class: 'muted' }, 'Anyone with the link can see it. Agent Desk keeps your pages in one repo it makes for them, and never writes to any other repo.'),
+      h('p', { class: 'muted' }, 'Anyone with the link can see it. Relay keeps your pages in one repo it makes for them, and never writes to any other repo.'),
       h('label', { class: 'field' }, h('span', {}, 'GitHub account'), account),
       h('div', { class: 'row' },
         h('label', { class: 'field', style: { flex: 1 } }, h('span', {}, 'Repo'), repo),
