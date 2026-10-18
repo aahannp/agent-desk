@@ -102,3 +102,7 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
 The board, settings and the secret live in `data/` (browser version) or `~/Library/Application Support/Agent Desk`
 (Mac app). Spend history is in the same `desk.json`. For Claude Code panes it also writes one theme file,
 `~/.claude/themes/agent-desk.json`, and reads (never changes) Claude Code's transcripts for Spend. Agent worktrees and screenshots go in `.agent-desk/` inside each project, which is kept out of git.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

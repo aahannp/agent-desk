@@ -98,5 +98,6 @@
       "onlyLoadAppFromAsar": true,
       "enableCookieEncryption": true
     }
-  }
+  },
+  "license": "MIT"
 }
