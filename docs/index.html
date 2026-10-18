@@ -303,18 +303,54 @@
   .gterm .log { justify-content: flex-start; overflow: auto; -webkit-mask-image: none; mask-image: none; }
 
   /* The live Agents view inside the MacBook */
-  .app { display: grid; grid-template-columns: 180px minmax(0, 1fr); aspect-ratio: 16 / 10; border: 0; border-radius: 6px; box-shadow: none; font-size: 11.5px; }
-  .app aside { display: flex; flex-direction: column; gap: 2px; padding: 12px 10px; overflow: hidden; border-right: 1px solid var(--t-line); color: var(--t-dim); font: 12px var(--sans); }
+  .app { position: relative; display: grid; grid-template-columns: 180px minmax(0, 1fr); aspect-ratio: 16 / 10; border: 0; border-radius: 6px; box-shadow: none; font-size: 11.5px; }
+  .app aside { display: flex; flex-direction: column; gap: 2px; padding: 12px 10px; overflow: auto; border-right: 1px solid var(--t-line); color: var(--t-dim); font: 12px var(--sans); }
   .brand2 { display: flex; align-items: center; gap: 8px; margin: 2px 4px 12px; color: var(--t-text); font-size: 13px; font-weight: 600; }
-  .proj { display: grid; margin-bottom: 10px; padding: 7px 9px; border: 1px solid var(--t-line); border-radius: 9px; color: var(--t-text); }
+  .proj { display: grid; margin-bottom: 10px; padding: 7px 9px; border: 1px solid var(--t-line); border-radius: 9px; background: none; color: var(--t-text); font: inherit; text-align: left; cursor: pointer; }
+  .proj b { font-weight: 500; }
   .proj small { color: var(--t-dim); font: 10px var(--mono); }
-  .nv { padding: 5px 8px; border-radius: 7px; }
-  .nv.on { background: var(--t-pane); color: var(--t-text); box-shadow: inset 0 0 0 1px var(--t-line); }
+  .nv { padding: 5px 8px; border: 0; border-radius: 7px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .nv:hover { color: var(--t-text); }
+  .nv[aria-current="page"], .nv[aria-current="true"], .nv[aria-pressed="true"] { background: var(--t-pane); color: var(--t-text); box-shadow: inset 0 0 0 1px var(--t-line); }
+  .views, .chats { display: grid; gap: 2px; }
+  .app .menu { display: none; place-items: center; width: 26px; height: 26px; padding: 0; border: 1px solid var(--t-line); border-radius: 7px; background: none; color: var(--t-text); cursor: pointer; }
+  .app .menu svg { width: 14px; height: 14px; }
+  .pane header .pc { flex: none; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--t-dim); font: 14px/1 var(--sans); cursor: pointer; }
+  .pane header .pc:hover, .pc[aria-pressed="true"] { color: var(--t-text); background: color-mix(in srgb, var(--t-text) 8%, transparent); }
+  .app .grid[hidden], .hv[hidden] { display: none; }
+  .app .grid.solo { grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(0, 1fr); }
+  .app .grid.solo > .pane:not(.max) { display: none; }
+  .app .grid.solo > .pane.max { display: flex; }
+  .app .grid:empty::before { content: "No panes open. Press + New to start one."; grid-column: 1 / -1; place-self: center; color: var(--t-dim); }
+  @media (min-width: 601px) { .app .grid:has(> :nth-child(5)):not(.solo) { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .app .grid:has(> :nth-child(5)):not(.solo) header small { display: none; }
+  .app .pane header b { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .hv { flex: 1; min-height: 0; overflow: auto; }
+  .app .hv > .desk { --t-bg: inherit; --t-pane: inherit; --t-line: inherit; --t-text: inherit; --t-dim: inherit; --t-accent: inherit; --t-btn: inherit; --t-red: inherit; --t-ok: inherit; --t-warn: inherit; --t-info: inherit; min-height: 100%; border: 0; border-radius: 0; box-shadow: none; }
+  .hfiles { display: grid; grid-template-columns: 150px minmax(0, 1fr); }
+  .ftree { display: flex; flex-direction: column; gap: 2px; padding: 10px 8px; border-right: 1px solid var(--t-line); color: var(--t-dim); font: 12px var(--sans); }
+  .ftree h5, .hset h5 { margin: 8px 8px 2px; color: var(--t-dim); font: 600 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+  .fcode { margin: 0; padding: 12px 14px; overflow: auto; color: var(--t-text); font: 12px/1.65 var(--mono); }
+  .fcode i { font-style: normal; }
+  .fcode .c { color: var(--t-dim); font-style: italic; }
+  .fcode .s { color: var(--t-info); }
+  .fcode .k { color: var(--t-accent); }
+  .hset { display: grid; align-content: start; gap: 10px; padding: 16px 18px; font: 12.5px var(--sans); }
+  .hset h5 { margin: 6px 0 0; }
+  .hset h5 span { margin-left: 8px; color: var(--t-text); letter-spacing: 0; text-transform: none; font: 500 12px var(--sans); }
+  .hsw { justify-items: start; gap: 10px; margin: 0; }
+  .hsw > div { justify-content: start; gap: 8px; }
+  .hsw span { width: 36px; color: var(--t-dim); font-size: 11.5px; text-align: left; }
+  .hsw .sw { width: 24px; height: 24px; }
+  .hsw .sw[aria-checked="true"] { outline-color: var(--t-text); outline-offset: 2px; }
+  .hacc { display: flex; gap: 8px; }
+  .hacc button { padding: 4px 12px; border: 1px solid var(--t-line); border-radius: 99px; background: none; color: var(--t-text); font: inherit; cursor: pointer; }
+  .hacc [aria-checked="true"] { border-color: var(--t-accent); box-shadow: inset 0 0 0 1px var(--t-accent); }
   .app h4 { margin: 12px 8px 4px; font: 600 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
   .app main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
   .app .top { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--t-line); font: 600 13px var(--sans); }
-  .app .top small { flex: 1; color: var(--t-dim); font-weight: 400; font-size: 11.5px; }
-  .app .top .b { padding: 4px 10px; border-radius: 7px; background: var(--t-btn); color: #fff; font-size: 11.5px; font-weight: 500; }
+  .app .top small { flex: 1; min-width: 0; overflow: hidden; color: var(--t-dim); font-weight: 400; font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+  .app .top .b { flex: none; padding: 4px 10px; border: 0; border-radius: 7px; background: var(--t-btn); color: #fff; font: 500 11.5px var(--sans); cursor: pointer; }
   .app .grid { flex: 1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: 8px; min-height: 0; padding: 8px; }
   .app .pane { height: auto; min-height: 0; }
   .pr { position: relative; display: flex; align-items: center; margin: 0 8px 8px; padding: 5px 8px; border: 1px solid var(--t-line); border-radius: 7px; }
@@ -343,10 +379,11 @@
   .bell { display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px; border: 1px solid var(--t-line); border-radius: 7px; background: none; color: var(--t-text); font: 500 11px var(--sans); cursor: pointer; }
   .bell svg { width: 13px; height: 13px; }
   .bell[hidden] { display: none; }
-  #needs { position: fixed; inset: auto; width: 260px; margin: 0; padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--tile); color: var(--text); font: 13px/1.4 var(--sans); box-shadow: 0 16px 40px -12px rgb(0 0 0 / .5); }
-  #needs p { margin: 2px 8px 6px; color: var(--dim); font-size: 12px; }
-  #needs button { width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-  #needs button:hover, #needs button:focus-visible { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .pop { position: fixed; inset: auto; width: 260px; margin: 0; padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--tile); color: var(--text); font: 13px/1.4 var(--sans); box-shadow: 0 16px 40px -12px rgb(0 0 0 / .5); }
+  .pop small { color: var(--dim); font: 11px var(--mono); }
+  .pop p { margin: 2px 8px 6px; color: var(--dim); font-size: 12px; }
+  .pop button { width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .pop button:hover, .pop button:focus-visible, .pop [aria-current="true"] { background: color-mix(in srgb, var(--accent) 14%, transparent); }
   .st[data-s="needs"] { --c: var(--t-text); }
   .log li.ask { margin-top: 4px; padding: 6px 8px; border: 1px solid var(--t-line); border-radius: 7px; }
   .log li.ask::before { content: none; }
@@ -495,6 +532,8 @@
     .kbd { width: 32px; padding: 0; border: 0; }
     .app { grid-template-columns: minmax(0, 1fr); }
     .app aside { display: none; }
+    .app.open aside { position: absolute; z-index: 3; inset: 0 auto 0 0; display: flex; width: 200px; border-radius: 6px 0 0 6px; background: var(--t-bg); }
+    .app .menu { display: inline-grid; }
     .kbd .k { display: none; }
     .kbd svg { display: block; }
     .panes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -524,7 +563,11 @@
     .app { aspect-ratio: auto; font-size: 12px; }
     .app .grid { grid-template-columns: minmax(0, 1fr); grid-auto-rows: auto; }
     .app .pane { height: 240px; }
-    .app .pane[data-p="api"], .app .pane[data-p="page"], .sugs [data-p="api"], .app .top .b { display: none; }
+    .app .pane[data-p="api"], .app .pane[data-p="page"], .sugs [data-p="api"], .app .top .b span { display: none; }
+    .hfiles { grid-template-columns: minmax(0, 1fr); }
+    .ftree { flex-flow: row wrap; border-right: 0; border-bottom: 1px solid var(--t-line); }
+    .ftree h5 { display: none; }
+    .app .hv { flex: none; max-height: 560px; }
     .lid { border-radius: 16px; padding: 8px; }
     .base { display: none; }
     .bmock .board { grid-template-columns: repeat(4, minmax(150px, 1fr)); overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding: 16px; }
@@ -613,15 +656,15 @@
           <dialog class="stage" open role="region" aria-label="Live Agent Desk demo" aria-describedby="heroDesc">
           <button type="button" class="linkish stage-close" data-stage="close" hidden>Close</button>
           <div class="desk app" id="hero" role="group" aria-label="A live Agent Desk: type a message into any agent's prompt">
-            <aside aria-hidden="true">
+            <aside id="heroNav">
               <span class="brand2"><img src="assets/icon.svg" alt="" width="18" height="18">Agent Desk</span>
-              <span class="proj">acme-shop<small>~/acme-shop</small></span>
-              <span class="nv on">Agents</span><span class="nv">Board</span><span class="nv">Files</span><span class="nv">Review</span><span class="nv">Artifacts</span><span class="nv">Graph</span><span class="nv">Spend</span><span class="nv">Settings</span>
-              <h4>Chats</h4>
-              <span class="nv">Lead</span><span class="nv">Wishlist API</span><span class="nv">Wishlist page</span><span class="nv">Scout</span>
+              <button type="button" class="proj" popovertarget="projs" aria-label="Project: acme-shop"><b>acme-shop</b><small>~/acme-shop</small></button>
+              <nav class="views" aria-label="Views"><button type="button" class="nv" data-v="agents" aria-current="page">Agents</button><button type="button" class="nv" data-v="board">Board</button><button type="button" class="nv" data-v="files">Files</button><button type="button" class="nv" data-v="review">Review</button><button type="button" class="nv" data-v="artifacts">Artifacts</button><button type="button" class="nv" data-v="graph">Graph</button><button type="button" class="nv" data-v="spend">Spend</button><button type="button" class="nv" data-v="settings">Settings</button></nav>
+              <h4 id="chatsH">Chats</h4>
+              <div class="chats" role="group" aria-labelledby="chatsH"></div>
             </aside>
             <main>
-              <div class="top"><span aria-hidden="true">Agents</span> <small aria-hidden="true">Every agent and shell, side by side</small><button type="button" class="bell" popovertarget="needs" aria-label="Needs you: 1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg><span>1</span></button><span class="b" aria-hidden="true">+ New Claude Code</span></div>
+              <div class="top"><button type="button" class="menu" aria-label="Menu" aria-controls="heroNav" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><span id="hTitle">Agents</span> <small id="hSub">Every agent and shell, side by side</small><button type="button" class="bell" popovertarget="needs" aria-label="Needs you: 1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg><span>1</span></button><button type="button" class="b" id="hNew">+ New<span> Claude Code</span></button></div>
               <div class="grid">
                 <div class="pane" data-p="lead">
                   <header><i class="av">★</i><b>Lead</b><small>Lead agent · opus</small><span class="st" data-s="idle">Idle</span></header>
@@ -644,8 +687,60 @@
                   <form class="pr"><i class="cur" aria-hidden="true"></i><input aria-label="Message Scout" placeholder="Ask Scout where something is, or type help" maxlength="120" autocomplete="off" spellcheck="false" enterkeyhint="send"></form>
                 </div>
               </div>
-              <div class="status" aria-hidden="true"><span class="live">Live</span><span>4 running</span><span>1 needs you</span></div>
-              <div id="needs" popover role="dialog" aria-label="Needs you"><p>Needs you</p><button type="button" data-go>Wishlist page wants to run <code>npm install</code></button></div>
+              <div class="hv" data-v="lent" hidden></div>
+              <div class="hv hfiles" data-v="files" hidden>
+                <div class="ftree" role="group" aria-label="Files"></div>
+                <pre class="fcode" tabindex="0" aria-label="File contents"><code></code></pre>
+                <div class="fsrc" hidden>
+<pre data-file="README.md"># acme-shop
+A small shop: products, a cart and, soon, a wishlist.
+
+## Run it
+npm install
+npm start</pre>
+<pre data-file="src/cart.js">// Cart totals, kept in cents so they never drift.
+export function formatPrice(cents) {
+  return '$' + (cents / 100).toFixed(2);
+}
+
+export function total(items) {
+  return items.reduce((sum, i) =&gt; sum + i.cents * i.qty, 0);
+}</pre>
+<pre data-file="src/api/wishlist.js">// GET and POST /api/wishlist for the signed-in shopper.
+import { db } from '../db.js';
+
+export async function getWishlist(req, res) {
+  const items = await db.wishlist.find({ user: req.user.id });
+  res.json(items);
+}
+
+export async function addToWishlist(req, res) {
+  await db.wishlist.add({ user: req.user.id, product: req.body.id });
+  res.status(201).end();
+}</pre>
+<pre data-file="src/pages/wishlist.html">&lt;main class="wishlist"&gt;
+  &lt;h1&gt;Your wishlist&lt;/h1&gt;
+  &lt;ul id="saved"&gt;&lt;/ul&gt;
+  &lt;button type="button" aria-pressed="false"&gt;Save to wishlist&lt;/button&gt;
+&lt;/main&gt;</pre>
+<pre data-file="test/wishlist.test.js">import { test } from 'node:test';
+import assert from 'node:assert';
+import { total } from '../src/cart.js';
+
+test('two of a product add up', async () =&gt; {
+  assert.equal(total([{ cents: 250, qty: 2 }]), 500);
+});</pre>
+                </div>
+              </div>
+              <div class="hv hset" data-v="settings" hidden>
+                <h5>Theme <span id="hTheme">Site colours</span></h5>
+                <div class="swatches hsw" role="radiogroup" aria-label="Theme for this demo"><div data-g="dark"><span>Dark</span></div><div data-g="light"><span>Light</span></div></div>
+                <h5>Accent</h5>
+                <div class="hacc" role="radiogroup" aria-label="Accent colour"><button type="button" role="radio" aria-checked="true" data-acc="0">Blue</button><button type="button" role="radio" aria-checked="false" tabindex="-1" data-acc="1">Graphite</button></div>
+              </div>
+              <div class="status" aria-hidden="true"><span class="live" title="Connected to your agents">Live</span><span title="Agents running in this project">4 running</span><span title="Agents waiting for your OK">1 needs you</span></div>
+              <div id="projs" class="pop" popover role="dialog" aria-label="Projects"><p>Projects</p><button type="button" data-proj="0" aria-current="true"><b>acme-shop</b> <small>~/acme-shop</small></button><button type="button" data-proj="1" aria-current="false"><b>pocket-notes</b> <small>~/code/pocket-notes</small></button><button type="button" data-proj="2" aria-current="false"><b>tide-api</b> <small>~/work/tide-api</small></button></div>
+              <div id="needs" class="pop" popover role="dialog" aria-label="Needs you"><p>Needs you</p><button type="button" data-go>Wishlist page wants to run <code>npm install</code></button></div>
             </main>
           </div>
           </dialog>
@@ -1120,6 +1215,23 @@
     ['Solarized Light', 0, '#fdf6e3', '#fffbf0', '#e4dcc5', '#3b5058', '#5f747b', '#d33682', '#d3302d', '#687800', '#8e6c00', '#2076b3'],
   ];
   let pickTheme = () => {}, runDemo = () => {};
+  const VARS = ['bg', 'pane', 'line', 'text', 'dim', 'accent', 'red', 'ok', 'warn', 'info'];
+  const paintDesk = (desk, t) => VARS.forEach((v, j) => desk.style.setProperty(`--t-${v}`, t[j + 2]));
+  // A swatch per theme in group's [data-g=dark] and [data-g=light], split between its background and colour c (its accent,
+  // unless asked otherwise); pick(theme) runs on select. Returns select(button).
+  function swatchRadios(group, pick, c = 7) {
+    THEMES.forEach(([n, dark, bg, ...t], i) => {
+      const b = el('button', 'sw', '');
+      Object.assign(b, { type: 'button', tabIndex: i ? -1 : 0 }); // nothing picked yet: the panes wear the site's own colours
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', 'false');
+      b.setAttribute('aria-label', `${n}, ${dark ? 'dark' : 'light'}`);
+      b.style.background = `linear-gradient(135deg, ${bg} 50%, ${t[c - 3]} 50%)`;
+      b.dataset.i = i;
+      $(`[data-g=${dark ? 'dark' : 'light'}]`, group).append(b);
+    });
+    return radios(group, b => pick(THEMES[b.dataset.i]));
+  }
 
   // 1. The live demo: a goal becomes tasks, workers run them in their own branches, all of it lands in Review.
   const demo = $('#demo');
@@ -1300,24 +1412,11 @@
   const swatches = $('#swatches');
   if (swatches) {
     const desk = $('#themeDesk'), name = $('#themeName');
-    const VARS = ['bg', 'pane', 'line', 'text', 'dim', 'accent', 'red', 'ok', 'warn', 'info'];
-    THEMES.forEach(([n, dark, bg, , , , , accent], i) => {
-      const b = el('button', 'sw', '');
-      Object.assign(b, { type: 'button', tabIndex: -1 });
-      b.setAttribute('role', 'radio');
-      b.setAttribute('aria-checked', 'false');
-      b.setAttribute('aria-label', `${n}, ${dark ? 'dark' : 'light'}`);
-      b.style.background = `linear-gradient(135deg, ${bg} 50%, ${accent} 50%)`;
-      b.dataset.i = i;
-      $(`[data-g=${dark ? 'dark' : 'light'}]`, swatches).append(b);
-    });
-    const select = radios(swatches, b => {
-      const t = THEMES[b.dataset.i];
-      VARS.forEach((v, j) => desk.style.setProperty(`--t-${v}`, t[j + 2]));
+    const select = swatchRadios(swatches, t => {
+      paintDesk(desk, t);
       name.textContent = `${t[0]} · ${t[1] ? 'dark' : 'light'}`;
       desk.setAttribute('aria-label', `Preview in ${t[0]}`);
     });
-    $('.sw', swatches).tabIndex = 0; // nothing picked yet: the panes wear the site's own colours
     pickTheme = i => select($$('.sw', swatches)[i]);
   }
 
@@ -1518,7 +1617,7 @@
   const hero = $('#hero');
   if (hero) {
     let panes;
-    const grab = () => { panes = Object.fromEntries($$('.pane', hero).map(p => [p.dataset.p, p])); };
+    const grab = () => { panes = Object.fromEntries($$('.grid > .pane', hero).map(p => [p.dataset.p, p])); };
     const start = $('.grid', hero).innerHTML, heroSay = $('#heroSay'), timers = new Set();
     const later = (fn, ms) => { const t = setTimeout(() => { timers.delete(t); fn(); }, ms); timers.add(t); };
     grab();
@@ -1582,13 +1681,15 @@
       calm ? next() : later(next, 600);
     }
     function work(id, job) {
-      const p = panes[id];
+      const p = panes[id] || (Object.keys(panes).length < 6 && addPane(id, job, '', 'Starting…'));
+      if (!p) return;
       if (p.busy) return later(() => work(id, job), 800); // let it finish answering first
       $('header b', p).textContent = job;
       $('header small', p).textContent = `Claude Code / ${slug(job)}`;
       $('input', p).setAttribute('aria-label', `Message ${job}`);
       $('input', p).placeholder = `Message ${job}, or type help`;
       run(id, { lines: [T('Read', 'src/app.js', 'Read 64 lines'), T('Write', `src/${slug(job)}.js`, 'Wrote 31 lines'), T('Bash', 'node --test', 'pass 9  fail 0'), T('update_task', slug(job), 'Moved to Review')], say: 'Done. Ready for review.' });
+      sync();
     }
     hero.addEventListener('submit', e => {
       e.preventDefault();
@@ -1603,8 +1704,7 @@
     function answer(yes) {
       if (!$('.ask', hero)) return;
       $('.ask', hero).remove();
-      bell.hidden = true;
-      $('.status', hero).lastElementChild.textContent = '1 working';
+      sync();
       $('input', panes.page).focus();
       run('page', {
         lines: yes ? [T('Bash', 'npm install playwright', 'added 3 packages')] : [],
@@ -1622,13 +1722,139 @@
       if (input && e.key === 'ArrowUp' && !input.value && p.last) { e.preventDefault(); input.value = p.last; }
       else if (!input && p?.dataset.p === 'page' && (e.key === '1' || e.key === '2')) answer(e.key === '1'); // like the CLI
     });
-    needs.addEventListener('toggle', e => {
+    for (const pop of [needs, $('#projs')]) pop.addEventListener('toggle', e => { // under its button; a scroll closes it, as it would drift away
       if (e.newState !== 'open') return;
-      const r = bell.getBoundingClientRect();
-      needs.style.top = `${r.bottom + 6}px`;
-      needs.style.left = `${Math.max(8, Math.min(r.right - 260, innerWidth - 268))}px`;
-      addEventListener('scroll', () => needs.matches(':popover-open') && needs.hidePopover(), { once: true, passive: true }); // it would drift from the bell
+      const r = (pop === needs ? bell : $('.proj', hero)).getBoundingClientRect();
+      pop.style.top = `${r.bottom + 6}px`;
+      pop.style.left = `${Math.max(8, Math.min(pop === needs ? r.right - 260 : r.left, innerWidth - 268))}px`;
+      addEventListener('scroll', () => pop.matches(':popover-open') && pop.hidePopover(), { once: true, passive: true });
     });
+    // The rest of the app: sidebar views, chats, projects, new and closable panes, Files and Settings.
+    const nav = $('aside', hero), grid = $('.grid', hero), lent = $('[data-v=lent]', hero), newBtn = $('#hNew'), menuBtn = $('.menu', hero), projs = $('#projs');
+    const HINTS = { agents: 'Every agent and shell, side by side', board: 'Plan tasks and hand them to agents', files: 'Browse and edit the project', review: 'Check what agents changed, then merge it', artifacts: 'Pages and reports your agents made', graph: 'Who is doing what, and who is talking to whom', spend: 'What Claude Code cost each day, and where it went', settings: 'Themes, agents, voice and MCP' };
+    // Views that borrow the page's own playable tile while they're open, and give it back after (or when the hero scrolls away).
+    const LENT = { board: '.bmock', review: '.rv', artifacts: '.amock', graph: '#graph', spend: '.smock' };
+    const PROJECTS = [['acme-shop', '~/acme-shop'], ['pocket-notes', '~/code/pocket-notes'], ['tide-api', '~/work/tide-api']];
+    let view = 'agents', back = null, made = 0, proj = 0, theme = null, acc = 0;
+    const giveBack = () => { if (back) back[0].replaceWith(back[1]); back = null; };
+    const borrow = () => {
+      giveBack();
+      const node = LENT[view] && $(LENT[view]);
+      if (!node) return;
+      back = [new Comment(), node];
+      node.before(back[0]);
+      lent.append(node);
+      node.classList.remove('reveal'); // no fade-in here: it may not have shown down the page yet
+    };
+    whenVisible(hero, on => (on ? borrow() : giveBack()), 0);
+    const menu = open => { hero.classList.toggle('open', open); menuBtn.setAttribute('aria-expanded', open); };
+    function show(v) {
+      view = v;
+      $$('[data-v]', nav).forEach(b => b.setAttribute('aria-current', b.dataset.v === v ? 'page' : 'false'));
+      $('#hTitle').textContent = $(`[data-v=${v}]`, nav).textContent;
+      $('#hSub').textContent = HINTS[v];
+      grid.hidden = v !== 'agents';
+      $$('.hv', hero).forEach(h => (h.hidden = h.dataset.v !== (LENT[v] ? 'lent' : v)));
+      borrow();
+      menu(false);
+      heroSay.textContent = `${$('#hTitle').textContent}: ${HINTS[v]}`;
+    }
+    // Pane controls and the Chats list follow the panes; the bell and status bar follow what's waiting.
+    function sync() {
+      grab();
+      const list = Object.values(panes), ask = $('.ask', hero);
+      for (const p of list) {
+        const n = esc($('b', p).textContent);
+        if (!$('.pc', p)) $('header', p).insertAdjacentHTML('beforeend', `<button type="button" class="pc" data-pc="max" aria-label="Maximise ${n}">⤢</button><button type="button" class="pc" data-pc="close" aria-label="Close ${n}">×</button>`);
+        $('[data-pc=max]', p).setAttribute('aria-pressed', p.classList.contains('max'));
+      }
+      $('.chats', hero).innerHTML = list.map(p => `<button type="button" class="nv" data-c="${p.dataset.p}" aria-pressed="${p.classList.contains('max')}">${esc($('b', p).textContent)}</button>`).join('');
+      newBtn.disabled = list.length >= 6;
+      newBtn.title = newBtn.disabled ? 'Up to 6 panes in this demo' : '';
+      bell.hidden = !ask;
+      const st = $('.status', hero).children;
+      st[1].textContent = `${list.length} running`;
+      st[2].textContent = ask ? '1 needs you' : 'Nothing waiting';
+    }
+    const solo = p => { // maximise p, or put the grid back
+      const on = !!p && !p.classList.contains('max');
+      $$('.max', grid).forEach(x => x.classList.remove('max'));
+      p?.classList.toggle('max', on);
+      grid.classList.toggle('solo', on);
+      sync();
+    };
+    function addPane(id, name, sub, hi, av = 'C', ph = `Message ${name}, or type help`) {
+      grid.insertAdjacentHTML('beforeend', `<div class="pane" data-p="${id}"><header><i class="av" style="--av: ${av === '★' ? 'var(--t-accent)' : '#636366'}">${av}</i><b>${esc(name)}</b><small>${sub}</small><span class="st" data-s="idle">Idle</span></header><ol class="log"><li>${hi}</li></ol><form class="pr"><i class="cur" aria-hidden="true"></i><input aria-label="Message ${esc(name)}" placeholder="${esc(ph)}" maxlength="120" autocomplete="off" spellcheck="false" enterkeyhint="send"></form></div>`);
+      sync();
+      return panes[id];
+    }
+    function openProject(i) {
+      const [name, path] = PROJECTS[proj = i];
+      timers.forEach(clearTimeout);
+      timers.clear();
+      grid.classList.remove('solo');
+      grid.innerHTML = i ? '' : start;
+      if (i) {
+        addPane('lead', 'Lead', 'Lead agent · opus', `Ready in ${path}. Give me a goal and I'll split it into tasks.`, '★', 'Give the lead a goal…');
+        addPane('scout', 'Scout', 'Code finder · haiku', `Indexed ${name}: 48 files.`, 'S', 'Ask Scout where something is, or type help');
+      }
+      $('.proj b', hero).textContent = name;
+      $('.proj small', hero).textContent = path;
+      $('.proj', hero).setAttribute('aria-label', `Project: ${name}`);
+      $$('button', projs).forEach((b, j) => b.setAttribute('aria-current', j === i));
+      sync();
+    }
+    // Files: a tree of the project's files; the open one gets a light syntax tint.
+    const srcs = $$('.fsrc pre', hero), code = $('.fcode code', hero), tree = $('.ftree', hero);
+    let dir;
+    tree.innerHTML = srcs.map((p, i) => {
+      const f = p.dataset.file, d = f.slice(0, f.lastIndexOf('/') + 1), head = d !== dir && d ? `<h5>${d}</h5>` : '';
+      dir = d;
+      return `${head}<button type="button" class="nv" data-file="${i}">${f.slice(d.length)}</button>`;
+    }).join('');
+    const TINT = /(\/\/.*)|('[^'\n]*'|"[^"\n]*")|(\b(?:const|let|function|return|export|import|from|await|async|new)\b|<\/?[\w-]+>?|^#+ .*)/gm;
+    function openFile(i) {
+      const s = srcs[i].textContent;
+      let out = '', at = 0;
+      for (const m of s.matchAll(TINT)) { out += `${esc(s.slice(at, m.index))}<i class="${m[1] ? 'c' : m[2] ? 's' : 'k'}">${esc(m[0])}</i>`; at = m.index + m[0].length; }
+      code.innerHTML = out + esc(s.slice(at));
+      $$('button', tree).forEach((b, j) => b.setAttribute('aria-current', j === i));
+    }
+    openFile(0);
+    // Settings: a theme repaints the window (its accent stays the one picked below, so it's blue or graphite).
+    const ACC = [['#0a84ff', '#0066cc', '#0071e3', '#0066cc'], ['#98989d', '#636366', '#636366', '#636366']]; // accent on dark, on light; button on dark, on light
+    function paint() {
+      hero.style.cssText = '';
+      if (theme) paintDesk(hero, theme);
+      if (!theme && !acc) return; // the site's own colours
+      const dark = theme ? theme[1] : getComputedStyle(document.documentElement).colorScheme !== 'light';
+      hero.style.setProperty('--t-accent', ACC[acc][dark ? 0 : 1]);
+      hero.style.setProperty('--t-btn', ACC[acc][dark ? 2 : 3]);
+    }
+    swatchRadios($('.hsw', hero), t => { theme = t; paint(); $('#hTheme').textContent = t[0]; }, 5); // background and text: the accent isn't the theme's here
+
+    radios($('.hacc', hero), b => { acc = +b.dataset.acc; paint(); });
+    hero.addEventListener('click', e => {
+      const b = e.target.closest('button');
+      if (hero.classList.contains('open') && !nav.contains(e.target) && b !== menuBtn) menu(false);
+      if (!b || lent.contains(b)) return; // the borrowed tiles run their own clicks
+      const p = b.closest('.pane'), d = b.dataset;
+      if (d.v) show(d.v);
+      else if (d.c) { show('agents'); solo(panes[d.c]); $('input', panes[d.c]).focus(); }
+      else if (d.pc === 'max') solo(p);
+      else if (d.pc === 'close') { if (p.classList.contains('max')) solo(null); p.remove(); sync(); ($('.grid input', hero) || newBtn).focus(); }
+      else if (d.proj) { projs.hidePopover(); openProject(+d.proj); heroSay.textContent = `Opened ${PROJECTS[proj][0]}`; }
+      else if (d.file) openFile(+d.file);
+      else if (b === menuBtn) { menu(!hero.classList.contains('open')); if (hero.classList.contains('open')) $('[aria-current=page]', nav).focus(); }
+      else if (b === newBtn) {
+        solo(null);
+        show('agents');
+        const n = addPane(`n${++made}`, 'Claude Code', `Claude Code · ${PROJECTS[proj][0]}`, `Hi! I'm a new Claude Code session in ${PROJECTS[proj][1]}. What should I work on?`);
+        $('input', n).focus();
+      }
+    });
+    hero.addEventListener('keydown', e => { if (e.key === 'Escape' && hero.classList.contains('open')) { menu(false); menuBtn.focus(); } });
+    sync();
     // Expand lifts the same live window into a modal, so nothing you typed is lost; Reset starts it over.
     const stage = $('.stage'), lid = $('.lid'), closer = $('.stage-close'), opener = $('[data-stage=open]');
     $('.stage-bar').addEventListener('click', e => {
@@ -1641,12 +1867,14 @@
         closer.hidden = false;
         $('input', hero).focus();
       } else if (act === 'reset') {
-        timers.forEach(clearTimeout);
-        timers.clear();
-        $('.grid', hero).innerHTML = start;
-        grab();
-        bell.hidden = false;
-        $('.status', hero).lastElementChild.textContent = '1 needs you';
+        openProject(0);
+        show('agents');
+        theme = null;
+        acc = 0;
+        paint();
+        $('#hTheme').textContent = 'Site colours';
+        for (const g of $$('[role=radiogroup]', hero)) $$('[role=radio]', g).forEach((b, i) => { b.setAttribute('aria-checked', g.matches('.hacc') && !i); b.tabIndex = i ? -1 : 0; });
+        openFile(0);
         heroSay.textContent = 'Demo reset';
       }
     });
@@ -1666,7 +1894,7 @@
     // Suggested prompts type themselves into the right pane, then send.
     $('.sugs')?.addEventListener('click', e => {
       const b = e.target.closest('button');
-      if (!b || panes[b.dataset.p].busy) return;
+      if (!b || !panes[b.dataset.p] || panes[b.dataset.p].busy) return;
       const form = $('form', panes[b.dataset.p]), input = $('input', form), text = b.dataset.t;
       if (calm) { input.value = text; return form.requestSubmit(); }
       let i = 0;
