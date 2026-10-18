@@ -25,6 +25,8 @@ jobs:
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      # macOS runners default to bash; Relay's shells and npm run check expect the user's shell to be zsh
+      SHELL: /bin/zsh
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
