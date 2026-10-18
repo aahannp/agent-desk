@@ -83,7 +83,7 @@ function listen() {
   const events = new EventSource('/api/events');
   events.onmessage = e => {
     const event = JSON.parse(e.data);
-    if (['voice', 'update-progress', 'agent-message', 'specialist-changed', 'groups'].includes(event.type)) emit(event.type, event);
+    if (['voice', 'update-progress', 'agent-message', 'specialist-changed', 'groups', 'meter'].includes(event.type)) emit(event.type, event);
     else if (loaders[event.type]) refresh(event.type);
   };
   events.onopen = () => {

@@ -1,5 +1,5 @@
 // Agents view: every agent, shell and browser pane for the project, tiled in a grid of real terminals.
-import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, commands, menu, askText, modal, confirmDialog, agentLabel, shortBranch, baseName, copy, chatTitle, DRAG, MONO, STATUS_LABEL } from './ui.js';
+import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, commands, menu, askText, modal, confirmDialog, agentLabel, shortBranch, baseName, copy, chatTitle, meterView, DRAG, MONO, STATUS_LABEL } from './ui.js';
 
 const panes = new Map(); // id -> pane (a session's terminal, or a browser)
 const seen = new Map(); // session id -> last status we told you about
@@ -348,13 +348,14 @@ function terminalPane(s) {
   const title = h('span', { class: 'pane-title' });
   const sub = h('span', { class: 'pane-sub' });
   const face = h('span', {});
+  const meter = h('span', { class: 'meter', role: 'meter', 'aria-label': 'Context and cost', 'aria-valuemin': 0, 'aria-valuemax': 100, tabindex: 0, hidden: true });
   const host = h('div', { class: 'term-host' });
   const blocks = h('div', { class: 'blocks' });
   const exitBar = h('div', { class: 'exit-bar' });
   const id = s.id;
   const blocksBtn = s.kind === 'shell' && h('button', { class: 'icon-btn', title: 'Command blocks', onClick: () => blocksBtn.classList.toggle('on', el.classList.toggle('show-blocks')) }, icon('list', 15));
   const head = h('div', { class: 'pane-head', draggable: true, title: 'Drag to move this pane', onDragstart: e => dragPane(e, id), onDragend: () => el.classList.remove('dragging'), onDblclick: e => !e.target.closest('button') && toggleMaximise(id) },
-    face, h('div', { class: 'pane-titles' }, title, sub), state_,
+    face, h('div', { class: 'pane-titles' }, title, sub), meter, state_,
     h('div', { class: 'pane-tools' },
       blocksBtn,
       s.chatId && h('button', { class: 'icon-btn', title: 'Name this agent', onClick: () => renameAgent(s) }, icon('pen', 13)),
@@ -372,7 +373,7 @@ function terminalPane(s) {
     term.loadAddon(webgl);
   } catch {}
 
-  const p = { id, kind: 'term', el, term, dot, state: state_, stateText, title, sub, face, exitBar, blocksEl: blocks, session: s, lastData: 0, ws: null, size: '' };
+  const p = { id, kind: 'term', el, term, dot, state: state_, stateText, title, sub, face, meter, exitBar, blocksEl: blocks, session: s, lastData: 0, ws: null, size: '' };
   p.send = data => p.ws?.readyState === WebSocket.OPEN && p.ws.send(JSON.stringify({ t: 'in', d: data }));
   p.fit = () => {
     if (!host.offsetWidth) return;
@@ -410,6 +411,26 @@ function connect(p) {
   };
 }
 
+// Context in use and cost so far, for Claude panes whose status line has reported (pushed as 'meter' events).
+function renderMeter(p) {
+  const m = p.session.meter;
+  p.meter.hidden = !m;
+  if (!m) return;
+  const v = meterView(m);
+  p.meter.className = `meter ${v.level}`;
+  p.meter.title = v.details;
+  p.meter.setAttribute('aria-valuenow', Math.min(v.pct, 100));
+  p.meter.setAttribute('aria-valuetext', `${v.context}${v.cost && `, ${v.cost} so far`}`);
+  p.meter.style.setProperty('--fill', `${Math.min(v.pct, 100)}%`);
+  p.meter.replaceChildren(h('span', { class: 'meter-bar' }), h('span', {}, v.context), v.cost && h('span', { class: 'meter-cost' }, v.cost));
+}
+on('meter', e => {
+  const s = state.sessions.find(x => x.id === e.id);
+  if (s) s.meter = e.meter;
+  const p = panes.get(e.id);
+  if (p?.kind === 'term') renderMeter(p);
+});
+
 function renderHead(p) {
   const s = p.session;
   p.title.textContent = chatTitle(s);
@@ -421,6 +442,7 @@ function renderHead(p) {
     s.taskId && h('span', { class: 'sep' }, '/'),
     s.taskId && h('button', { title: 'Open the task', onClick: () => actions.openTask?.(s.taskId) }, 'task'),
   ].filter(Boolean));
+  renderMeter(p);
   p.el.classList.toggle('exited', s.exited);
   p.el.classList.toggle('attn', s.status === 'needs-input');
   if (s.exited && !p.exitBar.childElementCount) {

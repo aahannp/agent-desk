@@ -211,6 +211,28 @@ export const baseName = p => p.split('/').filter(Boolean).pop() || p;
 // For text shown cut off on the left (direction: rtl), so leading "~" or "/" stays where it belongs.
 export const ltr = text => `\u200E${text}\u200E`;
 
+export const money = n => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+export const count = n => Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
+
+// A Claude pane's meter (see meter() in lib/sessions.mjs): "145K · 15%" of the window it compacts at, amber over
+// 70%, red over 90%, the cost so far, and the details for its tooltip. Costs are API list prices, an estimate.
+export const meterLevel = pct => (pct > 90 ? 'bad' : pct > 70 ? 'warn' : '');
+export function meterView(m) {
+  const pct = Math.round(m.used * 100 / m.effective);
+  const priced = m.cost > 0 || !m.unpriced;
+  const t = m.tokens;
+  return {
+    pct, level: meterLevel(pct), context: `${count(m.used)} · ${pct}%`, cost: priced ? money(m.cost) : '',
+    details: [
+      `Context in use: ${count(m.used)} of ${count(m.effective)} (${pct}%)`,
+      m.effective < m.window ? `Effective window: ${count(m.effective)}, where it auto-compacts (the model's is ${count(m.window)})` : `Window: ${count(m.window)}`,
+      `Tokens so far: input ${count(t.input)} · output ${count(t.output)} · cache read ${count(t.read)} · cache write ${count(t.write)}`,
+      priced ? `Cost so far: ${money(m.cost)}, estimated at API list prices` : 'Cost: no price known for this model',
+      priced && m.unpriced ? `Not priced: ${m.unpriced} ${m.unpriced === 1 ? 'reply' : 'replies'} on a model without a price` : '',
+    ].filter(Boolean).join('\n'),
+  };
+}
+
 export function ago(t) {
   const s = Math.round((Date.now() - t) / 1000);
   if (s < 45) return 'just now';
