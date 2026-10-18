@@ -87,10 +87,17 @@ function render() {
   } else if (shown !== `${a.id}:${a.updatedAt}`) {
     shown = `${a.id}:${a.updatedAt}`;
     // Sandboxed with no same-origin: the page's scripts run, but can't reach Relay or its login.
-    stage.replaceChildren(h('iframe', {
-      class: 'art-frame', title: a.title, src: `/a/${a.id}?v=${a.updatedAt}`,
+    const frame = h('iframe', {
+      class: 'art-frame loading', title: a.title, src: `/a/${a.id}?v=${a.updatedAt}`,
       sandbox: 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms allow-modals allow-downloads',
-    }));
+    });
+    // Load it hidden and swap on load, so the old page stays up instead of a blank white frame; a newer pick wins.
+    frame.addEventListener('load', () => {
+      if (stage.lastElementChild !== frame) return;
+      frame.classList.remove('loading');
+      for (const el of [...stage.children]) if (el !== frame) el.remove(); // not replaceChildren(frame): that would re-insert it and reload the page
+    });
+    stage.append(frame);
   }
   if (actions.currentView?.() === 'artifacts') actions.renderToolbar();
 }
