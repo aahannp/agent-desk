@@ -181,6 +181,10 @@ route('PATCH', '/api/settings', ({ req, body }) => {
     }
     db.settings[key] = value;
   }
+  // Open Claude Code panes repaint in the new colours (see claudeTheme in lib/sessions.mjs).
+  if ('theme' in body || 'accent' in body) {
+    try { S.writeClaudeTheme(); } catch (e) { console.error("Couldn't update Claude Code's Agent Desk theme:", e.message); }
+  }
   changed('settings');
   return db.settings;
 });

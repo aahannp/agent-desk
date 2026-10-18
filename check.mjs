@@ -10,7 +10,8 @@ import WebSocket from 'ws';
 import { start } from './server.mjs';
 import { createWorktree } from './lib/git.mjs';
 import { db, bus } from './lib/store.mjs';
-import { command, sessions, upkeep, effectiveWindow } from './lib/sessions.mjs';
+import { command, sessions, upkeep, effectiveWindow, claudeTheme, contrast } from './lib/sessions.mjs';
+import { THEMES } from './public/js/themes.js';
 import { transcriptContext } from './lib/transcripts.mjs';
 import { priceReply } from './lib/usage.mjs';
 import { isNewer } from './lib/update.mjs';
@@ -333,11 +334,24 @@ try {
   assert.equal((await ok('GET', '/api/usage/days')).days.find(d => d.day === '2026-01-05').cost, 5);
   assert.equal((await request('GET', '/api/usage?day=../etc')).status, 400, 'day must be a date');
   const savedTheme = db.settings.theme;
+  const claudeThemeFile = () => JSON.parse(fs.readFileSync(path.join(claudeHome, 'themes', 'agent-desk.json'), 'utf8'));
   db.settings.theme = 'latte';
-  assert.equal(settingsOf(command({ ...base, resume: false }, '', null).args).theme, 'light-ansi', "claude's panes paint with a light Agent Desk theme's own colours");
-  db.settings.theme = 'nord';
-  assert.equal(settingsOf(command({ ...base, resume: false }, '', null).args).theme, 'dark-ansi', "and with a dark one's");
-  db.settings.theme = savedTheme;
+  assert.equal(settingsOf(command({ ...base, resume: false }, '', null).args).theme, 'custom:agent-desk', "claude's panes use Agent Desk's own Claude Code theme");
+  assert.equal(claudeThemeFile().base, 'light', 'made from a light Desk theme, it is a light one');
+  await ok('PATCH', '/api/settings', { theme: 'nord' });
+  assert.deepEqual([claudeThemeFile().base, claudeThemeFile().overrides.userMessageBackground], ['dark', THEMES.nord.ui.panel2], 'switching the Desk theme rewrites it, which repaints open panes');
+  await ok('PATCH', '/api/settings', { accent: '#ff0000' });
+  assert.equal(claudeThemeFile().overrides.selectionBg, claudeTheme().overrides.selectionBg, 'and so does the accent');
+  assert.match(claudeTheme().overrides.selectionBg, /^#[0-9a-f]{6}$/);
+  for (const [id, t] of Object.entries(THEMES)) {
+    for (const accent of ['', '#ff0000']) { // its own accent, and one of yours
+      Object.assign(db.settings, { theme: id, accent });
+      const sel = claudeTheme().overrides.selectionBg;
+      assert.ok(contrast(t.ui.text, sel) >= 4.5 && contrast(t.ui.dim, sel) >= 3, `${id} ${accent}: text stays readable on the selection (${sel})`);
+      assert.ok(contrast(sel, t.term.background) > 1.15, `${id} ${accent}: and the selection shows (${sel})`);
+    }
+  }
+  await ok('PATCH', '/api/settings', { theme: savedTheme, accent: '' });
 
   // The whole chat lifecycle, with a stand-in `claude` on the PATH that prints its arguments and exits
   const fakeBin = path.join(tmp, 'fake-bin');
