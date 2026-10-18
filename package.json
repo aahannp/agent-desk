@@ -1,7 +1,7 @@
 {
   "name": "agent-desk",
-  "productName": "Agent Desk",
-  "version": "1.8.3",
+  "productName": "Relay",
+  "version": "1.9.0",
   "description": "Run many Claude Code agents side by side",
   "private": true,
   "type": "module",
@@ -30,8 +30,8 @@
     "electron-builder": "26.15.3"
   },
   "build": {
-    "appId": "com.aahan.agentdesk",
-    "productName": "Agent Desk",
+    "appId": "com.aahan.relay",
+    "productName": "Relay",
     "npmRebuild": false,
     "files": [
       "electron/**",
@@ -61,14 +61,14 @@
       "hardenedRuntime": true,
       "notarize": false,
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "Agent Desk listens to your voice so you can talk to your agents instead of typing.",
-        "NSSpeechRecognitionUsageDescription": "Agent Desk turns your speech into text on this Mac so you can talk to your agents."
+        "NSMicrophoneUsageDescription": "Relay listens to your voice so you can talk to your agents instead of typing.",
+        "NSSpeechRecognitionUsageDescription": "Relay turns your speech into text on this Mac so you can talk to your agents."
       },
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "dmg": {
-      "title": "Agent Desk",
+      "title": "Relay",
       "icon": "build/icon.icns",
       "background": "build/background.tiff",
       "iconSize": 112,

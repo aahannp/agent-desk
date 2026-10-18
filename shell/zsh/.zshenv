@@ -1,4 +1,4 @@
-# Agent Desk shell integration. zsh starts here because Agent Desk points ZDOTDIR at this folder.
+# Relay shell integration. zsh starts here because Relay points ZDOTDIR at this folder.
 # Load your own .zshenv first, then come back here so our .zshrc runs next.
 _agent_desk_dir=$ZDOTDIR
 ZDOTDIR=${AGENT_DESK_USER_ZDOTDIR:-$HOME}

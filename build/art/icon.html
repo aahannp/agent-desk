@@ -1,6 +1,7 @@
 <!doctype html>
-<!-- Agent Desk app icon, drawn on Apple's 1024 grid: an 824px tile centred on a transparent canvas.
-     #small is the simpler version for 32 point icons, #tiny the plainest one for 16 pixels. -->
+<!-- Relay app icon, drawn on Apple's 1024 grid: an 824px tile centred on a transparent canvas.
+     #small (32 point icons) and #tiny (16 pixels) use the heavier mark, drawn larger, so the orbit survives.
+     #touch is the full-bleed square for the website's apple-touch-icon, which iOS rounds itself. -->
 <meta charset="utf-8">
 <style>
   html, body { margin: 0; background: transparent; overflow: hidden; }
@@ -29,21 +30,12 @@ function squircle(x, y, w, h, r, smoothing = 0.6) {
     c 0 ${-A} 0 ${-AB} ${D} ${-ABC} a ${r} ${r} 0 0 1 ${l} ${-l} c ${C} ${-D} ${BC} ${-D} ${ABC} ${-D} Z`;
 }
 
-const tile = squircle(100, 100, 824, 824, 185);
+const touch = size === 'touch';
+const tile = touch ? 'M 0 0 H 1024 V 1024 H 0 Z' : squircle(100, 100, 824, 824, 185);
 
-// The mark: a capital A folded down its centre, so each half is one flat colour and the right half sits
-// in shade. The crossbar is the pink cursor, and it folds with the letter. Small icons get thicker strokes
-// and a taller crossbar so both survive at 32 and 16 pixels.
-const { foot, t, bar } = {
-  full: { foot: 236, t: 118, bar: [584, 656] },
-  small: { foot: 252, t: 138, bar: [574, 664] },
-  tiny: { foot: 262, t: 150, bar: [566, 676] },
-}[size];
-const top = 298, bot = 742, apex = 34; // as a module these don't clash with window.top
-const L0 = 512 - foot, R0 = 512 + foot, s = (512 - apex - L0) / (bot - top);
-const yin = bot - (512 - (L0 + t)) / s; // where the inner edges meet, parallel to the outer ones
-const hw = y => (y - yin) * s;
-const [b1, b2] = bar;
+// The mark is an SVG drawn in currentColor, which an image renders black; invert turns it white on the ink tile.
+const [mark, box] = touch ? ['relay-mark.svg', 760] : full ? ['relay-mark.svg', 640] : ['relay-mark-bold.svg', size === 'tiny' ? 780 : 740];
+const at = 512 - box / 2;
 
 document.getElementById('icon').innerHTML = `
 <defs>
@@ -52,11 +44,8 @@ document.getElementById('icon').innerHTML = `
   </filter>
 </defs>
 
-<!-- Flat colours only: an ink tile, the lit and shaded halves of the A, and the pink crossbar. -->
-<g filter="url(#shadow)"><path d="${tile}" fill="#0f0e14"/></g>
-<path d="M ${512 - apex} ${top} H 512 V ${yin} L ${L0 + t} ${bot} H ${L0} Z" fill="#f7f5fb"/>
-<path d="M 512 ${top} H ${512 + apex} L ${R0} ${bot} H ${R0 - t} L 512 ${yin} Z" fill="#bfb9cf"/>
-<path d="M ${512 - hw(b1)} ${b1} H 512 V ${b2} H ${512 - hw(b2)} Z" fill="#ff3ea5"/>
-<path d="M 512 ${b1} H ${512 + hw(b1)} L ${512 + hw(b2)} ${b2} H 512 Z" fill="#d22a85"/>
+<!-- Flat colours only: an ink tile and the white mark. -->
+<g filter="${touch ? '' : 'url(#shadow)'}"><path d="${tile}" fill="#0f0e14"/></g>
+<image href="${mark}" x="${at}" y="${at}" width="${box}" height="${box}" style="filter: invert(1)"/>
 ${full ? `<path d="${tile}" fill="none" stroke="#ffffff" stroke-opacity="0.09" stroke-width="4"/>` : ''}`;
 </script>

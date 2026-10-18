@@ -43,6 +43,14 @@ Install Relay as above. Your board, chats and settings carry over automatically:
 Relay was called Agent Desk; some internal names (the agent-desk MCP server, .agent-desk/ folder, AGENT_DESK_*
 variables) keep the old name so existing setups keep working.
 
+### Verifying a download
+
+Each release lists its DMG's SHA-256 in the notes. From v1.9.0, GitHub Actions builds the DMG and adds a `.sha256` file and a signed build-provenance attestation.
+Run these in the folder with the download (`<name>` is the DMG's file name):
+
+    shasum -a 256 -c <name>.dmg.sha256
+    gh attestation verify <name>.dmg -R aahannp/agent-desk
+
 ## Requirements
 
 | Component | Needed? | Tested with |
