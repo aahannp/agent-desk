@@ -6,7 +6,7 @@
 <title>Verify a download · Relay</title>
 <meta name="description" content="Check that a Relay download is the file GitHub published, how it's signed, and that its code matches the source at that tag. Plus how to build it yourself.">
 <meta name="color-scheme" content="dark light">
-<link rel="canonical" href="https://aahannp.github.io/agent-desk/verify.html">
+<link rel="canonical" href="https://aahannp.github.io/relay/verify.html">
 <link rel="icon" href="assets/relay-favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/relay-180.png">
 <script>
@@ -95,8 +95,8 @@
   <div class="wrap">
     <a class="brand" href="./"><span class="mark" aria-hidden="true"></span>Relay</a>
     <a class="hide-sm" href="#build">Build it yourself</a>
-    <a href="https://github.com/aahannp/agent-desk/releases">Releases</a>
-    <a href="https://github.com/aahannp/agent-desk/issues">Issues</a>
+    <a href="https://github.com/aahannp/relay/releases">Releases</a>
+    <a href="https://github.com/aahannp/relay/issues">Issues</a>
   </div>
 </header>
 
@@ -116,13 +116,13 @@
     <pre><code>shasum -a 256 ~/Downloads/Relay-*.dmg</code></pre>
     <p>It prints one line per DMG in your Downloads folder, like this for 1.8.2:</p>
     <pre><code>9e9daaa1ee23ff2f80a9a02ce1fc43b5d3a0de8ff1ad055333d51a5ea138ac0e  …/Agent-Desk-1.8.2-arm64.dmg</code></pre>
-    <p>The long number should be exactly the one shown above for the latest release, or the one GitHub lists for your version (step 2). If even one character differs, don't open the file, and please <a href="https://github.com/aahannp/agent-desk/issues/new">report it</a>.</p>
+    <p>The long number should be exactly the one shown above for the latest release, or the one GitHub lists for your version (step 2). If even one character differs, don't open the file, and please <a href="https://github.com/aahannp/relay/issues/new">report it</a>.</p>
 
     <h2 id="github">2. Compare with GitHub's own record</h2>
-    <p>The checksum on this site comes from GitHub, so you can also ask GitHub directly. On the <a href="https://github.com/aahannp/agent-desk/releases">Releases page</a>, open the release's Assets: each file shows its <code>sha256:</code> digest. From Terminal, with the <a href="https://cli.github.com">GitHub CLI</a>:</p>
-    <pre><code>gh release view v1.8.2 -R aahannp/agent-desk --json assets --jq '.assets[] | .name + "  " + .digest'</code></pre>
+    <p>The checksum on this site comes from GitHub, so you can also ask GitHub directly. On the <a href="https://github.com/aahannp/relay/releases">Releases page</a>, open the release's Assets: each file shows its <code>sha256:</code> digest. From Terminal, with the <a href="https://cli.github.com">GitHub CLI</a>:</p>
+    <pre><code>gh release view v1.8.2 -R aahannp/relay --json assets --jq '.assets[] | .name + "  " + .digest'</code></pre>
     <p>Or without it:</p>
-    <pre><code>curl -fsSL https://api.github.com/repos/aahannp/agent-desk/releases/tags/v1.8.2 | grep -o '"digest": *"[^"]*"'</code></pre>
+    <pre><code>curl -fsSL https://api.github.com/repos/aahannp/relay/releases/tags/v1.8.2 | grep -o '"digest": *"[^"]*"'</code></pre>
     <p class="note">A matching checksum proves your file is the one uploaded to that GitHub release. It doesn't prove what was built into it. Steps 3 and 4 cover that.</p>
 
     <h2 id="signature">3. Check the signature</h2>
@@ -152,7 +152,7 @@ v=$(defaults read "/Applications/Relay.app/Contents/Info" CFBundleShortVersionSt
 
 <span class="c"># unpack the app's code, and fetch the source at the same tag</span>
 npx --yes @electron/asar@4.3.1 extract "/Applications/Relay.app/Contents/Resources/app.asar" app
-git clone --branch "v$v" --depth 1 https://github.com/aahannp/agent-desk src
+git clone --branch "v$v" --depth 1 https://github.com/aahannp/relay src
 
 <span class="c"># Relay's own code: should print "identical" five times</span>
 for d in electron lib public shell server.mjs; do diff -r "src/$d" "app/$d" &amp;&amp; echo "$d: identical"; done
@@ -176,13 +176,13 @@ for f in pty.node spawn-helper; do cmp &lt;(otool -t "src/$p/$f" | tail -n +2) &
 
     <h2 id="attestation">5. Check the build attestation <span class="soon">1.9.0 and later</span></h2>
     <p>Since 1.9.0, GitHub Actions builds each release, and every DMG comes with a signed attestation that records which workflow, commit and runner built it. Check it with:</p>
-    <pre><code>gh attestation verify Relay-1.9.0-arm64.dmg -R aahannp/agent-desk</code></pre>
+    <pre><code>gh attestation verify Relay-1.9.0-arm64.dmg -R aahannp/relay</code></pre>
     <p>It prints nothing and exits with status 0 when the DMG matches; <code>echo $?</code> shows the 0. Add <code>--format json</code> to see the details. This doesn't work for 1.8.3 and earlier, which were built on a Mac and uploaded by hand.</p>
 
     <h2 id="build">Build it yourself</h2>
     <p>You can skip the download and build Relay from the source. These steps start from a clean clone of a release tag:</p>
-    <pre><code>git clone --branch v1.9.0 --depth 1 https://github.com/aahannp/agent-desk
-cd agent-desk
+    <pre><code>git clone --branch v1.9.0 --depth 1 https://github.com/aahannp/relay
+cd relay
 npm ci           <span class="c"># exact versions from package-lock.json</span>
 npm run app      <span class="c"># run it from source</span>
 npm run dist     <span class="c"># or build dist/Relay-1.9.0-arm64.dmg</span></code></pre>
@@ -194,7 +194,7 @@ npm run dist     <span class="c"># or build dist/Relay-1.9.0-arm64.dmg</span></c
     <pre><code>cd "/Applications/Relay.app" &amp;&amp; find . -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256</code></pre>
 
     <h2 id="installer">What the Terminal installer does</h2>
-    <p>The one-line installer on the home page, <code>curl -fsSL https://aahannp.github.io/agent-desk/install.sh | bash</code>, is <a href="install.sh">a short script</a> you can read first. It:</p>
+    <p>The one-line installer on the home page, <code>curl -fsSL https://aahannp.github.io/relay/install.sh | bash</code>, is <a href="install.sh">a short script</a> you can read first. It:</p>
     <ol>
       <li>stops unless it's on macOS with Apple silicon;</li>
       <li>asks GitHub's API for the latest release and finds its .dmg;</li>
@@ -206,7 +206,7 @@ npm run dist     <span class="c"># or build dist/Relay-1.9.0-arm64.dmg</span></c
     <p>There's no macOS warning because files curl downloads aren't marked as quarantined, so Gatekeeper doesn't check them on first launch. That also means macOS checks nothing, and the script doesn't check the SHA-256 either. If you want those checks, download the DMG and follow steps 1 to 3.</p>
 
     <h2>Something doesn't match?</h2>
-    <p>Please <a href="https://github.com/aahannp/agent-desk/issues/new">open an issue</a> with the version, the command you ran and its output.</p>
+    <p>Please <a href="https://github.com/aahannp/relay/issues/new">open an issue</a> with the version, the command you ran and its output.</p>
   </div>
 </main>
 
@@ -215,17 +215,17 @@ npm run dist     <span class="c"># or build dist/Relay-1.9.0-arm64.dmg</span></c
     <span>Relay · MIT licence</span>
     <nav aria-label="Footer">
       <a href="./">Home</a>
-      <a href="https://github.com/aahannp/agent-desk">GitHub</a>
-      <a href="https://github.com/aahannp/agent-desk/releases">Releases</a>
-      <a href="https://github.com/aahannp/agent-desk/issues">Issues</a>
-      <a href="https://github.com/aahannp/agent-desk/issues/new">Report a bug</a>
+      <a href="https://github.com/aahannp/relay">GitHub</a>
+      <a href="https://github.com/aahannp/relay/releases">Releases</a>
+      <a href="https://github.com/aahannp/relay/issues">Issues</a>
+      <a href="https://github.com/aahannp/relay/issues/new">Report a bug</a>
     </nav>
   </div>
 </footer>
 
 <script>
   // The latest release's version and checksum, from GitHub's API. Without it the page still reads fine.
-  fetch('https://api.github.com/repos/aahannp/agent-desk/releases/latest')
+  fetch('https://api.github.com/repos/aahannp/relay/releases/latest')
     .then(r => r.ok ? r.json() : Promise.reject())
     .then(rel => {
       const dmg = (rel.assets || []).find(a => /\.dmg$/i.test(a.name));

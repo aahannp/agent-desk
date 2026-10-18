@@ -1,13 +1,13 @@
 #!/bin/bash
 # Installs the latest Relay into /Applications:
-#   curl -fsSL https://aahannp.github.io/agent-desk/install.sh | bash
+#   curl -fsSL https://aahannp.github.io/relay/install.sh | bash
 # Up to 1.8.x the DMG holds "Agent Desk.app", from 1.9.0 "Relay.app": it installs whichever app the DMG has.
 set -euo pipefail
 
 [ "$(uname -s)" = Darwin ] || { echo "Relay is a Mac app." >&2; exit 1; }
 [ "$(uname -m)" = arm64 ] || { echo "Relay needs a Mac with Apple silicon." >&2; exit 1; }
 
-url=$(curl -fsSL https://api.github.com/repos/aahannp/agent-desk/releases/latest |
+url=$(curl -fsSL https://api.github.com/repos/aahannp/relay/releases/latest |
   grep -o '"browser_download_url": *"[^"]*\.dmg"' | head -1 | cut -d'"' -f4)
 [ -n "$url" ] || { echo "Couldn't find the latest release. Try again in a minute." >&2; exit 1; }
 

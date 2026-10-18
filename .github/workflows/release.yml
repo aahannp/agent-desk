@@ -91,7 +91,7 @@ jobs:
             echo "SHA-256: $HASH"
             echo
             echo '```'
-            echo "gh attestation verify $(basename "$DMG") -R aahannp/agent-desk"
+            echo "gh attestation verify $(basename "$DMG") -R aahannp/relay"
             echo '```'
             echo '<!-- verify:end -->'
           } > release-notes.md
