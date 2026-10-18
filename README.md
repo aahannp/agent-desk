@@ -16,7 +16,7 @@ real terminal running the agent's own CLI, so Claude Code uses your normal Claud
 
 <img src="docs/assets/demo.gif" alt="A lead agent is given a goal, plans three tasks on the Board, three workers edit files side by side in their own worktrees, and Review shows the diff" width="900">
 
-<sub>Recorded from the real app (1.8.2 code, when Relay was still called Agent Desk) with a demo repo. The agents'
+<sub>Recorded from the real app (1.9.0 code) with a demo repo. The agents'
 replies are scripted, so no model ran; the board, worktrees, edits and diff are real.</sub>
 
 ## Install
@@ -138,19 +138,19 @@ flowchart LR
   one, their own included, after asking you; agents started after that get the change (turn that off in Settings too).
 - **Board**: To do / In progress / Review / Done with drag and drop. Run hands a task to an agent. Agents post
   comments and move their own cards through the board's MCP tools.
-  <br><img src="docs/assets/board.webp" alt="The Board with tasks in To do, In progress, Review and Done columns" width="480">
+  <br><img src="docs/assets/board.gif" alt="On the Board, a card is dragged from To do to In progress, an agent moves its own card to Review, and Run hands another card to a new worker" width="480">
 - **Review**: side-by-side diffs of each worktree against where it branched, then commit, merge, or discard.
   When an agent edits files in another repo or a worktree it made itself, that repo joins your projects and its
   Review lists the worktree, with who made it.
-  <br><img src="docs/assets/review.webp" alt="Review showing agents' worktrees and a side-by-side diff" width="480">
+  <br><img src="docs/assets/review.gif" alt="In Review, an agent's worktree is opened, a changed file is picked, and its side-by-side diff scrolls" width="480">
 - **Graph**: every agent and shell as a node (the lead ringed in the middle), lines for who messaged whom with
   a count (dashed for who started whom), and the newest messages glowing along them. Click a node to see its
   screen (a live mini terminal) and conversation and ask it something; drag or use two fingers to pan, pinch or ⌘-scroll to zoom; shift-click or drag a box to select nodes and make a named group.
-  <br><img src="docs/assets/graph.webp" alt="The Graph with the lead in the middle, linked to four workers by message counts" width="480">
+  <br><img src="docs/assets/graph.gif" alt="The Graph: agents linked by message counts, a new message glows along a line, clicking a node shows its live screen, then the view pans and zooms" width="480">
 - **Spend**: what Claude Code cost each day, priced at API list prices from its own transcripts. Shows the
   last 35 days, and breaks a day down by token type, model, project folder, session and hour. Finished days are
   saved (`usageDays` in `desk.json`), so they stay after Claude Code deletes old transcripts.
-  <br><img src="docs/assets/spend.webp" alt="Spend with today's total, the last 35 days as bars, and breakdowns by token type and hour" width="480">
+  <br><img src="docs/assets/spend.gif" alt="Spend: hovering the last 35 days' bars, picking days to change the token type and hour breakdowns, then scrolling to the model, folder and session breakdowns" width="480">
 - **Files**: a file tree and the Monaco editor (VS Code's editor), for the project or any agent's worktree.
 - **Browser panes** for your dev server, **command blocks** in shells (each command and its output as a
   block), **screenshots** you can mark up and hand to an agent, **voice input** (on-device in the Mac app),
