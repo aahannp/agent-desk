@@ -16,6 +16,14 @@ real terminal running the agent's own CLI, so Claude Code uses your normal Claud
 The DMG is signed ad-hoc (there's no Apple developer account), so the first time you open the copied app,
 right-click it and choose Open (macOS 15+: System Settings → Privacy & Security → Open Anyway).
 
+### Verifying a download
+
+Each release DMG comes with a `.sha256` file and a signed build-provenance attestation from GitHub Actions.
+Run these in the folder with the download (`<name>` is the DMG's file name):
+
+    shasum -a 256 -c <name>.dmg.sha256
+    gh attestation verify <name>.dmg -R aahannp/agent-desk
+
 ## What's in it
 
 - **Agents**: up to 16 Claude Code, Codex, Gemini CLI, Cursor Agent or shell panes in a grid. Each one shows
