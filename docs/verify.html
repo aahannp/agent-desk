@@ -174,10 +174,10 @@ diff -rq src/node_modules app/node_modules | grep -v '^Only in src/node_modules'
 for f in pty.node spawn-helper; do cmp &lt;(otool -t "src/$p/$f" | tail -n +2) &lt;(otool -t "app/$p/$f" | tail -n +2) &amp;&amp; echo "$f: same code"; done</code></pre>
     <p>The rest of the app is Electron itself (<code>Contents/Frameworks</code>), from the <code>electron</code> 44.5.1 package on npm, re-signed ad-hoc; its machine code matched too. The small voice helper <code>Contents/Resources/desk-listen</code> is compiled from <code>native/listen.swift</code>, and rebuilding it matched on our Mac, though a different Xcode can produce different code.</p>
 
-    <h2 id="attestation">5. Check the build attestation <span class="soon">From v1.9</span></h2>
-    <p>Once releases are built by GitHub Actions, each DMG will come with a signed attestation that records which workflow, commit and tag built it. You'll be able to check it with:</p>
+    <h2 id="attestation">5. Check the build attestation <span class="soon">1.9.0 and later</span></h2>
+    <p>Since 1.9.0, GitHub Actions builds each release, and every DMG comes with a signed attestation that records which workflow, commit and runner built it. Check it with:</p>
     <pre><code>gh attestation verify Relay-1.9.0-arm64.dmg -R aahannp/agent-desk</code></pre>
-    <p>This doesn't work for 1.8.2 and earlier, which were built on a Mac and uploaded by hand.</p>
+    <p>It prints nothing and exits with status 0 when the DMG matches; <code>echo $?</code> shows the 0. Add <code>--format json</code> to see the details. This doesn't work for 1.8.3 and earlier, which were built on a Mac and uploaded by hand.</p>
 
     <h2 id="build">Build it yourself</h2>
     <p>You can skip the download and build Relay from the source. These steps start from a clean clone of a release tag:</p>
