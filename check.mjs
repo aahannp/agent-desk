@@ -453,6 +453,18 @@ try {
   assert.equal((await request('POST', '/api/specialists', { body: { name: 'Max', role: 'x', model: 'gpt-9' } })).status, 400, 'only known models');
   await ok('PATCH', `/api/specialists/${rhea.id}`, { model: 'sonnet' });
   const viaTool = async (name, args) => (await rpc('tools/call', { name, arguments: args }, { 'x-desk-session': shell.id })).result;
+  // Changing a task answers briefly, never with its description and notes read back
+  const replyOf = async (name, args) => JSON.parse((await viaTool(name, args)).content[0].text);
+  const made = await replyOf('create_task', { title: 'Trim replies', description: 'long '.repeat(400) });
+  const noted = await replyOf('comment_on_task', { id: made.id, text: 'note '.repeat(400) });
+  const moved = await replyOf('update_task', { id: made.id, status: 'review' });
+  assert.deepEqual([made, noted, moved].map(Object.keys), Array(3).fill(['id', 'status', 'title', 'branch']), 'create, comment and update answer with id, status, title and branch');
+  assert.equal(moved.status, 'review');
+  const startedTask = await replyOf('start_task', { id: made.id, worktree: false });
+  assert.deepEqual(Object.keys(startedTask), ['id', 'status', 'title', 'branch', 'sessionId', 'model', 'effort'], 'start_task adds the session it started');
+  assert.equal(startedTask.model, 'sonnet', 'on the worker default');
+  await exited(startedTask.sessionId);
+  await ok('DELETE', `/api/tasks/${made.id}`);
   const teamNow = JSON.parse((await viaTool('list_team', {})).content[0].text);
   assert.deepEqual(teamNow.map(x => [x.name, x.model]), [['Christie', 'sonnet'], ['Browner', 'opus'], ['Scout', 'haiku'], ['Rhea', 'sonnet']], 'agents see the whole team');
   assert.deepEqual([teamNow[3].id, teamNow[3].instructions], [rhea.id, 'Review carefully.'], 'with each full profile');
