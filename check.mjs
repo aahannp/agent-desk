@@ -907,6 +907,9 @@ esac
   await screenOf(copy.id, new RegExp(`--resume ${askerChat} --fork-session`), 'carrying his conversation');
   assert.match((await fromChristie('clone_agent', { prompt: 'x' })).content[0].text, /no conversation to copy yet/, 'an agent with nothing said yet has nothing to copy');
   await ok('DELETE', `/api/sessions/${copy.id}`);
+  fs.appendFileSync(path.join(askerDir, `${askerChat}.jsonl`), `\n${line({ type: 'assistant', message: { content: [{ type: 'text', text: 'Read a lot' }], usage: { input_tokens: 10, cache_read_input_tokens: 160_000 } } })}\n`);
+  const tooBig = await fromChristie('clone_agent', { agent: 'Adam', prompt: 'You take the tests' });
+  assert.ok(tooBig.isError && /160K tokens, too big to copy.*start_agent/.test(tooBig.content[0].text), 'a conversation past 150K is not copied; start_agent with a brief is suggested');
   const elsewhere = path.join(tmp, 'other-project');
   fs.mkdirSync(elsewhere, { recursive: true });
   for (const args of [['init', '-q', '-b', 'main'], ['-c', 'user.name=check', '-c', 'user.email=check@example.com', 'commit', '-q', '--allow-empty', '-m', 'first']]) {
