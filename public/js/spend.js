@@ -1,5 +1,5 @@
 // Spend view: what Claude Code cost on this Mac each day, at API list prices, and where a day's money went.
-import { state, api, h, icon, actions, guard, ltr } from './ui.js';
+import { state, api, h, icon, actions, guard, ltr, money, count } from './ui.js';
 
 const DAYS_SHOWN = 35;
 const TYPES = [
@@ -22,8 +22,6 @@ export function mount(el) {
 export const show = () => load();
 export const toolbar = () => [h('button', { class: 'btn sm', onClick: () => load() }, icon('refresh', 13), 'Refresh')];
 
-const money = n => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const count = n => Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
 const parseDay = day => new Date(`${day}T12:00:00`);
 const dayLabel = (day, opts = { weekday: 'short', month: 'short', day: 'numeric' }) =>
   day === today ? 'Today' : parseDay(day).toLocaleDateString(undefined, opts);

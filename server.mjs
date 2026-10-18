@@ -209,12 +209,14 @@ route('POST', '/api/claude-session', ({ req, body }) => {
   return {};
 });
 
-// Claude's status line reports its context window's size (see statusLine in lib/sessions.mjs), for lead upkeep.
+// Claude's status line reports its context window's size (see statusLine in lib/sessions.mjs), for lead upkeep,
+// and that a reply came in, for the pane meter.
 route('POST', '/api/context', ({ req, body }) => {
   const s = caller(req);
   if (!s) throw fail(404, 'Unknown session');
   const size = Number(body.context_window?.context_window_size);
   if (size >= 10_000 && size <= 100_000_000) s.contextWindow = size;
+  S.meterSoon(s);
   return {};
 });
 
@@ -798,6 +800,8 @@ async function mcp(req, res, json) {
 // Each terminal pane attaches to one session: it gets the current screen, then live output.
 const wss = new WebSocketServer({ noServer: true });
 function upgrade(req, socket, head) {
+  // Node hands an upgrade's socket over with no error listener, so a client resetting it would crash the server.
+  socket.on('error', () => socket.destroy());
   try {
     const url = new URL(req.url, 'http://localhost');
     const s = url.pathname === '/ws' && S.sessions.get(url.searchParams.get('id'));
