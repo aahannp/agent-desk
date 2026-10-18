@@ -334,9 +334,9 @@ try {
   assert.equal((await request('GET', '/api/usage?day=../etc')).status, 400, 'day must be a date');
   const savedTheme = db.settings.theme;
   db.settings.theme = 'latte';
-  assert.equal(settingsOf(command({ ...base, resume: false }, '', null).args).theme, 'light', "claude's panes follow a light Agent Desk theme");
+  assert.equal(settingsOf(command({ ...base, resume: false }, '', null).args).theme, 'light-ansi', "claude's panes paint with a light Agent Desk theme's own colours");
   db.settings.theme = 'nord';
-  assert.equal(settingsOf(command({ ...base, resume: false }, '', null).args).theme, undefined, "a dark one leaves claude's own theme alone");
+  assert.equal(settingsOf(command({ ...base, resume: false }, '', null).args).theme, 'dark-ansi', "and with a dark one's");
   db.settings.theme = savedTheme;
 
   // The whole chat lifecycle, with a stand-in `claude` on the PATH that prints its arguments and exits
