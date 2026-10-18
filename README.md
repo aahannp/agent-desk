@@ -55,9 +55,9 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
 - **Files**: a file tree and the Monaco editor (VS Code's editor), for the project or any agent's worktree.
 - **Browser panes** for your dev server, **command blocks** in shells (each command and its output as a
   block), **screenshots** you can mark up and hand to an agent, **voice input** (on-device in the Mac app),
-  **16 themes**, a **command palette** (⌘K) and an animated cursor. Claude Code panes paint with the theme's own
-  colours (prompt bar, selection, accents), so switching themes repaints them; between light and dark, a pane
-  follows once it's reopened.
+  **16 themes**, a **command palette** (⌘K) and an animated cursor. Claude Code panes use the theme's own colours
+  for their prompt bar, text and selection (kept readable), through a Claude Code theme Agent Desk keeps at
+  `~/.claude/themes/agent-desk.json`. Switching themes, light or dark, repaints open panes too.
 - **Artifacts**: pages, reports and charts your agents make (they save them with the `save_artifact` tool). Sort them into folders by dragging a page onto one or using its right-click menu, and agents can file a page in a folder as they save it.
   View them in the app or your browser, and publish one to GitHub Pages with one click, using an account
   you're signed in to with `gh`. Agent Desk keeps them in one repo it makes, and never writes to any other.
