@@ -306,12 +306,30 @@ try {
     usage: { input_tokens: input, cache_read_input_tokens: read, cache_creation_input_tokens: created, output_tokens: 50 } }, ...extra });
   const boundary = (trigger, postTokens) => line({ type: 'system', subtype: 'compact_boundary', content: 'Conversation compacted', compactMetadata: { trigger, preTokens: 150_000, postTokens } });
   const summary = text => line({ type: 'user', isCompactSummary: true, isVisibleInTranscriptOnly: true, message: { role: 'user', content: text } });
+  const upkeepView = f => (({ used, compactions, summary }) => ({ used, compactions, summary }))(transcriptContext(f));
   fs.writeFileSync(fixture, `${[reply(2, 90_000, 500), reply(9, 9, 9, { isSidechain: true })].join('\n')}\n`);
-  assert.deepEqual(transcriptContext(fixture), { used: 90_502, compactions: 0, summary: '' }, "used = the last reply's input, cached or not; a subagent's doesn't count");
+  assert.deepEqual(upkeepView(fixture), { used: 90_502, compactions: 0, summary: '' }, "used = the last reply's input, cached or not; a subagent's doesn't count");
   fs.appendFileSync(fixture, `${[boundary('manual', 8000), summary('Summary: first')].join('\n')}\n`);
-  assert.deepEqual(transcriptContext(fixture), { used: 8000, compactions: 1, summary: 'Summary: first' }, 'a /compact counts, and its size after stands until the next reply');
+  assert.deepEqual(upkeepView(fixture), { used: 8000, compactions: 1, summary: 'Summary: first' }, 'a /compact counts, and its size after stands until the next reply');
   fs.appendFileSync(fixture, `${[reply(1, 40_000, 0), boundary('auto', 9000), summary('Summary: second'), reply(3, 12_000, 1000)].join('\n')}\n${reply(1, 1, 1).slice(0, 30)}`);
-  assert.deepEqual(transcriptContext(fixture), { used: 13_003, compactions: 2, summary: 'Summary: second' }, "Claude's own auto-compaction counts too, and a half-written line waits");
+  assert.deepEqual(upkeepView(fixture), { used: 13_003, compactions: 2, summary: 'Summary: second' }, "Claude's own auto-compaction counts too, and a half-written line waits");
+
+  // The pane meter: what a conversation's replies cost, each response once (its lines share message.id, the last
+  // has the most output), Claude Code's own made-up replies and subagents left out, unknown models counted apart
+  {
+    const costed = path.join(tmp, 'costed.jsonl');
+    const bill = (id, model, usage, extra = {}) => line({ type: 'assistant', message: { id, model, usage }, ...extra });
+    fs.writeFileSync(costed, `${[bill('msg_a', 'claude-opus-5-5', { input_tokens: 1000, output_tokens: 10 }), bill('msg_a', 'claude-opus-5-5', { input_tokens: 1000, output_tokens: 200 }),
+      bill('msg_b', 'claude-mystery-9', { output_tokens: 5 }), bill('msg_s', '<synthetic>', { output_tokens: 0 }),
+      bill('msg_x', 'claude-opus-5-5', { output_tokens: 99_999 }, { isSidechain: true })].join('\n')}\n`);
+    const spent = transcriptContext(costed);
+    assert.ok(Math.abs(spent.cost - 0.008) < 1e-12, `opus: 1000 in at $4/M + 200 out at $20/M, once: ${spent.cost}`);
+    assert.deepEqual([spent.tokens, spent.unpriced], [{ input: 1000, output: 205, read: 0, write: 0 }, 1], 'tokens by type; the unknown model is not priced');
+    fs.appendFileSync(costed, `${bill('msg_c', 'claude-haiku-5-5', { cache_read_input_tokens: 1000, cache_creation_input_tokens: 300, output_tokens: 100 })}\n`);
+    const more = transcriptContext(costed);
+    assert.ok(Math.abs(more.cost - (0.008 + 0.00006 + 300 * 0.125 / 1e6)) < 1e-12, `a new reply adds on, read incrementally: ${more.cost}`);
+    assert.deepEqual(more.tokens, { input: 1000, output: 305, read: 1000, write: 300 });
+  }
 
   // Spend: one API response is several lines sharing message.id, a clone copies them into another file, and 1h cache writes cost more
   const close = (a, b, what) => assert.ok(Math.abs(a - b) < 1e-9, `${what}: ${a} vs ${b}`);
@@ -732,11 +750,30 @@ esac
     await paint();
     await upkeep();
     assert.ok(!(await compacted()), 'under the threshold (100k of the 200k default window): nothing');
+    // The pane meter reaches the page over /api/events once the status line reports
+    const meterEvent = new Promise((resolve, reject) => {
+      const req = http.get(`${SELF}/api/events`, { headers: { 'x-desk-token': desk.token } }, res => {
+        let buffer = '';
+        res.on('data', chunk => {
+          for (const data of (buffer += chunk).match(/^data: .*$/gm) ?? []) {
+            const e = JSON.parse(data.slice(6));
+            if (e.type === 'meter' && e.id === s.id) { req.destroy(); resolve(e); }
+          }
+        });
+      });
+      req.on('error', () => {});
+      setTimeout(() => { req.destroy(); reject(new Error('no meter event')); }, 5000);
+    });
     const report = size => request('POST', '/api/context', { token: s.agentToken, body: { context_window: { context_window_size: size } } });
     assert.equal((await report(5)).status, 200);
     assert.equal(s.contextWindow, undefined, 'a nonsense window size is ignored');
     await report(1_000_000);
     assert.equal(s.contextWindow, 1_000_000, 'its status line reports the real window');
+    const pushed = await meterEvent;
+    assert.deepEqual(pushed.meter, { used: 100_000, window: 1_000_000, effective: 1_000_000, cost: 0, tokens: { input: 0, output: 0, read: 100_000, write: 0 }, unpriced: 1 },
+      "the meter is pushed over /api/events: this transcript's reply names no model, so it's unpriced");
+    assert.deepEqual((await ok('GET', '/api/sessions')).find(x => x.id === s.id).meter, pushed.meter, 'and listed with the session, for a page that loads later');
+    assert.equal((await ok('GET', '/api/sessions')).find(x => x.id === worker.id).meter, undefined, 'a pane whose status line never reported shows nothing');
     fs.appendFileSync(transcript, `${line({ type: 'assistant', message: { content: [{ type: 'text', text: 'Planning the login work' }], usage: { input_tokens: 0, cache_read_input_tokens: 150_000, cache_creation_input_tokens: 0 } } })}\n`);
     await ok('PATCH', '/api/settings', { leadUpkeep: { ...UP, windowCap: 1_000_000 } });
     await paint();
