@@ -316,6 +316,20 @@ textarea.input { resize: vertical; min-height: 84px; line-height: 1.55; }
 .pane-sub .sep { opacity: .4; }
 .pane-sub button { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; }
 .pane-tools { display: flex; align-items: center; gap: 2px; }
+/* The context meter on a Claude pane: quiet until the context fills (amber over 70%, red over 90%). On a narrow pane the
+   cost goes first, then the whole meter, so the title keeps its room. */
+.pane-head { container-type: inline-size; }
+.meter { display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0; font: 500 10.5px var(--mono); font-variant-numeric: tabular-nums;
+  color: var(--dim); white-space: nowrap; border-radius: 6px; cursor: default; }
+.meter[hidden] { display: none; }
+.meter-bar { width: 26px; height: 4px; border-radius: 2px; background: var(--soft); overflow: hidden; }
+.meter-bar::before { content: ''; display: block; width: var(--fill, 0%); height: 100%; border-radius: inherit; background: color-mix(in srgb, currentColor 70%, transparent); }
+.meter-cost { padding-left: 7px; border-left: 1px solid var(--hair-strong); }
+.meter.warn { color: var(--warn); }
+.meter.bad { color: var(--bad); }
+.meter.warn .meter-cost, .meter.bad .meter-cost { color: var(--dim); }
+@container (max-width: 520px) { .meter-cost { display: none; } }
+@container (max-width: 400px) { .meter { display: none; } }
 .pane-body { position: relative; flex: 1; min-height: 0; display: flex; }
 /* content-box: xterm's fit addon reads this box's CSS width and height as the space to fill, so the padding must not be
    counted in them, or the last column slides under the scrollbar and the bottom row past the edge. */

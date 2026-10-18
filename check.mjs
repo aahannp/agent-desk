@@ -15,7 +15,7 @@ import { THEMES } from './public/js/themes.js';
 import { transcriptContext } from './lib/transcripts.mjs';
 import { priceReply } from './lib/usage.mjs';
 import { isNewer } from './lib/update.mjs';
-import { parseMarkdown } from './public/js/ui.js';
+import { parseMarkdown, meterView } from './public/js/ui.js';
 import { stripDeskCookies } from './lib/cookies.mjs';
 import { randomUUID } from 'node:crypto';
 
@@ -329,6 +329,13 @@ try {
     const more = transcriptContext(costed);
     assert.ok(Math.abs(more.cost - (0.008 + 0.00006 + 300 * 0.125 / 1e6)) < 1e-12, `a new reply adds on, read incrementally: ${more.cost}`);
     assert.deepEqual(more.tokens, { input: 1000, output: 305, read: 1000, write: 300 });
+    const m = { used: 145_000, window: 1_000_000, effective: 1_000_000, cost: 1.234, tokens: { input: 12, output: 30_000, read: 2_100_000, write: 300_000 }, unpriced: 0 };
+    const shown = meterView(m);
+    assert.deepEqual([shown.context, shown.cost, shown.level], ['145K · 15%', '$1.23', ''], 'the header reads "145K · 15%" and the cost, neutral');
+    assert.match(shown.details, /145K of 1M \(15%\)[^]*input 12 · output 30K · cache read 2\.1M · cache write 300K[^]*\$1\.23/, 'the tooltip has the window, tokens and cost');
+    assert.deepEqual([70, 71, 90, 91].map(pct => meterView({ ...m, used: pct * 10_000 }).level), ['', 'warn', 'warn', 'bad'], 'amber over 70%, red over 90%');
+    assert.match(meterView({ ...m, used: 160_000, effective: 200_000 }).details, /Effective window: 200K[^]*model's is 1M/, 'an auto-compact window smaller than the model\'s is the one that counts');
+    assert.deepEqual([meterView({ ...m, cost: 0, unpriced: 3 }).cost, meterView({ ...m, cost: 0 }).cost], ['', '$0.00'], 'no cost shown when nothing could be priced');
   }
 
   // Spend: one API response is several lines sharing message.id, a clone copies them into another file, and 1h cache writes cost more
