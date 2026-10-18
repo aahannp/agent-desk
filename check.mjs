@@ -34,7 +34,9 @@ process.env.CLAUDE_CONFIG_DIR = path.join(tmp, 'claude-home'); // and never your
 fs.writeFileSync(path.join(tmp, 'data', 'token'), ''); // an empty secret file must never mean "no secret"
 fs.mkdirSync(path.join(tmp, 'data', 'mcp'));
 fs.writeFileSync(path.join(tmp, 'data', 'mcp', 'gone1234.json'), 'left by a crash');
+fs.writeFileSync(path.join(tmp, 'data', 'desk.json'), JSON.stringify({ settings: { agentDefaults: { claude: { model: '', effort: '' }, lead: { model: 'opus', effort: 'high' } } } }));
 const desk = await start({ port: 0, dataDir: path.join(tmp, 'data') });
+assert.deepEqual(db.settings.agentDefaults, { claude: { model: 'sonnet', effort: '' }, lead: { model: 'opus', effort: 'high' } }, "an old install's workers move to Sonnet; leads stay on Opus");
 assert.ok(desk.token.length >= 32, 'an empty token file is replaced with a real secret');
 assert.ok(!fs.existsSync(path.join(tmp, 'data', 'mcp', 'gone1234.json')), "a session's MCP file never outlives a restart");
 const SELF = `http://127.0.0.1:${desk.port}`;
@@ -292,6 +294,12 @@ try {
   assert.ok(!resumed.includes('--session-id'), 'never both');
   const settingsOf = c => JSON.parse(fs.readFileSync(c[c.indexOf('--settings') + 1], 'utf8'));
   const hooks = settingsOf(fresh).hooks;
+  assert.equal(settingsOf(fresh).autoCompactWindow, 200_000, 'claude compacts itself at a 200K window');
+  process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = '300000';
+  assert.equal(settingsOf(command({ ...base, resume: false }, '', null).args).autoCompactWindow, undefined, 'unless your environment sets one');
+  delete process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
+  fs.writeFileSync(path.join(claudeHome, 'settings.json'), JSON.stringify({ autoCompactWindow: 500_000 }));
+  assert.equal(settingsOf(command({ ...base, resume: false }, '', null).args).autoCompactWindow, undefined, 'or your settings.json does');
   assert.match(hooks.PostToolUse[0].hooks[0].command, /\/api\/touched/, 'every file an agent edits is reported');
   fs.writeFileSync(path.join(claudeHome, 'settings.json'), JSON.stringify({ statusLine: { type: 'command', command: 'cat # yours', padding: 1 } }));
   const bar = JSON.parse(fs.readFileSync((args => args[args.indexOf('--settings') + 1])(command({ ...base, resume: false }, '', null).args), 'utf8')).statusLine;
@@ -427,15 +435,23 @@ try {
   assert.deepEqual((await runOf({ specialist: 'christie', model: 'stronger', effort: 'higher' })).slice(0, 2), ['opus', 'high'], 'stronger and higher go up a step');
   assert.deepEqual((await runOf({ specialist: 'scout', model: 'lighter', effort: 'lower' })).slice(0, 2), ['haiku', 'low'], 'and stop at the lightest');
   const [pm, pe, pOut] = await runOf({ kind: 'agent', agent: 'claude' });
-  assert.deepEqual([pm, pe], ['', ''], 'a plain Claude agent uses your own Claude Code defaults');
-  assert.doesNotMatch(pOut, /--model|--effort/, 'so no flags are passed');
-  assert.deepEqual((await runOf({ kind: 'agent', agent: 'claude', model: 'lighter' })).slice(0, 2), ['sonnet', ''], 'lighter than the default (Opus) is Sonnet');
+  assert.deepEqual([pm, pe], ['sonnet', ''], 'a plain Claude agent (a worker) runs on Sonnet, with your own effort');
+  assert.match(pOut, /--model sonnet/, 'passed to claude');
+  assert.doesNotMatch(pOut, /--effort/, 'and no effort flag');
+  assert.deepEqual((await runOf({ kind: 'agent', agent: 'claude', model: 'lighter' })).slice(0, 2), ['haiku', ''], 'lighter than the worker default (Sonnet) is Haiku');
   assert.deepEqual((await runOf({ kind: 'agent', agent: 'claude', role: 'lead' })).slice(0, 2), ['opus', 'high'], 'a lead agent has its own defaults');
   assert.equal((await request('PATCH', '/api/settings', { body: { agentDefaults: { claude: { model: 'gpt', effort: '' }, lead: { model: '', effort: '' } } } })).status, 400, 'defaults must be known models');
   assert.equal((await request('PATCH', '/api/settings', { body: { scrollSpeed: 10 } })).status, 400, 'scroll speed has a sensible range');
   await ok('PATCH', '/api/settings', { agentDefaults: { claude: { model: 'sonnet', effort: 'low' }, lead: { model: 'opus', effort: 'high' } } });
   assert.deepEqual((await runOf({ kind: 'agent', agent: 'claude' })).slice(0, 2), ['sonnet', 'low'], 'and you can change them in Settings');
+  const plainSpec = await ok('POST', '/api/specialists', { name: 'Plain', role: 'Left on the default model' });
+  assert.deepEqual((await runOf({ specialist: 'Plain' })).slice(0, 2), ['sonnet', 'low'], 'a specialist left on the default runs as a worker does');
+  assert.equal((await ok('GET', '/api/specialists')).find(x => x.id === plainSpec.id).model, '', 'without its profile being rewritten');
+  await ok('DELETE', `/api/specialists/${plainSpec.id}`);
   await ok('PATCH', '/api/settings', { agentDefaults: { claude: { model: '', effort: '' }, lead: { model: 'opus', effort: 'high' } } });
+  const [, , yoursOut] = await runOf({ kind: 'agent', agent: 'claude' });
+  assert.doesNotMatch(yoursOut, /--model|--effort/, "set to your Claude Code's own default, no flags are passed");
+  await ok('PATCH', '/api/settings', { agentDefaults: { claude: { model: 'sonnet', effort: '' }, lead: { model: 'opus', effort: 'high' } } });
   for (const x of await ok('GET', '/api/sessions')) if (x.exited) await ok('DELETE', `/api/sessions/${x.id}`);
 
   const rhea = await ok('POST', '/api/specialists', { name: 'Rhea', role: 'Code reviewer: finds bugs before you merge', model: 'opus', instructions: 'Review carefully.' });
@@ -443,6 +459,18 @@ try {
   assert.equal((await request('POST', '/api/specialists', { body: { name: 'Max', role: 'x', model: 'gpt-9' } })).status, 400, 'only known models');
   await ok('PATCH', `/api/specialists/${rhea.id}`, { model: 'sonnet' });
   const viaTool = async (name, args) => (await rpc('tools/call', { name, arguments: args }, { 'x-desk-session': shell.id })).result;
+  // Changing a task answers briefly, never with its description and notes read back
+  const replyOf = async (name, args) => JSON.parse((await viaTool(name, args)).content[0].text);
+  const made = await replyOf('create_task', { title: 'Trim replies', description: 'long '.repeat(400) });
+  const noted = await replyOf('comment_on_task', { id: made.id, text: 'note '.repeat(400) });
+  const moved = await replyOf('update_task', { id: made.id, status: 'review' });
+  assert.deepEqual([made, noted, moved].map(Object.keys), Array(3).fill(['id', 'status', 'title', 'branch']), 'create, comment and update answer with id, status, title and branch');
+  assert.equal(moved.status, 'review');
+  const startedTask = await replyOf('start_task', { id: made.id, worktree: false });
+  assert.deepEqual(Object.keys(startedTask), ['id', 'status', 'title', 'branch', 'sessionId', 'model', 'effort'], 'start_task adds the session it started');
+  assert.equal(startedTask.model, 'sonnet', 'on the worker default');
+  await exited(startedTask.sessionId);
+  await ok('DELETE', `/api/tasks/${made.id}`);
   const teamNow = JSON.parse((await viaTool('list_team', {})).content[0].text);
   assert.deepEqual(teamNow.map(x => [x.name, x.model]), [['Christie', 'sonnet'], ['Browner', 'opus'], ['Scout', 'haiku'], ['Rhea', 'sonnet']], 'agents see the whole team');
   assert.deepEqual([teamNow[3].id, teamNow[3].instructions], [rhea.id, 'Review carefully.'], 'with each full profile');
@@ -739,9 +767,12 @@ esac
     assert.equal(s.contextWindow, 1_000_000, 'its status line reports the real window');
     fs.appendFileSync(transcript, `${line({ type: 'assistant', message: { content: [{ type: 'text', text: 'Planning the login work' }], usage: { input_tokens: 0, cache_read_input_tokens: 150_000, cache_creation_input_tokens: 0 } } })}\n`);
     await ok('PATCH', '/api/settings', { leadUpkeep: { ...UP, windowCap: 1_000_000 } });
+    assert.equal(effectiveWindow(s), 200_000, "with the cap at 1M, the 200K auto-compact window Agent Desk sets claude still wins");
+    fs.writeFileSync(path.join(claudeHome, 'settings.json'), JSON.stringify({ autoCompactWindow: 1_000_000 }));
     await paint();
     await upkeep();
-    assert.ok(!(await compacted()), 'a 1M window at 150K, with the cap at 1M (15%): nothing');
+    assert.ok(!(await compacted()), 'a 1M window at 150K, with the cap and your auto-compact window at 1M (15%): nothing');
+    fs.rmSync(path.join(claudeHome, 'settings.json'));
     await ok('PATCH', '/api/settings', { leadUpkeep: UP });
     assert.equal(effectiveWindow(s), 200_000, 'with the default cap the threshold is a % of 200K, so 150K is 75%');
     fs.writeFileSync(path.join(claudeHome, 'settings.json'), JSON.stringify({ autoCompactWindow: 100_000 }));
@@ -885,6 +916,9 @@ esac
   await screenOf(copy.id, new RegExp(`--resume ${askerChat} --fork-session`), 'carrying his conversation');
   assert.match((await fromChristie('clone_agent', { prompt: 'x' })).content[0].text, /no conversation to copy yet/, 'an agent with nothing said yet has nothing to copy');
   await ok('DELETE', `/api/sessions/${copy.id}`);
+  fs.appendFileSync(path.join(askerDir, `${askerChat}.jsonl`), `\n${line({ type: 'assistant', message: { content: [{ type: 'text', text: 'Read a lot' }], usage: { input_tokens: 10, cache_read_input_tokens: 160_000 } } })}\n`);
+  const tooBig = await fromChristie('clone_agent', { agent: 'Adam', prompt: 'You take the tests' });
+  assert.ok(tooBig.isError && /160K tokens, too big to copy.*start_agent/.test(tooBig.content[0].text), 'a conversation past 150K is not copied; start_agent with a brief is suggested');
   const elsewhere = path.join(tmp, 'other-project');
   fs.mkdirSync(elsewhere, { recursive: true });
   for (const args of [['init', '-q', '-b', 'main'], ['-c', 'user.name=check', '-c', 'user.email=check@example.com', 'commit', '-q', '--allow-empty', '-m', 'first']]) {

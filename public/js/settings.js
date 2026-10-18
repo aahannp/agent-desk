@@ -58,7 +58,7 @@ function render() {
         avatar({ kind: 'agent', agent: a.id }), h('b', {}, a.label), h('span', { class: 'grow' }),
         a.installed ? h('span', { class: 'chip', style: { color: 'var(--ok)' } }, icon('check', 11), 'Installed') : h('span', { class: 'chip' }, 'Not found on your PATH'),
         a.installed && h('button', { class: `btn xs${s.defaultAgent === a.id ? ' primary' : ''}`, onClick: () => set({ defaultAgent: a.id }) }, s.defaultAgent === a.id ? 'Default' : 'Make default')))),
-      ...[['claude', 'Claude Code agents', 'New Claude Code panes and workers.'], ['lead', 'lead agents', 'The agent that plans and hands out the work.']].map(([kind, title, text]) => {
+      ...[['claude', 'workers', 'New Claude Code panes, workers, and specialists left on the default. Sonnet keeps spend down; pick Opus for harder work.'], ['lead', 'lead agents', 'The agent that plans and hands out the work.']].map(([kind, title, text]) => {
         const d = s.agentDefaults?.[kind] ?? { model: '', effort: '' };
         const save = patch => set({ agentDefaults: { ...s.agentDefaults, [kind]: { ...d, ...patch } } });
         const model = modelSelect(d.model);
@@ -133,7 +133,7 @@ function leadUpkeep(u) {
   const save = patch => set({ leadUpkeep: { ...u, ...patch } });
   const number = (key, min, max, scale = 1) => h('input', { class: 'input', type: 'number', min, max, value: u[key] / scale, style: { width: '62px' },
     onChange: e => save({ [key]: Math.round(Number(e.target.value)) * scale }) });
-  return setting('Keep lead agents fresh', 'When a lead is idle with its context that full, Agent Desk compacts it, and after that many compactions a fresh lead with the same name takes over its work. A smaller window (the model\'s own, or your Claude Code auto-compact window) wins.',
+  return setting('Keep lead agents fresh', 'When a lead is idle with its context that full, Agent Desk compacts it, and after that many compactions a fresh lead with the same name takes over its work. A smaller window (the model\'s own, or the auto-compact window: your Claude Code\'s, else 200K) wins.',
     h('div', { class: 'row', style: { flexWrap: 'wrap' } },
       'Compact at', number('compactAt', 50, 95), '% of a', number('windowCap', 50, 2000, 1000), 'K-token window, replace after', number('replaceAfter', 1, 10), 'compactions',
       h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: u.on, onChange: e => save({ on: e.target.checked }) }))));
@@ -147,9 +147,9 @@ function editSpecialist(x = null) {
   const name = h('input', { class: 'input', value: x?.name ?? '', placeholder: 'A name, like Rhea' });
   const role = h('input', { class: 'input', value: x?.role ?? '', placeholder: 'What they are good at, like: Code reviewer: finds bugs before you merge' });
   const model = modelSelect(x?.model ?? '');
-  model.options[0].textContent = 'Your Claude Code default';
+  model.options[0].textContent = 'Worker default (Settings)';
   const effort = effortSelect(x?.effort ?? '');
-  effort.options[0].textContent = 'Your Claude Code default';
+  effort.options[0].textContent = 'Worker default (Settings)';
   const instructions = h('textarea', { class: 'input', rows: 9, value: x?.instructions ?? '', placeholder: 'How they work: what to focus on, what to avoid, how to report back.' });
   modal({
     title: x ? `Edit ${x.name}` : 'Add a specialist', width: 600,
