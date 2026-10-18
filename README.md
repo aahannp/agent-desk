@@ -31,6 +31,14 @@ aren't quarantined, so macOS doesn't warn; that also means nothing checks the do
 The DMG is signed ad-hoc (there's no Apple developer account), so the first time you open the copied app,
 right-click it and choose Open (macOS 15+: System Settings → Privacy & Security → Open Anyway).
 
+### Verifying a download
+
+Each release lists its DMG's SHA-256 in the notes. From v1.9.0, GitHub Actions builds the DMG and adds a `.sha256` file and a signed build-provenance attestation.
+Run these in the folder with the download (`<name>` is the DMG's file name):
+
+    shasum -a 256 -c <name>.dmg.sha256
+    gh attestation verify <name>.dmg -R aahannp/agent-desk
+
 ## Requirements
 
 | Component | Needed? | Tested with |
