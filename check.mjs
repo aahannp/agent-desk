@@ -44,8 +44,10 @@ const EVIL = 'https://evil.example';
 
 function request(method, url, { headers = {}, body, token = desk.token } = {}) {
   return new Promise((resolve, reject) => {
+    // A fresh connection each time: the git calls here block this process (and so the server) for seconds, past the
+    // server's 5s keep-alive timeout, so a reused socket can be closed under the next request (read ECONNRESET).
     const req = http.request(`${SELF}${url}`, {
-      method, headers: { 'content-type': 'application/json', ...(token ? { 'x-desk-token': token } : {}), ...headers },
+      agent: false, method, headers: { 'content-type': 'application/json', ...(token ? { 'x-desk-token': token } : {}), ...headers },
     }, res => {
       let data = '';
       res.on('data', chunk => (data += chunk));

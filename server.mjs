@@ -800,6 +800,8 @@ async function mcp(req, res, json) {
 // Each terminal pane attaches to one session: it gets the current screen, then live output.
 const wss = new WebSocketServer({ noServer: true });
 function upgrade(req, socket, head) {
+  // Node hands an upgrade's socket over with no error listener, so a client resetting it would crash the server.
+  socket.on('error', () => socket.destroy());
   try {
     const url = new URL(req.url, 'http://localhost');
     const s = url.pathname === '/ws' && S.sessions.get(url.searchParams.get('id'));
