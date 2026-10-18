@@ -18,7 +18,7 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
 
 ### Verifying a download
 
-Each release DMG comes with a `.sha256` file and a signed build-provenance attestation from GitHub Actions.
+Each release lists its DMG's SHA-256 in the notes. From v1.9.0, GitHub Actions builds the DMG and adds a `.sha256` file and a signed build-provenance attestation.
 Run these in the folder with the download (`<name>` is the DMG's file name):
 
     shasum -a 256 -c <name>.dmg.sha256
