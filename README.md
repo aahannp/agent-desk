@@ -3,18 +3,88 @@
 A Mac app for running a team of coding agents side by side, like BridgeMind's BridgeSpace. Every pane is a
 real terminal running the agent's own CLI, so Claude Code uses your normal Claude login and subscription.
 
-<img src="docs/assets/agents.webp" alt="Agent Desk with a lead agent and four workers running side by side in a grid of terminal panes" width="900">
+[Download](https://github.com/aahannp/agent-desk/releases/latest) ·
+[Releases](https://github.com/aahannp/agent-desk/releases) ·
+[Issues](https://github.com/aahannp/agent-desk/issues) ·
+[Report a bug](https://github.com/aahannp/agent-desk/issues/new) ·
+[Verify a release](#verify-a-release) ·
+[Website](https://aahannp.github.io/agent-desk/)
 
-## Use it
+<img src="docs/assets/demo.gif" alt="A lead agent is given a goal, plans three tasks on the Board, three workers edit files side by side in their own worktrees, and Review shows the diff" width="900">
 
-    npm install
-    npm start            # browser version: open the link it prints
-    npm run app          # Mac app, from source
-    npm run dist         # builds dist/Agent Desk-<version>-<arch>.dmg
-    npm run check        # self-check of the server, security and MCP
+<sub>Recorded from the real app (1.8.2 code) with a demo repo. The agents' replies are scripted, so no model ran;
+the board, worktrees, edits and diff are real.</sub>
+
+## Install
+
+Download the DMG from the [latest release](https://github.com/aahannp/agent-desk/releases/latest), open it and
+drag Agent Desk into Applications. Or install from Terminal:
+
+    curl -fsSL https://aahannp.github.io/agent-desk/install.sh | bash
+
+The installer ([docs/install.sh](docs/install.sh)) stops unless it's on macOS with Apple silicon and Agent Desk is
+closed, asks GitHub's API for the latest release, downloads its DMG with curl into a temporary folder, mounts it
+read-only, replaces `/Applications/Agent Desk.app` with the copy inside and opens it. Files curl downloads
+aren't quarantined, so macOS doesn't warn; that also means nothing checks the download, the script included.
+[Verify a release](#verify-a-release) if you want to.
 
 The DMG is signed ad-hoc (there's no Apple developer account), so the first time you open the copied app,
 right-click it and choose Open (macOS 15+: System Settings → Privacy & Security → Open Anyway).
+
+## Requirements
+
+| Component | Needed? | Tested with |
+| --- | --- | --- |
+| Mac with Apple silicon | Required: the DMG is arm64 only | Apple silicon |
+| macOS 13 (Ventura) or later | Required: [Electron 44's minimum](https://www.electronjs.org/blog/electron-44-0) | macOS 26.4 |
+| [Claude Code](https://code.claude.com/docs/en/overview) (`claude`), signed in | Required | 2.1.302 |
+| Codex CLI (`codex`) | Optional | 0.146.0 |
+| Gemini CLI (`gemini`) | Optional | Supported, not tested |
+| Cursor Agent (`cursor-agent`) | Optional | Supported, not tested |
+| git | For worktrees and Review | 2.50.1 |
+
+Agent Desk finds each CLI on your login shell's `PATH` and runs it in a pane with your own login. Claude Code
+agents get the board's MCP tools and Agent Desk's hooks; Codex, Cursor Agent and Gemini CLI (`gemini -i`) are
+started with your prompt and nothing else, so they can't use the board yet.
+
+## Use it from source
+
+    npm ci
+    npm start            # browser version: open the link it prints
+    npm run app          # Mac app, from source
+    npm run dist         # builds dist/Agent Desk-<version>-arm64.dmg
+    npm run check        # self-check of the server, security and MCP
+
+## How it works
+
+```mermaid
+flowchart LR
+  subgraph app["Agent Desk.app (Electron)"]
+    page["Window: the page<br/>public/"]
+    server["Node server on 127.0.0.1<br/>server.mjs"]
+  end
+  page -- "HTTP and server-sent events" --> server
+  page -- "WebSocket: terminal input and output" --> server
+  server -- "node-pty" --> panes["Agent and shell panes<br/>claude, codex, gemini, cursor-agent, zsh"]
+  panes -- "board tools: MCP at /mcp, one token per agent" --> server
+  server -- "git worktree, diff, merge" --> repo["Your repo<br/>.agent-desk/worktrees/"]
+  panes -- "edit files" --> repo
+  server -. "reads, never writes" .-> transcripts["~/.claude/projects<br/>Claude Code transcripts, for Spend"]
+```
+
+- **Electron shell** ([electron/main.mjs](electron/main.mjs)): starts the server inside the app and shows its page
+  in one window. `npm start` runs the same server for a browser instead.
+- **Local server** ([server.mjs](server.mjs)): Node's HTTP server on 127.0.0.1, port 4848 or any free one. Every
+  request needs this install's secret.
+- **Terminals** ([lib/sessions.mjs](lib/sessions.mjs)): each pane is the agent's real CLI under node-pty, mirrored
+  into a headless xterm and streamed to the page over a WebSocket.
+- **Board tools** ([lib/mcp.mjs](lib/mcp.mjs)): the server is also an MCP server at `/mcp`. Each Claude agent
+  gets a config with its own token, and the lead plans tasks and starts workers through those tools.
+- **Worktrees** ([lib/git.mjs](lib/git.mjs)): each worker gets `git worktree add -b <branch>` under
+  `.agent-desk/worktrees/` in your project. Review diffs it against where it branched, and commits, merges or
+  discards it; Merge always asks you first.
+- **Spend** ([lib/usage.mjs](lib/usage.mjs)): reads Claude Code's transcripts and prices each reply at API list
+  prices.
 
 ## What's in it
 
@@ -102,6 +172,79 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
 The board, settings and the secret live in `data/` (browser version) or `~/Library/Application Support/Agent Desk`
 (Mac app). Spend history is in the same `desk.json`. For Claude Code panes it also writes one theme file,
 `~/.claude/themes/agent-desk.json`, and reads (never changes) Claude Code's transcripts for Spend. Agent worktrees and screenshots go in `.agent-desk/` inside each project, which is kept out of git.
+
+## Verify a release
+
+Agent Desk isn't notarized, so macOS can't vouch for it. You can check a download yourself. Full guide, with what
+each command printed for 1.8.2: [aahannp.github.io/agent-desk/verify.html](https://aahannp.github.io/agent-desk/verify.html).
+
+1. **Checksum.** Compare the SHA-256 of your file with the one GitHub shows for it on the release page, the
+   website's Download section, or the API:
+
+       shasum -a 256 ~/Downloads/Agent-Desk-*.dmg
+       gh release view v1.8.2 -R aahannp/agent-desk --json assets --jq '.assets[] | .name + "  " + .digest'
+
+   For 1.8.2 both print `9e9daaa1ee23ff2f80a9a02ce1fc43b5d3a0de8ff1ad055333d51a5ea138ac0e`.
+2. **Signature.** `codesign -dv --verbose=2 "/Applications/Agent Desk.app"` shows `Signature=adhoc`, flags
+   `adhoc,runtime` and no Team ID: the app is signed, so changing it breaks the signature, but not with an Apple
+   certificate, so it says nothing about who built it. `codesign --verify --deep --strict "/Applications/Agent Desk.app"`
+   should say `valid on disk`; `spctl -a -vv` says `rejected` until it's notarized.
+3. **Code against source.** The app's own code is plain JavaScript in `Contents/Resources/app.asar`. Unpack it and
+   diff it against the tag:
+
+       v=$(defaults read "/Applications/Agent Desk.app/Contents/Info" CFBundleShortVersionString)
+       npx --yes @electron/asar@4.3.1 extract "/Applications/Agent Desk.app/Contents/Resources/app.asar" app
+       git clone --branch "v$v" --depth 1 https://github.com/aahannp/agent-desk src
+       for d in electron lib public shell server.mjs; do diff -r "src/$d" "app/$d" && echo "$d: identical"; done
+
+   For 1.8.2 all five are identical. What legitimately differs: `package.json` loses its `scripts`,
+   `devDependencies` and `build` sections; `node_modules` matches `npm ci --omit=dev` minus READMEs, typings,
+   source maps and unused builds; node-pty's `pty.node` and `spawn-helper` are re-signed ad-hoc, so the files
+   differ but their machine code (`otool -t`) is the same.
+4. **Build attestation** (from v1.9, once releases are built by GitHub Actions; not available for 1.8.2 or
+   earlier): `gh attestation verify Agent-Desk-<version>-arm64.dmg -R aahannp/agent-desk`.
+
+## Build from source
+
+From a clean clone of a release tag, on a Mac with Apple silicon, git, Node.js and npm (tested with Node 25.5.0
+and npm 11.8.0) and the Xcode Command Line Tools (`swiftc` builds the voice helper):
+
+    git clone --branch v1.8.2 --depth 1 https://github.com/aahannp/agent-desk
+    cd agent-desk
+    npm ci               # exact versions from package-lock.json
+    npm run app          # run it
+    npm run dist         # or build dist/Agent Desk-1.8.2-arm64.dmg (under 3 minutes here)
+
+The DMG isn't reproducible bit for bit: our build of 1.8.2 had a different checksum from the released DMG, because
+a disk image records when it was made. What's inside does reproduce. Our `app.asar` had the same SHA-256 as the
+release's (`77906f63…20c4`), and with the same Node, npm and Xcode all 298 files in the app matched, signatures
+included. A different Xcode or macOS may compile the voice helper or sign binaries differently, so compare
+`app.asar`, or unpack it as in step 3:
+
+    shasum -a 256 "dist/mac-arm64/Agent Desk.app/Contents/Resources/app.asar" "/Applications/Agent Desk.app/Contents/Resources/app.asar"
+
+## Roadmap
+
+From the code and the [release notes](https://github.com/aahannp/agent-desk/releases). Ideas and bugs go in
+[Issues](https://github.com/aahannp/agent-desk/issues).
+
+**Implemented, stable**
+- Claude Code and shell panes, up to 16 at once, with status and notifications
+- Lead agent, Board and a git worktree per worker; Review with diffs, commit, merge and discard
+- Agents that message, read and copy each other; the team of specialists
+- Graph, Spend, Files, Artifacts with folders and GitHub Pages publishing, 16 themes, the update check
+- Token meter on each Claude pane, and workers on Sonnet by default (on main, shipping in 1.8.3)
+
+**Experimental**
+- Lead upkeep: auto-`/compact` and hand-over to a fresh lead (off by default, Settings → Team)
+- Voice input (Mac app only, on-device speech recognition)
+- Codex, Gemini CLI and Cursor Agent panes: they run, but without the board's tools; Gemini and Cursor untested
+- Task Notes link (needs the separate Task Notes app)
+- The browser version, `npm start` (see the cookie caveat under Safety)
+
+**Planned**
+- Release builds on GitHub Actions with build attestations (from v1.9)
+- Apple notarization (needs a developer account; no date yet)
 
 ## License
 
