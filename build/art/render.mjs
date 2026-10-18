@@ -1,5 +1,6 @@
 // Renders the app icon and the DMG background from the pages in this folder (npm run build:art).
-// Writes build/icon.icns, build/background.tiff, and the PNGs in build/art/out for review.
+// Writes build/icon.icns, build/background.tiff, and the PNGs in build/art/out for review, plus the
+// website's apple-touch icon (relay-180.png) and social card (relay-og.png).
 import { app, BrowserWindow } from 'electron';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -41,6 +42,9 @@ async function main() {
   fs.writeFileSync(path.join(OUT, 'background.png'), await render('dmg.html', 660, 420, 1));
   fs.writeFileSync(path.join(OUT, 'background@2x.png'), await render('dmg.html', 660, 420, 2));
   execFileSync('tiffutil', ['-cathidpicheck', path.join(OUT, 'background.png'), path.join(OUT, 'background@2x.png'), '-out', path.join(BUILD, 'background.tiff')]);
+
+  fs.writeFileSync(path.join(OUT, 'relay-180.png'), await render('icon.html', 180, 180, 1, 'touch'));
+  fs.writeFileSync(path.join(OUT, 'relay-og.png'), await render('og.html', 1200, 630, 1));
 
   console.log(`Art written to ${path.relative(process.cwd(), BUILD)}`);
 }
