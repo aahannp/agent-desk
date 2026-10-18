@@ -1,6 +1,7 @@
-// Agent Desk for macOS: runs the server inside the app and shows its page in one window.
+// Relay for macOS: runs the server inside the app and shows its page in one window.
 import { app, BrowserWindow, Menu, desktopCapturer, dialog, session, shell } from 'electron';
 import { execFile } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { stripDeskCookies } from '../lib/cookies.mjs';
 
@@ -24,10 +25,10 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1440, height: 900, minWidth: 1100, minHeight: 700,
     titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 18, y: 18 },
-    backgroundColor: '#0b0c10', show: false, title: 'Agent Desk',
+    backgroundColor: '#0b0c10', show: false, title: 'Relay',
   });
   win.once('ready-to-show', () => win.show());
-  // Links and window.open go to the default browser; only the Agent Desk page stays in the window.
+  // Links and window.open go to the default browser; only the Relay page stays in the window.
   win.webContents.setWindowOpenHandler(({ url }) => { openOutside(url); return { action: 'deny' }; });
   win.webContents.on('will-navigate', (event, url) => {
     if (new URL(url).origin === new URL(server.url).origin) return;
@@ -51,7 +52,7 @@ async function boot() {
   });
 
   // Electron grants every page every permission unless told otherwise, and browser panes frame other
-  // websites. So deny by default, and give Agent Desk's own top-level page only what it uses.
+  // websites. So deny by default, and give Relay's own top-level page only what it uses.
   const ownOrigin = new URL(server.url).origin;
   const ALLOWED = new Set(['clipboard-sanitized-write', 'notifications', 'media', 'display-capture', 'fullscreen']);
   const isSameOrigin = url => { try { return new URL(url).origin === ownOrigin; } catch { return false; } };
@@ -61,8 +62,8 @@ async function boot() {
   session.defaultSession.setPermissionCheckHandler((_wc, permission, origin, details) =>
     ALLOWED.has(permission) && isOwnPage(details.requestingUrl || origin, details.isMainFrame !== false));
 
-  // Cookies ignore ports, so the browser pane would hand Agent Desk's login cookie (the full token) to any
-  // localhost server it opens, such as a Docker container or a port-forward. Only Agent Desk itself gets it.
+  // Cookies ignore ports, so the browser pane would hand Relay's login cookie (the full token) to any
+  // localhost server it opens, such as a Docker container or a port-forward. Only Relay itself gets it.
   // (ws:// counts as http:// so the terminals' WebSocket keeps it.) One listener per session: keep it here.
   session.defaultSession.webRequest.onBeforeSendHeaders(({ url, requestHeaders }, callback) => {
     const name = Object.keys(requestHeaders).find(k => k.toLowerCase() === 'cookie');
@@ -73,7 +74,7 @@ async function boot() {
     callback({ requestHeaders });
   });
 
-  // Screenshots: only Agent Desk's own page (not a browser pane) may capture the screen. On macOS 15+ the
+  // Screenshots: only Relay's own page (not a browser pane) may capture the screen. On macOS 15+ the
   // system picker appears so you choose exactly what is shared; older versions get the main screen.
   session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
     const fromApp = request.frame && !request.frame.parent && new URL(request.frame.url).origin === ownOrigin;
@@ -84,6 +85,11 @@ async function boot() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' }]));
   createWindow();
 }
+
+// Relay was called Agent Desk: keep using its data folder (board, chats, settings, login) when one exists.
+// Same userData also means the same single-instance lock, so the old app and Relay never share desk.json at once.
+const oldData = path.join(app.getPath('appData'), 'Agent Desk');
+if (fs.existsSync(oldData)) app.setPath('userData', oldData);
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -99,7 +105,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('activate', () => server && !BrowserWindow.getAllWindows().length && createWindow());
   app.on('will-quit', () => server?.close());
   app.whenReady().then(boot).catch(e => {
-    dialog.showErrorBox('Agent Desk could not start', String(e?.stack || e));
+    dialog.showErrorBox('Relay could not start', String(e?.stack || e));
     app.quit();
   });
 }

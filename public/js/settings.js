@@ -53,7 +53,7 @@ function render() {
         h('input', { type: 'range', min: 0.5, max: 3, step: 0.25, value: s.scrollSpeed ?? 1, onChange: e => set({ scrollSpeed: Number(e.target.value) }) })),
       setting('Terminal and editor text size', `${s.fontSize}px`, h('input', { type: 'range', min: 10, max: 20, value: s.fontSize, onChange: e => set({ fontSize: Number(e.target.value) }) }))),
 
-    section('Agents', 'Agent Desk runs each agent\'s own command-line tool with your own login, so Claude Code uses your Claude subscription.',
+    section('Agents', 'Relay runs each agent\'s own command-line tool with your own login, so Claude Code uses your Claude subscription.',
       h('div', { class: 'agent-list' }, state.agents.map(a => h('div', { class: 'agent-row' },
         avatar({ kind: 'agent', agent: a.id }), h('b', {}, a.label), h('span', { class: 'grow' }),
         a.installed ? h('span', { class: 'chip', style: { color: 'var(--ok)' } }, icon('check', 11), 'Installed') : h('span', { class: 'chip' }, 'Not found on your PATH'),
@@ -102,20 +102,20 @@ function render() {
 
     section('Voice', state.info.voice ? 'On-device speech recognition from macOS. Nothing you say leaves your Mac.'
       : window.webkitSpeechRecognition ? 'Uses your browser\'s speech recognition, which sends audio to the browser maker. The Mac app does it on-device instead.'
-        : 'Voice needs the Agent Desk Mac app or Chrome. macOS Dictation (press Fn twice) also works in any pane.',
+        : 'Voice needs the Relay Mac app or Chrome. macOS Dictation (press Fn twice) also works in any pane.',
     setting('Language', 'What you\'ll speak in.', h('select', { class: 'input', style: { width: 'auto' }, onChange: e => set({ voiceLang: e.target.value }) },
       LANGUAGES.map(([id, label]) => h('option', { value: id, selected: s.voiceLang === id }, label)))),
     setting('How to use it', 'Click into a pane or text box, press ⌘⇧M and talk. It stops after a short pause. End with “send” to press Enter.', h('kbd', {}, '⌘⇧M'))),
 
-    section('Notifications', 'Get told when an agent needs you or finishes, even when Agent Desk is in the background.',
+    section('Notifications', 'Get told when an agent needs you or finishes, even when Relay is in the background.',
       setting('Desktop notifications', !('Notification' in window) ? 'Not supported here.' : Notification.permission === 'granted' ? 'On.' : 'Off. Your browser will ask you first.',
         'Notification' in window && Notification.permission !== 'granted'
           ? h('button', { class: 'btn sm', onClick: async () => { await Notification.requestPermission(); render(); } }, 'Turn on')
           : h('span', { class: 'chip', style: { color: 'var(--ok)' } }, icon('check', 11), 'On'))),
 
-    section('Use the board from your own Claude Code', 'Agents inside Agent Desk already have these tools. Run this once in a terminal to give the same tools (tasks, agents, the team, artifacts, diffs) to Claude Code everywhere else.',
+    section('Use the board from your own Claude Code', 'Agents inside Relay already have these tools. Run this once in a terminal to give the same tools (tasks, agents, the team, artifacts, diffs) to Claude Code everywhere else.',
       h('div', { class: 'codeblock' }, mcpCommand, h('button', { class: 'icon-btn', title: 'Copy', onClick: () => copy(mcpCommand) }, icon('copy', 14))),
-      h('p', { class: 'muted', style: { margin: '10px 0 0', fontSize: '12px' } }, 'The command includes this Agent Desk\'s secret, so don\'t share it.')),
+      h('p', { class: 'muted', style: { margin: '10px 0 0', fontSize: '12px' } }, 'The command includes this Relay\'s secret, so don\'t share it.')),
 
     section('Keyboard', null, h('div', { class: 'keys' }, [
       ['Command palette', '⌘K'], ['Voice input', '⌘⇧M'], ['Switch views', '⌘1 – ⌘7'], ['Save file', '⌘S'],
@@ -123,7 +123,7 @@ function render() {
     ].map(([what, keys]) => h('div', {}, what, h('kbd', {}, keys))))),
 
     section('About', null, h('div', { class: 'row' }, h('p', { class: 'muted grow', style: { margin: 0 } },
-      `Agent Desk ${state.info.version ? `v${state.info.version} ` : ''}${state.info.electron ? 'Mac app' : 'in the browser'} · server ${state.info.url}`),
+      `Relay ${state.info.version ? `v${state.info.version} ` : ''}${state.info.electron ? 'Mac app' : 'in the browser'} · server ${state.info.url}`),
     h('button', { class: 'btn sm', onClick: () => openUpdates() }, icon('refresh', 13), 'Check for updates')))));
 }
 
@@ -133,7 +133,7 @@ function leadUpkeep(u) {
   const save = patch => set({ leadUpkeep: { ...u, ...patch } });
   const number = (key, min, max, scale = 1) => h('input', { class: 'input', type: 'number', min, max, value: u[key] / scale, style: { width: '62px' },
     onChange: e => save({ [key]: Math.round(Number(e.target.value)) * scale }) });
-  return setting('Keep lead agents fresh', 'When a lead is idle with its context that full, Agent Desk compacts it, and after that many compactions a fresh lead with the same name takes over its work. A smaller window (the model\'s own, or the auto-compact window: your Claude Code\'s, else 200K) wins.',
+  return setting('Keep lead agents fresh', 'When a lead is idle with its context that full, Relay compacts it, and after that many compactions a fresh lead with the same name takes over its work. A smaller window (the model\'s own, or the auto-compact window: your Claude Code\'s, else 200K) wins.',
     h('div', { class: 'row', style: { flexWrap: 'wrap' } },
       'Compact at', number('compactAt', 50, 95), '% of a', number('windowCap', 50, 2000, 1000), 'K-token window, replace after', number('replaceAfter', 1, 10), 'compactions',
       h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: u.on, onChange: e => save({ on: e.target.checked }) }))));

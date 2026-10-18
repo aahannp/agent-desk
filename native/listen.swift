@@ -1,4 +1,4 @@
-// desk-listen: on-device speech to text for Agent Desk's voice input.
+// desk-listen: on-device speech to text for Relay's voice input.
 //
 //   desk-listen <locale>          listen and print PARTIAL:<text> lines, then FINAL:<text> once stopped.
 //                                 Reading "stop" (or end of input) on stdin ends the recording.
