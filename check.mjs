@@ -44,8 +44,10 @@ const EVIL = 'https://evil.example';
 
 function request(method, url, { headers = {}, body, token = desk.token } = {}) {
   return new Promise((resolve, reject) => {
+    // A fresh connection each time: the git calls here block this process (and so the server) for seconds, past the
+    // server's 5s keep-alive timeout, so a reused socket can be closed under the next request (read ECONNRESET).
     const req = http.request(`${SELF}${url}`, {
-      method, headers: { 'content-type': 'application/json', ...(token ? { 'x-desk-token': token } : {}), ...headers },
+      agent: false, method, headers: { 'content-type': 'application/json', ...(token ? { 'x-desk-token': token } : {}), ...headers },
     }, res => {
       let data = '';
       res.on('data', chunk => (data += chunk));
@@ -805,8 +807,8 @@ esac
     await report(1_000_000);
     assert.equal(s.contextWindow, 1_000_000, 'its status line reports the real window');
     const pushed = await meterEvent;
-    assert.deepEqual(pushed.meter, { used: 100_000, window: 1_000_000, effective: 1_000_000, cost: 0, tokens: { input: 0, output: 0, read: 100_000, write: 0 }, unpriced: 1 },
-      "the meter is pushed over /api/events: this transcript's reply names no model, so it's unpriced");
+    assert.deepEqual(pushed.meter, { used: 100_000, window: 1_000_000, effective: 200_000, cost: 0, tokens: { input: 0, output: 0, read: 100_000, write: 0 }, unpriced: 1 },
+      "the meter is pushed over /api/events, against the 200K auto-compact window Agent Desk sets; this transcript's reply names no model, so it's unpriced");
     assert.deepEqual((await ok('GET', '/api/sessions')).find(x => x.id === s.id).meter, pushed.meter, 'and listed with the session, for a page that loads later');
     assert.equal((await ok('GET', '/api/sessions')).find(x => x.id === worker.id).meter, undefined, 'a pane whose status line never reported shows nothing');
     fs.appendFileSync(transcript, `${line({ type: 'assistant', message: { content: [{ type: 'text', text: 'Planning the login work' }], usage: { input_tokens: 0, cache_read_input_tokens: 150_000, cache_creation_input_tokens: 0 } } })}\n`);
