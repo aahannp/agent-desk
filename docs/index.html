@@ -1216,17 +1216,23 @@ test('two of a product add up', async () =&gt; {
   ];
   let pickTheme = () => {}, runDemo = () => {};
   const VARS = ['bg', 'pane', 'line', 'text', 'dim', 'accent', 'red', 'ok', 'warn', 'info'];
-  const paintDesk = (desk, t) => VARS.forEach((v, j) => desk.style.setProperty(`--t-${v}`, t[j + 2]));
-  // A swatch per theme in group's [data-g=dark] and [data-g=light], split between its background and colour c (its accent,
-  // unless asked otherwise); pick(theme) runs on select. Returns select(button).
-  function swatchRadios(group, pick, c = 7) {
-    THEMES.forEach(([n, dark, bg, ...t], i) => {
+  const ACC = [['#0a84ff', '#0066cc', '#0071e3', '#0066cc'], ['#98989d', '#636366', '#636366', '#636366']]; // blue, graphite: accent on dark, on light; button on dark, on light
+  // A theme's colours on a mock, except its accent: the site keeps one accent (blue unless a is given), so no theme turns it pink.
+  const paintDesk = (desk, t, a = ACC[0]) => {
+    VARS.forEach((v, j) => desk.style.setProperty(`--t-${v}`, t[j + 2]));
+    desk.style.setProperty('--t-accent', a[t[1] ? 0 : 1]);
+    desk.style.setProperty('--t-btn', a[t[1] ? 2 : 3]);
+  };
+  // A swatch per theme, split between its background and text, in group's [data-g=dark] and [data-g=light];
+  // pick(theme) runs on select. Returns select(button).
+  function swatchRadios(group, pick) {
+    THEMES.forEach(([n, dark, bg, , , text], i) => {
       const b = el('button', 'sw', '');
       Object.assign(b, { type: 'button', tabIndex: i ? -1 : 0 }); // nothing picked yet: the panes wear the site's own colours
       b.setAttribute('role', 'radio');
       b.setAttribute('aria-checked', 'false');
       b.setAttribute('aria-label', `${n}, ${dark ? 'dark' : 'light'}`);
-      b.style.background = `linear-gradient(135deg, ${bg} 50%, ${t[c - 3]} 50%)`;
+      b.style.background = `linear-gradient(135deg, ${bg} 50%, ${text} 50%)`;
       b.dataset.i = i;
       $(`[data-g=${dark ? 'dark' : 'light'}]`, group).append(b);
     });
@@ -1821,18 +1827,16 @@ test('two of a product add up', async () =&gt; {
       $$('button', tree).forEach((b, j) => b.setAttribute('aria-current', j === i));
     }
     openFile(0);
-    // Settings: a theme repaints the window (its accent stays the one picked below, so it's blue or graphite).
-    const ACC = [['#0a84ff', '#0066cc', '#0071e3', '#0066cc'], ['#98989d', '#636366', '#636366', '#636366']]; // accent on dark, on light; button on dark, on light
+    // Settings: a theme repaints the window; the accent is the one picked below, blue or graphite.
     function paint() {
       hero.style.cssText = '';
-      if (theme) paintDesk(hero, theme);
-      if (!theme && !acc) return; // the site's own colours
-      const dark = theme ? theme[1] : getComputedStyle(document.documentElement).colorScheme !== 'light';
+      if (theme) return paintDesk(hero, theme, ACC[acc]);
+      if (!acc) return; // the site's own colours
+      const dark = getComputedStyle(document.documentElement).colorScheme !== 'light';
       hero.style.setProperty('--t-accent', ACC[acc][dark ? 0 : 1]);
       hero.style.setProperty('--t-btn', ACC[acc][dark ? 2 : 3]);
     }
-    swatchRadios($('.hsw', hero), t => { theme = t; paint(); $('#hTheme').textContent = t[0]; }, 5); // background and text: the accent isn't the theme's here
-
+    swatchRadios($('.hsw', hero), t => { theme = t; paint(); $('#hTheme').textContent = t[0]; });
     radios($('.hacc', hero), b => { acc = +b.dataset.acc; paint(); });
     hero.addEventListener('click', e => {
       const b = e.target.closest('button');
