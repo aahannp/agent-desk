@@ -51,11 +51,14 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
   Review lists the worktree, with who made it.
 - **Graph**: every agent and shell as a node (the lead ringed in the middle), lines for who messaged whom with
   a count (dashed for who started whom), and the newest messages glowing along them. Click a node to see its
-  screen and conversation and ask it something; shift-click or drag a box to select nodes and make a named group.
+  screen (a live mini terminal) and conversation and ask it something; drag or use two fingers to pan, pinch or ⌘-scroll to zoom; shift-click or drag a box to select nodes and make a named group.
+- **Spend**: what Claude Code cost each day, priced at API list prices from its own transcripts. Shows the
+  last 35 days, and breaks a day down by token type, model, project folder, session and hour. Finished days are
+  saved (`usageDays` in `desk.json`), so they stay after Claude Code deletes old transcripts.
 - **Files**: a file tree and the Monaco editor (VS Code's editor), for the project or any agent's worktree.
 - **Browser panes** for your dev server, **command blocks** in shells (each command and its output as a
   block), **screenshots** you can mark up and hand to an agent, **voice input** (on-device in the Mac app),
-  **16 themes**, a **command palette** (⌘K) and an animated cursor. Claude Code panes use the theme's own colours
+  **16 themes** (6 light), a **command palette** (⌘K), **⌘1–9** to jump between views and an animated cursor. Claude Code panes use the theme's own colours
   for their prompt bar, text and selection (kept readable), through a Claude Code theme Agent Desk keeps at
   `~/.claude/themes/agent-desk.json`. Switching themes, light or dark, repaints open panes too.
 - **Artifacts**: pages, reports and charts your agents make (they save them with the `save_artifact` tool). Sort them into folders by dragging a page onto one or using its right-click menu, and agents can file a page in a folder as they save it.
@@ -67,7 +70,7 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
   done). Only tasks you brought over are written back, and only their status.
 - **Updates**: the version pill next to the logo checks this repo's GitHub releases. When a newer one is out it
   says Update, and one click downloads the new .dmg into your Downloads folder.
-- **MCP for your own Claude Code**: Settings shows a one-line `claude mcp add` that gives the same 12 board
+- **MCP for your own Claude Code**: Settings shows a one-line `claude mcp add` that gives the same 18 board
   tools to Claude Code anywhere.
 
 ## Safety
@@ -91,4 +94,5 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
 ## Data
 
 The board, settings and the secret live in `data/` (browser version) or `~/Library/Application Support/Agent Desk`
-(Mac app). Agent worktrees and screenshots go in `.agent-desk/` inside each project, which is kept out of git.
+(Mac app). Spend history is in the same `desk.json`. For Claude Code panes it also writes one theme file,
+`~/.claude/themes/agent-desk.json`, and reads (never changes) Claude Code's transcripts for Spend. Agent worktrees and screenshots go in `.agent-desk/` inside each project, which is kept out of git.
