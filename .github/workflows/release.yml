@@ -24,7 +24,6 @@ jobs:
     timeout-minutes: 45
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
-      GH_TOKEN: ${{ github.token }}
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -42,7 +41,8 @@ jobs:
 
       - run: npm ci
       - run: npm run check
-      - run: npm run dist
+      # --publish never: electron-builder would otherwise publish by itself on a tag build in CI
+      - run: npm run dist -- --publish never
 
       - name: Name the DMG and check the tag
         id: dmg
@@ -74,6 +74,7 @@ jobs:
 
       - name: Publish to the release
         env:
+          GH_TOKEN: ${{ github.token }}
           DMG: ${{ steps.dmg.outputs.path }}
           HASH: ${{ steps.dmg.outputs.hash }}
         run: |
