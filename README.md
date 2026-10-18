@@ -3,6 +3,8 @@
 A Mac app for running a team of coding agents side by side, like BridgeMind's BridgeSpace. Every pane is a
 real terminal running the agent's own CLI, so Claude Code uses your normal Claude login and subscription.
 
+<img src="docs/assets/agents.webp" alt="Agent Desk with a lead agent and four workers running side by side in a grid of terminal panes" width="900">
+
 ## Use it
 
     npm install
@@ -46,15 +48,19 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
   one, their own included, after asking you; agents started after that get the change (turn that off in Settings too).
 - **Board**: To do / In progress / Review / Done with drag and drop. Run hands a task to an agent. Agents post
   comments and move their own cards through the board's MCP tools.
+  <br><img src="docs/assets/board.webp" alt="The Board with tasks in To do, In progress, Review and Done columns" width="480">
 - **Review**: side-by-side diffs of each worktree against where it branched, then commit, merge, or discard.
   When an agent edits files in another repo or a worktree it made itself, that repo joins your projects and its
   Review lists the worktree, with who made it.
+  <br><img src="docs/assets/review.webp" alt="Review showing agents' worktrees and a side-by-side diff" width="480">
 - **Graph**: every agent and shell as a node (the lead ringed in the middle), lines for who messaged whom with
   a count (dashed for who started whom), and the newest messages glowing along them. Click a node to see its
   screen (a live mini terminal) and conversation and ask it something; drag or use two fingers to pan, pinch or ⌘-scroll to zoom; shift-click or drag a box to select nodes and make a named group.
+  <br><img src="docs/assets/graph.webp" alt="The Graph with the lead in the middle, linked to four workers by message counts" width="480">
 - **Spend**: what Claude Code cost each day, priced at API list prices from its own transcripts. Shows the
   last 35 days, and breaks a day down by token type, model, project folder, session and hour. Finished days are
   saved (`usageDays` in `desk.json`), so they stay after Claude Code deletes old transcripts.
+  <br><img src="docs/assets/spend.webp" alt="Spend with today's total, the last 35 days as bars, and breakdowns by token type and hour" width="480">
 - **Files**: a file tree and the Monaco editor (VS Code's editor), for the project or any agent's worktree.
 - **Browser panes** for your dev server, **command blocks** in shells (each command and its output as a
   block), **screenshots** you can mark up and hand to an agent, **voice input** (on-device in the Mac app),
