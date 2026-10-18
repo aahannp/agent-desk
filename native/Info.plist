@@ -5,12 +5,12 @@
 <plist version="1.0">
 <dict>
   <key>CFBundleIdentifier</key>
-  <string>com.aahan.agentdesk.listen</string>
+  <string>com.aahan.relay.listen</string>
   <key>CFBundleName</key>
-  <string>Agent Desk Voice</string>
+  <string>Relay Voice</string>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Agent Desk listens to your voice so you can talk to your agents instead of typing.</string>
+  <string>Relay listens to your voice so you can talk to your agents instead of typing.</string>
   <key>NSSpeechRecognitionUsageDescription</key>
-  <string>Agent Desk turns your speech into text on this Mac so you can talk to your agents.</string>
+  <string>Relay turns your speech into text on this Mac so you can talk to your agents.</string>
 </dict>
 </plist>

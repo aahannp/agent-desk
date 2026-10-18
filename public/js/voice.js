@@ -33,7 +33,7 @@ async function start() {
     } else if (window.SpeechRecognition || window.webkitSpeechRecognition) {
       browserRecognition();
     } else {
-      throw new Error('Voice works in the Agent Desk Mac app and in Chrome. You can also use macOS Dictation: press the microphone key, or Fn twice, while a terminal is focused.');
+      throw new Error('Voice works in the Relay Mac app and in Chrome. You can also use macOS Dictation: press the microphone key, or Fn twice, while a terminal is focused.');
     }
   } catch (e) {
     toast(e.message, 'error');

@@ -667,7 +667,7 @@ function syncBrowsers() {
   layout();
 }
 
-// Turns what you typed into an http(s) URL, or null. Agent Desk's own address is refused: framed with
+// Turns what you typed into an http(s) URL, or null. Relay's own address is refused: framed with
 // allow-same-origin it could reach out of the sandbox and into the app.
 function safeUrl(raw) {
   let url = String(raw || '').trim();
@@ -686,7 +686,7 @@ function browserPane(b, project) {
   const frame = h('iframe', { src: safeUrl(b.url) ?? 'about:blank', sandbox: 'allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads', allow: 'clipboard-write' });
   const go = raw => {
     const url = safeUrl(raw);
-    if (!url) return toast('Browser panes open http and https pages, other than Agent Desk itself.', 'error');
+    if (!url) return toast('Browser panes open http and https pages, other tha Relay itself.', 'error');
     frame.src = url;
     input.value = url;
     saveBrowsers(project, browserList(project).map(x => (x.id === b.id ? { ...x, url } : x)));

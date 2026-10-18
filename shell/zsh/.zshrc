@@ -1,5 +1,5 @@
-# Agent Desk shell integration: load your own .zshrc, then mark where each command starts and ends,
-# so Agent Desk can show commands as blocks. These are the OSC 133 marks VS Code and Warp use too.
+# Relay shell integration: load your own .zshrc, then mark where each command starts and ends,
+# so Relay can show commands as blocks. These are the OSC 133 marks VS Code and Warp use too.
 ZDOTDIR=$_agent_desk_user_zdotdir
 # /etc/zshrc picked the history file while ZDOTDIR still pointed here; keep history in your usual place.
 [[ $HISTFILE == $_agent_desk_dir/* ]] && HISTFILE=$ZDOTDIR/.zsh_history

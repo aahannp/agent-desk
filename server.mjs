@@ -1,4 +1,4 @@
-// Agent Desk server: serves the app, runs agent sessions, and exposes the API used by the page and by agents.
+// Relay server: serves the app, runs agent sessions, and exposes the API used by the page and by agents.
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -79,7 +79,7 @@ const caller = req => (req.auth?.kind === 'agent' ? req.auth.session : S.session
 const visibleSessions = req => { // an agent sees only its own project's sessions (see sameProject)
   const all = [...S.sessions.values()];
   if (!fromAgent(req)) return all;
-  const from = caller(req) ?? (() => { throw fail(403, 'Only agents inside Agent Desk can reach other agents'); })();
+  const from = caller(req) ?? (() => { throw fail(403, 'Only agents inside Relay can reach other agents'); })();
   return all.filter(s => s.project === from.project);
 };
 const starter = req => (s => s && { id: s.id, name: s.name })(caller(req)); // the agent asking, if it's one of ours
@@ -87,12 +87,12 @@ const starter = req => (s => s && { id: s.id, name: s.name })(caller(req)); // t
 // may only start agents or edit a specialist while Settings allows it. (An agent runs as you and could reach the API some other way; this keeps
 // the tools, the way agents actually work, inside the lines you set.)
 const fromAgent = req => req.auth?.kind === 'agent' || req.headers['x-desk-via'] === 'mcp' || Boolean(req.headers['x-desk-session']);
-const notFromAgent = (req, what) => { if (fromAgent(req)) throw fail(403, `Agents can't ${what}. Ask the user to do it in Agent Desk.`); };
+const notFromAgent = (req, what) => { if (fromAgent(req)) throw fail(403, `Agents can't ${what}. Ask the user to do it in Relay.`); };
 const mayStartAgents = req => {
-  if (fromAgent(req) && db.settings.agentsCanSpawn === false) throw fail(403, 'Starting other agents is turned off in Agent Desk settings.');
+  if (fromAgent(req) && db.settings.agentsCanSpawn === false) throw fail(403, 'Starting other agents is turned off in Relay settings.');
 };
 const mayMessage = req => {
-  if (fromAgent(req) && db.settings.agentsCanMessage === false) throw fail(403, 'Agents messaging each other is turned off in Agent Desk settings.');
+  if (fromAgent(req) && db.settings.agentsCanMessage === false) throw fail(403, 'Agents messaging each other is turned off in Relay settings.');
 };
 const projectFor = (req, value) => {
   const project = value ? expand(value) : caller(req)?.project || db.settings.lastProject;
@@ -157,7 +157,7 @@ route('DELETE', '/api/projects', ({ query }) => {
 // Settings
 route('GET', '/api/settings', () => db.settings);
 route('PATCH', '/api/settings', ({ req, body }) => {
-  notFromAgent(req, 'change Agent Desk\'s settings');
+  notFromAgent(req, 'change Relay\'s settings');
   for (const [key, value] of Object.entries(body)) {
     if (!(key in db.settings)) continue;
     if (['agentsCanSpawn', 'agentsCanMessage', 'agentsCanEditTeam', 'agentsAutonomous', 'fancyCursor', 'worktreeByDefault', 'sidebarHidden'].includes(key) && typeof value !== 'boolean') throw fail(400, `${key} is true or false`);
@@ -183,7 +183,7 @@ route('PATCH', '/api/settings', ({ req, body }) => {
   }
   // Open Claude Code panes repaint in the new colours (see claudeTheme in lib/sessions.mjs).
   if ('theme' in body || 'accent' in body) {
-    try { S.writeClaudeTheme(); } catch (e) { console.error("Couldn't update Claude Code's Agent Desk theme:", e.message); }
+    try { S.writeClaudeTheme(); } catch (e) { console.error("Couldn't update Claude Code's Relay theme:", e.message); }
   }
   changed('settings');
   return db.settings;
@@ -289,7 +289,7 @@ route('DELETE', '/api/chats/:id', ({ params }) => {
 const sameProject = (req, id) => {
   const s = findSession(id);
   const from = caller(req);
-  if (fromAgent(req) && !from) throw fail(403, 'Only agents inside Agent Desk can reach other agents');
+  if (fromAgent(req) && !from) throw fail(403, 'Only agents inside Relay can reach other agents');
   if (from && s.project !== from.project) throw fail(403, 'Agents can only reach agents in their own project');
   return s;
 };
@@ -364,7 +364,7 @@ function logMessage(project, from, to, via) {
 // ponytail: spellings that look different ("fr0m") still pass; fence the body off if those ever matter.
 const like = word => [...word].map(c => `[${c}\\P{ASCII}]`).join('');
 const FAKE_SIGNATURE = new RegExp(`\\[(?=[^\\p{L}\\p{N}]*${like('message')}[^\\p{L}\\p{N}]*${like('from')})`, 'giu');
-const sign = (from, text) => `[Message from ${from ? `${S.plain(from.name)} (agent ${from.id})` : 'an agent outside Agent Desk'}]\n${
+const sign = (from, text) => `[Message from ${from ? `${S.plain(from.name)} (agent ${from.id})` : 'an agent outside Relay'}]\n${
   text.normalize('NFKC').replace(/\p{Default_Ignorable_Code_Point}/gu, '').replace(FAKE_SIGNATURE, '(')}`;
 route('POST', '/api/messages', async ({ req, body }) => {
   mayMessage(req);
@@ -455,7 +455,7 @@ route('GET', '/api/specialists', () => T.list());
 route('POST', '/api/specialists', ({ req, body }) => (notFromAgent(req, 'change the team'), T.add(body)));
 route('PATCH', '/api/specialists/:id', ({ req, params, body }) => {
   if (!fromAgent(req)) return T.update(params.id, body);
-  if (db.settings.agentsCanEditTeam === false) throw fail(403, 'Agents changing the team is turned off in Agent Desk settings.');
+  if (db.settings.agentsCanEditTeam === false) throw fail(403, 'Agents changing the team is turned off in Relay settings.');
   const was = T.find(params.id)?.name;
   const s = T.update(params.id, body);
   bus.emit('event', { type: 'specialist-changed', name: was, by: caller(req)?.name ?? 'An agent' });
@@ -579,7 +579,7 @@ route('GET', '/api/review/diff', async ({ req, query }) => {
   if (fromAgent(req) && !visibleSessions(req).some(s => s.cwd === dir)) throw fail(403, 'Agents can only see the changes of agents in their own project');
   return { text: await G.diffText(dir) };
 });
-route('POST', '/api/review/commit', ({ body }) => G.commit(existingDir(body.worktree), String(body.message || 'Agent Desk changes')));
+route('POST', '/api/review/commit', ({ body }) => G.commit(existingDir(body.worktree), String(body.message || 'Relay changes')));
 route('POST', '/api/review/merge', async ({ body }) => {
   const meta = await G.merge(existingDir(body.worktree));
   const task = meta.taskId && db.tasks.find(t => t.id === meta.taskId);
@@ -694,9 +694,9 @@ function staticPath(pathname) {
   return inside(path.join(DIR, 'public'), pathname.slice(1));
 }
 
-const LOCKED_PAGE = `<!doctype html><meta charset="utf-8"><title>Agent Desk</title>
+const LOCKED_PAGE = `<!doctype html><meta charset="utf-8"><title>Relay</title>
 <body style="font:15px -apple-system,system-ui,sans-serif;background:#0b0c10;color:#e7e9ef;display:grid;place-items:center;height:100vh;margin:0">
-<div style="max-width:420px;text-align:center"><h2>Agent Desk is locked</h2>
+<div style="max-width:420px;text-align:center"><h2>Relay is locked</h2>
 <p style="color:#8a90a2">Open it with the link printed in the terminal where you ran <code>npm start</code>.</p></div>`;
 
 // One bad request must never take the server (and every running agent) down.
@@ -717,10 +717,10 @@ async function respond(req, res) {
   };
   if (!sameSite(req)) return json(403, { error: 'Forbidden' });
   req.auth = auth(req, url);
-  if (url.pathname === '/mcp') return req.auth ? mcp(req, res, json) : json(401, { error: 'Missing or wrong Agent Desk token' });
+  if (url.pathname === '/mcp') return req.auth ? mcp(req, res, json) : json(401, { error: 'Missing or wrong Relay token' });
 
   // An artifact opens without the token, so your own browser can show it: its random id is the key. It runs
-  // sandboxed in an origin of its own, so its scripts can't reach Agent Desk, and it sends no Referer that
+  // sandboxed in an origin of its own, so its scripts can't reach Relay, and it sends no Referer that
   // would leak its address to the sites it loads from.
   const artifact = req.method === 'GET' && /^\/a\/([A-Za-z0-9_-]{22})\/?$/.exec(url.pathname);
   if (artifact) {
@@ -745,7 +745,7 @@ async function respond(req, res) {
     return res.end(fs.readFileSync(file));
   }
 
-  if (!req.auth) return json(401, { error: 'Missing or wrong Agent Desk token' });
+  if (!req.auth) return json(401, { error: 'Missing or wrong Relay token' });
 
   if (url.pathname === '/api/events') { // server-sent events: the page refetches whatever changed
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
@@ -788,7 +788,7 @@ async function mcp(req, res, json) {
       body: payload === undefined ? undefined : JSON.stringify(payload),
     });
     const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(data.error || `Agent Desk answered ${r.status}`);
+    if (!r.ok) throw new Error(data.error || `Relay answered ${r.status}`);
     return data;
   };
   const tools = mcpTools({ api, session });
@@ -821,7 +821,7 @@ function trustTheMac() {
   } catch {} // older Node: its own roots only
 }
 
-// Starts Agent Desk. The Mac app calls this with its own data folder; `npm start` runs it directly.
+// Starts Relay. The Mac app calls this with its own data folder; `npm start` runs it directly.
 export async function start({ port = Number(process.env.PORT) || 4747, dataDir = path.join(DIR, 'data'), voiceHelper } = {}) {
   fs.mkdirSync(dataDir, { recursive: true });
   trustTheMac();
@@ -854,7 +854,7 @@ export async function start({ port = Number(process.env.PORT) || 4747, dataDir =
   S.setServer({ url: `http://127.0.0.1:${actual}`, dataDir });
   // 127.0.0.1, not localhost: localhost may resolve to ::1, where some other program could be listening.
   const url = `http://127.0.0.1:${actual}/?t=${TOKEN}`;
-  console.log(`Agent Desk is running. Open ${url}`);
+  console.log(`Relay is running. Open ${url}`);
   const upkeep = setInterval(() => S.upkeep().catch(e => console.error('Lead upkeep failed:', e)), 30_000);
   // Save finished days of spend even if the Spend page is never opened, before Claude Code deletes their transcripts.
   const spend = () => US.scan().catch(e => console.error('Spend scan failed:', e));
