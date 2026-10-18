@@ -498,6 +498,19 @@
   .steps b { color: var(--text); font-weight: 600; }
   .cmd { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 6px 6px 6px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--alt); }
   .cmd code { flex: 1; min-width: 0; overflow-x: auto; padding: 4px 12px; white-space: nowrap; word-break: normal; }
+  .compat { width: 100%; border-collapse: collapse; margin: -8px 0 20px; font-size: 15px; }
+  .compat th, .compat td { text-align: left; vertical-align: top; padding: 9px 12px 9px 0; border-bottom: 1px solid var(--line); color: var(--muted); }
+  .compat th { color: var(--text); font-size: 13px; font-weight: 600; }
+  .compat td:first-child { color: var(--text); }
+  .compat code { white-space: nowrap; }
+  .release { max-width: 620px; margin: 26px auto 0; }
+  .release .fine { margin: 0; }
+  .release .fine b { color: var(--muted); font-weight: 600; }
+  .release code { font: 13px/1.5 var(--mono); white-space: normal; overflow-wrap: anywhere; text-align: left; } /* the whole hash, so it can be compared by eye */
+  .road > div { box-shadow: inset 0 0 0 1px var(--line); } /* the section isn't .alt, so tiles need an edge on white */
+  .road ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 15px; }
+  .road li { margin: 7px 0; }
+  .road small { color: var(--dim); }
   .copy { flex: none; min-height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: var(--text); font: 500 13px var(--sans); cursor: pointer; }
 
   /* Closing */
@@ -616,6 +629,7 @@
       <a href="#review">Review</a>
       <a href="#themes">Themes</a>
       <a href="#privacy">Privacy</a>
+      <a href="#roadmap">Roadmap</a>
       <a href="#faq">FAQ</a>
     </nav>
     <button class="theme" id="themeToggle" type="button" aria-label="Switch to light mode">
@@ -640,10 +654,14 @@
         <a class="pill" data-download href="https://github.com/aahannp/agent-desk/releases/latest">Download for Mac</a>
         <a class="more" href="https://github.com/aahannp/agent-desk">View on GitHub</a>
       </div>
-      <p class="fine">Or install from Terminal, with no macOS warning:</p>
+      <div class="release">
+        <p class="fine"><span data-release hidden><b data-ver></b> · SHA-256 of the .dmg · </span><a href="verify.html">How to verify a download ›</a></p>
+        <div class="cmd" data-release hidden><code data-sha></code><button type="button" class="copy">Copy</button></div>
+      </div>
+      <p class="fine">Or install from Terminal, with no macOS warning (<a href="verify.html#installer">what it does</a>):</p>
       <div class="cmd"><code>curl -fsSL https://aahannp.github.io/agent-desk/install.sh | bash</code><button type="button" class="copy">Copy</button></div>
       <p class="fine">First launch: macOS will warn you because the app isn't notarized yet. <a href="#notarize">Here's the 10-second fix ›</a></p>
-      <p class="fine first">Free and open source. For Mac with Apple silicon. Requires <a href="https://code.claude.com/docs/en/overview">Claude Code</a>.</p>
+      <p class="fine first">Free and open source. For Macs with Apple silicon on macOS 13 or later. Requires <a href="https://code.claude.com/docs/en/overview">Claude Code</a>.</p>
     </div>
     <div class="wide">
       <div class="stage-bar">
@@ -1049,13 +1067,66 @@ test('two of a product add up', async () =&gt; {
     </div>
   </section>
 
+  <section id="roadmap" class="center">
+    <div class="wrap">
+      <h2 class="reveal">Where it stands.</h2>
+      <p class="lede reveal">What's stable, what's still settling, and what's next. The full list is in the <a href="https://github.com/aahannp/agent-desk#roadmap">README</a>.</p>
+      <div class="safe road left">
+        <div class="reveal">
+          <b>Stable</b>
+          <ul>
+            <li>Claude Code and shell panes, up to 16 at once</li>
+            <li>Lead agent, Board and a git worktree per worker</li>
+            <li>Review: diffs, commit, merge, discard</li>
+            <li>Agents that message, read and copy each other</li>
+            <li>Graph, Spend, Files, Artifacts, themes, update check</li>
+            <li>Token meter on each Claude pane, workers on Sonnet <small>(on main, in 1.8.3)</small></li>
+          </ul>
+        </div>
+        <div class="reveal">
+          <b>Experimental</b>
+          <ul>
+            <li>Lead upkeep: auto-compact and hand-over <small>(off by default)</small></li>
+            <li>Voice input <small>(Mac app only, on-device)</small></li>
+            <li>Codex, Gemini CLI and Cursor Agent panes <small>(no board tools yet; Gemini and Cursor untested)</small></li>
+            <li>Task Notes link <small>(needs the Task Notes app)</small></li>
+            <li>Browser version, <code>npm start</code></li>
+          </ul>
+        </div>
+        <div class="reveal">
+          <b>Planned</b>
+          <ul>
+            <li>Release builds on GitHub Actions, with attestations <small>(from v1.9)</small></li>
+            <li>Apple notarization <small>(no date yet)</small></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section id="faq">
     <div class="wrap">
       <h2 class="reveal center">Questions? Answers.</h2>
       <div class="faq">
         <details name="faq">
           <summary>What do I need to run it?</summary>
-          <p>A Mac with Apple silicon, and <a href="https://code.claude.com/docs/en/overview">Claude Code</a> installed and signed in. Codex, Gemini CLI and Cursor Agent are optional: install any of them and they show up in the New menu.</p>
+          <p>A Mac with Apple silicon on macOS 13 (Ventura) or later, and <a href="https://code.claude.com/docs/en/overview">Claude Code</a> installed and signed in. Codex, Gemini CLI and Cursor Agent are optional: install any of them and they show up in the New menu. They run in their own panes with your own logins, but only Claude Code agents get the board's tools.</p>
+          <table class="compat">
+            <thead><tr><th scope="col">Component</th><th scope="col">Needed?</th><th scope="col">Tested with</th></tr></thead>
+            <tbody>
+              <tr><td>Mac with Apple silicon</td><td>Required</td><td>Apple silicon. There's no Intel download.</td></tr>
+              <tr><td>macOS 13 or later</td><td>Required (<a href="https://www.electronjs.org/blog/electron-44-0">Electron 44's minimum</a>)</td><td>macOS 26.4</td></tr>
+              <tr><td>Claude Code <code>claude</code></td><td>Required</td><td>2.1.302</td></tr>
+              <tr><td>Codex CLI <code>codex</code></td><td>Optional</td><td>0.146.0</td></tr>
+              <tr><td>Gemini CLI <code>gemini</code></td><td>Optional</td><td>Supported, not tested</td></tr>
+              <tr><td>Cursor Agent <code>cursor-agent</code></td><td>Optional</td><td>Supported, not tested</td></tr>
+              <tr><td>git</td><td>For worktrees and Review</td><td>2.50.1</td></tr>
+            </tbody>
+          </table>
+        </details>
+        <details name="faq">
+          <summary>How do I know the download is safe?</summary>
+          <p>Check its SHA-256 against GitHub's, look at how it's signed, and compare the app's code with the source at that version. <a href="verify.html">The verify guide</a> has every command, and what we found when we ran them on 1.8.2.</p>
         </details>
         <details name="faq">
           <summary>Does it need an API key, or cost anything extra?</summary>
@@ -1079,7 +1150,7 @@ test('two of a product add up', async () =&gt; {
         </details>
         <details name="faq">
           <summary>Can I build it myself, or run it on an Intel Mac?</summary>
-          <p>Yes, from source: clone the repo, then run <code>npm install</code> and <code>npm run app</code>. <code>npm start</code> runs it in your browser instead, and <code>npm run dist</code> builds a .dmg for your Mac.</p>
+          <p>You can build it yourself: clone a release tag, then run <code>npm ci</code> and <code>npm run app</code>. <code>npm start</code> runs it in your browser instead, and <code>npm run dist</code> builds a .dmg. <a href="verify.html#build">Build it yourself</a> has the exact steps. There's no Intel download, and building on an Intel Mac hasn't been tested.</p>
         </details>
       </div>
     </div>
@@ -1094,7 +1165,7 @@ test('two of a product add up', async () =&gt; {
         <a class="pill" data-download href="https://github.com/aahannp/agent-desk/releases/latest">Download for Mac</a>
         <a class="more" href="https://github.com/aahannp/agent-desk">View on GitHub</a>
       </div>
-      <p class="fine">Free and open source under the MIT licence. For Mac with Apple silicon. Requires Claude Code.</p>
+      <p class="fine">Free and open source under the MIT licence. For Macs with Apple silicon on macOS 13 or later. Requires Claude Code. <a href="verify.html">Verify a download</a></p>
     </div>
   </section>
 </main>
@@ -1125,8 +1196,10 @@ test('two of a product add up', async () =&gt; {
       <nav aria-label="Footer">
         <a href="https://github.com/aahannp/agent-desk">GitHub</a>
         <a href="https://github.com/aahannp/agent-desk/releases">Releases</a>
+        <a href="https://github.com/aahannp/agent-desk/issues">Issues</a>
+        <a href="https://github.com/aahannp/agent-desk/issues/new">Report a bug</a>
+        <a href="verify.html">Verify a download</a>
         <a href="https://github.com/aahannp/agent-desk/blob/main/LICENSE">Licence</a>
-        <a href="https://github.com/aahannp/agent-desk/issues">Report an issue</a>
       </nav>
     </div>
   </div>
@@ -2020,7 +2093,7 @@ test('two of a product add up', async () =&gt; {
     const go = id => () => { const s = $('#' + id); s.tabIndex = -1; s.scrollIntoView({ behavior: calm ? 'auto' : 'smooth' }); s.focus({ preventScroll: true }); };
     const open = url => () => { location.href = url; };
     const commands = () => [
-      ...[['Demo', 'demo'], ['Overview', 'overview'], ['Features', 'features'], ['Review', 'review'], ['Themes', 'themes'], ['Privacy', 'privacy'], ['FAQ', 'faq']]
+      ...[['Demo', 'demo'], ['Overview', 'overview'], ['Features', 'features'], ['Review', 'review'], ['Themes', 'themes'], ['Privacy', 'privacy'], ['Roadmap', 'roadmap'], ['FAQ', 'faq']]
         .map(([l, id]) => [`Go to ${l}`, 'Section', go(id)]),
       ['Run the demo', 'Demo', () => { go('demo')(); runDemo(); }],
       [`Switch to ${isDark() ? 'light' : 'dark'} mode`, 'Appearance', () => btn.click()],
@@ -2028,7 +2101,9 @@ test('two of a product add up', async () =&gt; {
       ['Download for Mac', 'Latest release', () => { location.href = $('[data-download]').href; }],
       ['GitHub', 'Source', open('https://github.com/aahannp/agent-desk')],
       ['Releases', 'GitHub', open('https://github.com/aahannp/agent-desk/releases')],
-      ['Report an issue', 'GitHub', open('https://github.com/aahannp/agent-desk/issues')],
+      ['Verify a download', 'Checksum and source', open('verify.html')],
+      ['Issues', 'GitHub', open('https://github.com/aahannp/agent-desk/issues')],
+      ['Report a bug', 'GitHub', open('https://github.com/aahannp/agent-desk/issues/new')],
     ];
     // Substring matches first, then ones whose letters appear in order ("tkn" finds "Tokyo Night").
     const score = (q, s) => { s = s.toLowerCase(); if (s.includes(q)) return 2; let i = 0; for (const c of s) if (c === q[i]) i++; return i === q.length ? 1 : 0; };
@@ -2074,12 +2149,18 @@ test('two of a product add up', async () =&gt; {
     navigator.clipboard.writeText(code.textContent).then(() => { b.textContent = 'Copied'; setTimeout(() => (b.textContent = 'Copy'), 1500); }, () => getSelection().selectAllChildren(code));
   });
 
-  // Download buttons fetch the latest release's .dmg directly. Without GitHub's API they keep the releases page.
+  // Download buttons fetch the latest release's .dmg directly, and its version and SHA-256 show under them.
+  // Without GitHub's API they keep the releases page.
   fetch('https://api.github.com/repos/aahannp/agent-desk/releases/latest')
     .then(r => r.ok ? r.json() : Promise.reject())
     .then(rel => {
       const dmg = (rel.assets || []).find(a => /\.dmg$/i.test(a.name));
-      if (dmg) for (const a of document.querySelectorAll('[data-download]')) a.href = dmg.browser_download_url;
+      if (!dmg) return;
+      for (const a of $$('[data-download]')) a.href = dmg.browser_download_url;
+      if (!dmg.digest) return;
+      $('[data-ver]').textContent = rel.tag_name;
+      $('[data-sha]').textContent = dmg.digest.replace(/^sha256:/, '');
+      for (const e of $$('[data-release]')) e.hidden = false;
     })
     .catch(() => {});
 </script>
