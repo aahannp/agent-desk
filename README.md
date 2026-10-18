@@ -1,4 +1,8 @@
-# Agent Desk
+# Relay
+
+**Delegate the work. Own the outcome.**
+
+Multiple coding agents. Isolated workspaces. One place to review and ship.
 
 A Mac app for running a team of coding agents side by side, like BridgeMind's BridgeSpace. Every pane is a
 real terminal running the agent's own CLI, so Claude Code uses your normal Claude login and subscription.
@@ -12,24 +16,32 @@ real terminal running the agent's own CLI, so Claude Code uses your normal Claud
 
 <img src="docs/assets/demo.gif" alt="A lead agent is given a goal, plans three tasks on the Board, three workers edit files side by side in their own worktrees, and Review shows the diff" width="900">
 
-<sub>Recorded from the real app (1.8.2 code) with a demo repo. The agents' replies are scripted, so no model ran;
-the board, worktrees, edits and diff are real.</sub>
+<sub>Recorded from the real app (1.8.2 code, when Relay was still called Agent Desk) with a demo repo. The agents'
+replies are scripted, so no model ran; the board, worktrees, edits and diff are real.</sub>
 
 ## Install
 
-Download the DMG from the [latest release](https://github.com/aahannp/agent-desk/releases/latest), open it and
-drag Agent Desk into Applications. Or install from Terminal:
+Download `Relay-<version>-arm64.dmg` from the [latest release](https://github.com/aahannp/agent-desk/releases/latest),
+open it and drag Relay into Applications. Or install from Terminal:
 
     curl -fsSL https://aahannp.github.io/agent-desk/install.sh | bash
 
-The installer ([docs/install.sh](docs/install.sh)) stops unless it's on macOS with Apple silicon and Agent Desk is
-closed, asks GitHub's API for the latest release, downloads its DMG with curl into a temporary folder, mounts it
-read-only, replaces `/Applications/Agent Desk.app` with the copy inside and opens it. Files curl downloads
-aren't quarantined, so macOS doesn't warn; that also means nothing checks the download, the script included.
-[Verify a release](#verify-a-release) if you want to.
+The installer ([docs/install.sh](docs/install.sh)) stops unless it's on macOS with Apple silicon, asks GitHub's
+API for the latest release, downloads its DMG with curl into a temporary folder, mounts it read-only, stops
+unless the app is closed, replaces `/Applications/Relay.app` with the copy inside and opens it. Files curl
+downloads aren't quarantined, so macOS doesn't warn; that also means nothing checks the download, the script
+included. [Verify a release](#verify-a-release) if you want to.
 
 The DMG is signed ad-hoc (there's no Apple developer account), so the first time you open the copied app,
 right-click it and choose Open (macOS 15+: System Settings → Privacy & Security → Open Anyway).
+
+### Coming from Agent Desk?
+
+Install Relay as above. Your board, chats and settings carry over automatically: Relay reads
+`~/Library/Application Support/Agent Desk`. Afterwards you can delete Agent Desk.app. Don't run both at once.
+
+Relay was called Agent Desk; some internal names (the agent-desk MCP server, .agent-desk/ folder, AGENT_DESK_*
+variables) keep the old name so existing setups keep working.
 
 ## Requirements
 
@@ -43,8 +55,8 @@ right-click it and choose Open (macOS 15+: System Settings → Privacy & Securit
 | Cursor Agent (`cursor-agent`) | Optional | Supported, not tested |
 | git | For worktrees and Review | 2.50.1 |
 
-Agent Desk finds each CLI on your login shell's `PATH` and runs it in a pane with your own login. Claude Code
-agents get the board's MCP tools and Agent Desk's hooks; Codex, Cursor Agent and Gemini CLI (`gemini -i`) are
+Relay finds each CLI on your login shell's `PATH` and runs it in a pane with your own login. Claude Code
+agents get the board's MCP tools and Relay's hooks; Codex, Cursor Agent and Gemini CLI (`gemini -i`) are
 started with your prompt and nothing else, so they can't use the board yet.
 
 ## Use it from source
@@ -52,14 +64,14 @@ started with your prompt and nothing else, so they can't use the board yet.
     npm ci
     npm start            # browser version: open the link it prints
     npm run app          # Mac app, from source
-    npm run dist         # builds dist/Agent Desk-<version>-arm64.dmg
+    npm run dist         # builds dist/Relay-<version>-arm64.dmg
     npm run check        # self-check of the server, security and MCP
 
 ## How it works
 
 ```mermaid
 flowchart LR
-  subgraph app["Agent Desk.app (Electron)"]
+  subgraph app["Relay.app (Electron)"]
     page["Window: the page<br/>public/"]
     server["Node server on 127.0.0.1<br/>server.mjs"]
   end
@@ -106,7 +118,7 @@ flowchart LR
 - **Lead agent**: give it a goal and it plans tasks on the board, then starts a worker for each one in its
   own git worktree.
 - **Lead upkeep** (Settings, off by default): when a lead is idle at its prompt with its context at 70% of a
-  200K-token window (or of a smaller one: its model's, or your Claude Code auto-compact window), Agent Desk types
+  200K-token window (or of a smaller one: its model's, or your Claude Code auto-compact window), Relay types
   `/compact` into it. After 3 compactions a fresh lead with the same name takes over, handed
   its summary, open tasks, running workers and last messages; the old chat stays in the sidebar.
 - **Team**: named specialists, each a Claude agent with one area of expertise, its own instructions and,
@@ -135,11 +147,11 @@ flowchart LR
 - **Browser panes** for your dev server, **command blocks** in shells (each command and its output as a
   block), **screenshots** you can mark up and hand to an agent, **voice input** (on-device in the Mac app),
   **16 themes** (6 light), a **command palette** (⌘K), **⌘1–9** to jump between views and an animated cursor. Claude Code panes use the theme's own colours
-  for their prompt bar, text and selection (kept readable), through a Claude Code theme Agent Desk keeps at
+  for their prompt bar, text and selection (kept readable), through a Claude Code theme Relay keeps at
   `~/.claude/themes/agent-desk.json`. Switching themes, light or dark, repaints open panes too.
 - **Artifacts**: pages, reports and charts your agents make (they save them with the `save_artifact` tool). Sort them into folders by dragging a page onto one or using its right-click menu, and agents can file a page in a folder as they save it.
   View them in the app or your browser, and publish one to GitHub Pages with one click, using an account
-  you're signed in to with `gh`. Agent Desk keeps them in one repo it makes, and never writes to any other.
+  you're signed in to with `gh`. Relay keeps them in one repo it makes, and never writes to any other.
   Unpublish takes a page down again.
 - **Task Notes**: the Board's Task Notes button lists your open tasks from the Task Notes app. Add one to hand
   it to an agent, and Task Notes follows its card (In progress and Review show as in progress, Done marks it
@@ -152,14 +164,14 @@ flowchart LR
 ## Safety
 
 - The server only listens on 127.0.0.1. Every request needs this install's secret (kept in a file only you
-  can read) and must come from Agent Desk's own page, so other websites and other users on the Mac can't
+  can read) and must come from Relay's own page, so other websites and other users on the Mac can't
   use it.
 - Each agent gets its own token, which only reaches its board tools and hooks and always acts as that agent;
   the master secret never goes in its config. An agent with shell access runs as you, though, so it could
   still read the secret file in the data folder: real isolation would need a separate macOS user.
-- Browsers don't separate cookies by port, so in the browser version (`npm start`) Agent Desk's login cookie
-  also goes to any other localhost server you open in that browser. The Mac app keeps it to Agent Desk only;
-  in a browser, use a profile just for Agent Desk.
+- Browsers don't separate cookies by port, so in the browser version (`npm start`) Relay's login cookie
+  also goes to any other localhost server you open in that browser. The Mac app keeps it to Relay only;
+  in a browser, use a profile just for Relay.
 - Claude agents start in "Ask me" permission mode by default, and nothing here offers the bypass modes.
 - A lead agent can't type into other agents or stop them without your approval.
 - Agents only see, read, stop and diff agents in their own project, and can't read or stop your shell panes.
@@ -169,31 +181,32 @@ flowchart LR
 
 ## Data
 
-The board, settings and the secret live in `data/` (browser version) or `~/Library/Application Support/Agent Desk`
-(Mac app). Spend history is in the same `desk.json`. For Claude Code panes it also writes one theme file,
-`~/.claude/themes/agent-desk.json`, and reads (never changes) Claude Code's transcripts for Spend. Agent worktrees and screenshots go in `.agent-desk/` inside each project, which is kept out of git.
+The board, settings and the secret live in `data/` (browser version) or `~/Library/Application Support/Relay`
+(Mac app; `Agent Desk` instead of `Relay` if you used Agent Desk before). Spend history is in the same
+`desk.json`. For Claude Code panes it also writes one theme file, `~/.claude/themes/agent-desk.json`, and reads (never changes) Claude Code's transcripts for Spend. Agent worktrees and screenshots go in `.agent-desk/` inside each project, which is kept out of git.
 
 ## Verify a release
 
-Agent Desk isn't notarized, so macOS can't vouch for it. You can check a download yourself. Full guide, with what
-each command printed for 1.8.2: [aahannp.github.io/agent-desk/verify.html](https://aahannp.github.io/agent-desk/verify.html).
+Relay isn't notarized, so macOS can't vouch for it. You can check a download yourself. Full guide, with what
+each command printed for 1.8.2 (when Relay was still called Agent Desk, so its file was `Agent-Desk-1.8.2-arm64.dmg`
+and its app `Agent Desk.app`): [aahannp.github.io/agent-desk/verify.html](https://aahannp.github.io/agent-desk/verify.html).
 
 1. **Checksum.** Compare the SHA-256 of your file with the one GitHub shows for it on the release page, the
    website's Download section, or the API:
 
-       shasum -a 256 ~/Downloads/Agent-Desk-*.dmg
+       shasum -a 256 ~/Downloads/Relay-*.dmg
        gh release view v1.8.2 -R aahannp/agent-desk --json assets --jq '.assets[] | .name + "  " + .digest'
 
    For 1.8.2 both print `9e9daaa1ee23ff2f80a9a02ce1fc43b5d3a0de8ff1ad055333d51a5ea138ac0e`.
-2. **Signature.** `codesign -dv --verbose=2 "/Applications/Agent Desk.app"` shows `Signature=adhoc`, flags
+2. **Signature.** `codesign -dv --verbose=2 "/Applications/Relay.app"` shows `Signature=adhoc`, flags
    `adhoc,runtime` and no Team ID: the app is signed, so changing it breaks the signature, but not with an Apple
-   certificate, so it says nothing about who built it. `codesign --verify --deep --strict "/Applications/Agent Desk.app"`
+   certificate, so it says nothing about who built it. `codesign --verify --deep --strict "/Applications/Relay.app"`
    should say `valid on disk`; `spctl -a -vv` says `rejected` until it's notarized.
 3. **Code against source.** The app's own code is plain JavaScript in `Contents/Resources/app.asar`. Unpack it and
    diff it against the tag:
 
-       v=$(defaults read "/Applications/Agent Desk.app/Contents/Info" CFBundleShortVersionString)
-       npx --yes @electron/asar@4.3.1 extract "/Applications/Agent Desk.app/Contents/Resources/app.asar" app
+       v=$(defaults read "/Applications/Relay.app/Contents/Info" CFBundleShortVersionString)
+       npx --yes @electron/asar@4.3.1 extract "/Applications/Relay.app/Contents/Resources/app.asar" app
        git clone --branch "v$v" --depth 1 https://github.com/aahannp/agent-desk src
        for d in electron lib public shell server.mjs; do diff -r "src/$d" "app/$d" && echo "$d: identical"; done
 
@@ -202,18 +215,18 @@ each command printed for 1.8.2: [aahannp.github.io/agent-desk/verify.html](https
    source maps and unused builds; node-pty's `pty.node` and `spawn-helper` are re-signed ad-hoc, so the files
    differ but their machine code (`otool -t`) is the same.
 4. **Build attestation** (from v1.9, once releases are built by GitHub Actions; not available for 1.8.2 or
-   earlier): `gh attestation verify Agent-Desk-<version>-arm64.dmg -R aahannp/agent-desk`.
+   earlier): `gh attestation verify Relay-<version>-arm64.dmg -R aahannp/agent-desk`.
 
 ## Build from source
 
 From a clean clone of a release tag, on a Mac with Apple silicon, git, Node.js and npm (tested with Node 25.5.0
 and npm 11.8.0) and the Xcode Command Line Tools (`swiftc` builds the voice helper):
 
-    git clone --branch v1.8.2 --depth 1 https://github.com/aahannp/agent-desk
+    git clone --branch v1.9.0 --depth 1 https://github.com/aahannp/agent-desk
     cd agent-desk
     npm ci               # exact versions from package-lock.json
     npm run app          # run it
-    npm run dist         # or build dist/Agent Desk-1.8.2-arm64.dmg (under 3 minutes here)
+    npm run dist         # or build dist/Relay-1.9.0-arm64.dmg (under 3 minutes here)
 
 The DMG isn't reproducible bit for bit: our build of 1.8.2 had a different checksum from the released DMG, because
 a disk image records when it was made. What's inside does reproduce. Our `app.asar` had the same SHA-256 as the
@@ -221,7 +234,7 @@ release's (`77906f63…20c4`), and with the same Node, npm and Xcode all 298 fil
 included. A different Xcode or macOS may compile the voice helper or sign binaries differently, so compare
 `app.asar`, or unpack it as in step 3:
 
-    shasum -a 256 "dist/mac-arm64/Agent Desk.app/Contents/Resources/app.asar" "/Applications/Agent Desk.app/Contents/Resources/app.asar"
+    shasum -a 256 "dist/mac-arm64/Relay.app/Contents/Resources/app.asar" "/Applications/Relay.app/Contents/Resources/app.asar"
 
 ## Roadmap
 
