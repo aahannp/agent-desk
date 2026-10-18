@@ -104,7 +104,7 @@
   .fine { font-size: 14px; color: var(--dim); margin: 22px 0 0; letter-spacing: -.01em; }
 
   /* A MacBook drawn in CSS around the hero screenshot */
-  .mac { position: relative; max-width: 1060px; margin: 72px auto 0; }
+  .mac { position: relative; max-width: 1060px; margin: 20px auto 0; }
   .lid { background: var(--frame); border-radius: 2.4% 2.4% 0 0 / 3.6% 3.6% 0 0; padding: 2.1% 2.1% 1.6%; box-shadow: inset 0 0 0 1px rgb(255 255 255 / .12), 0 0 0 1px rgb(0 0 0 / .4); }
   .lid img { border-radius: .4%; }
   .base { position: relative; height: clamp(10px, 1.7vw, 20px); margin: 0 -7.5%; background: linear-gradient(var(--base-top), var(--base-bot)); border-radius: 0 0 50% 50% / 0 0 100% 100%; box-shadow: 0 20px 40px -10px rgb(0 0 0 / .5); }
@@ -330,6 +330,33 @@
   .sugs { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; margin-top: 36px; }
   .sugs p { width: 100%; margin: 0 0 4px; color: var(--dim); font-size: 14px; }
 
+  /* Expand the live demo into a modal; the "Needs you" approval */
+  .stage-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 20px; margin-top: 56px; color: var(--dim); font-size: 14px; }
+  .stage-bar .linkish, .stage-close { color: var(--link); font-size: 14px; text-decoration: none; }
+  .stage { all: unset; display: block; }
+  .stage:modal { position: fixed; inset: 0; box-sizing: border-box; width: min(1280px, 100vw - 24px); max-height: calc(100dvh - 24px); margin: auto; padding: 44px 12px 12px; overflow: auto; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); }
+  .stage::backdrop { background: rgb(0 0 0 / .72); }
+  .motion .stage:modal { animation: pop .14s ease-out; }
+  .stage-close { position: absolute; top: 12px; right: 18px; }
+  .stage:modal .app { aspect-ratio: auto; height: calc(100dvh - 82px); min-height: 480px; }
+  .bell { display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px; border: 1px solid var(--t-line); border-radius: 7px; background: none; color: var(--t-text); font: 500 11px var(--sans); cursor: pointer; }
+  .bell svg { width: 13px; height: 13px; }
+  .bell[hidden] { display: none; }
+  #needs { position: fixed; inset: auto; width: 260px; margin: 0; padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--tile); color: var(--text); font: 13px/1.4 var(--sans); box-shadow: 0 16px 40px -12px rgb(0 0 0 / .5); }
+  #needs p { margin: 2px 8px 6px; color: var(--dim); font-size: 12px; }
+  #needs button { width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  #needs button:hover, #needs button:focus-visible { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .st[data-s="needs"] { --c: var(--t-text); }
+  .log li.ask { margin-top: 4px; padding: 6px 8px; border: 1px solid var(--t-line); border-radius: 7px; }
+  .log li.ask::before { content: none; }
+  .ask button { min-height: 26px; margin: 6px 6px 0 0; padding: 0 9px; border: 1px solid var(--t-line); border-radius: 6px; background: var(--t-bg); color: var(--t-text); font: inherit; cursor: pointer; }
+  .ask button:hover { border-color: var(--t-accent); }
+  @supports (interpolate-size: allow-keywords) {
+    .faq { interpolate-size: allow-keywords; }
+    .motion .faq details::details-content { block-size: 0; overflow: hidden; transition: block-size .3s, content-visibility .3s allow-discrete; }
+    .motion .faq details[open]::details-content { block-size: auto; }
+  }
+
   /* ⌘K palette and the confirm dialog */
   .kbd { display: inline-flex; align-items: center; justify-content: center; height: 28px; padding: 0 9px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 500; cursor: pointer; }
   .kbd:hover { color: var(--text); }
@@ -435,6 +462,8 @@
     .app .pane[data-p="api"], .app .pane[data-p="page"], .sugs [data-p="api"], .app .top .b { display: none; }
     .lid { border-radius: 16px; padding: 8px; }
     .base { display: none; }
+    .stage:modal .app { height: auto; }
+    .stage:modal .app .pane[data-p] { display: flex; }
     .controls { justify-content: center; }
     .board { gap: 5px; padding: 10px; }
     .col { min-height: 96px; padding: 6px; }
@@ -496,8 +525,15 @@
       <p class="fine">Free and open source. For Mac with Apple silicon. Requires <a href="https://code.claude.com/docs/en/overview">Claude Code</a>.</p>
     </div>
     <div class="wide">
+      <div class="stage-bar">
+        <span>Live demo · nothing runs on your Mac</span>
+        <button type="button" class="linkish" data-stage="reset">Reset</button>
+        <button type="button" class="linkish" data-stage="open" aria-haspopup="dialog">Expand</button>
+      </div>
       <div class="mac reveal">
         <div class="lid">
+          <dialog class="stage" open role="region" aria-label="Live Agent Desk demo" aria-describedby="heroDesc">
+          <button type="button" class="linkish stage-close" data-stage="close" hidden>Close</button>
           <div class="desk app" id="hero" role="group" aria-label="A live Agent Desk: type a message into any agent's prompt">
             <aside aria-hidden="true">
               <span class="brand2"><img src="assets/icon.svg" alt="" width="18" height="18">Agent Desk</span>
@@ -507,35 +543,38 @@
               <span class="nv">Lead</span><span class="nv">Wishlist API</span><span class="nv">Wishlist page</span><span class="nv">Scout</span>
             </aside>
             <main>
-              <div class="top" aria-hidden="true">Agents <small>Every agent and shell, side by side</small><span class="b">+ New Claude Code</span></div>
+              <div class="top"><span aria-hidden="true">Agents</span> <small aria-hidden="true">Every agent and shell, side by side</small><button type="button" class="bell" popovertarget="needs" aria-label="Needs you: 1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg><span>1</span></button><span class="b" aria-hidden="true">+ New Claude Code</span></div>
               <div class="grid">
                 <div class="pane" data-p="lead">
                   <header><i class="av">★</i><b>Lead</b><small>Lead agent · opus</small><span class="st" data-s="idle">Idle</span></header>
                   <ol class="log"><li><b>create_task</b>("Wishlist API")<span>⎿ Created a1f3</span></li><li><b>start_task</b>(b27c)<span>⎿ Started Wishlist page</span></li><li>Three workers are on it.</li></ol>
-                  <form class="pr"><i class="cur" aria-hidden="true"></i><input aria-label="Message the Lead" placeholder="Give the lead a goal…" autocomplete="off" spellcheck="false" enterkeyhint="send"></form>
+                  <form class="pr"><i class="cur" aria-hidden="true"></i><input aria-label="Message the Lead" placeholder="Give the lead a goal…" maxlength="120" autocomplete="off" spellcheck="false" enterkeyhint="send"></form>
                 </div>
                 <div class="pane" data-p="api">
                   <header><i class="av" style="--av: #636366">C</i><b>Wishlist API</b><small>Claude Code / wishlist-api</small><span class="st" data-s="idle">Idle</span></header>
                   <ol class="log"><li><b>Write</b>(src/api/wishlist.js)<span>⎿ Wrote 28 lines</span></li><li><b>Bash</b>(node --test)<span>⎿ pass 6  fail 0</span></li><li>The wishlist API is in.</li></ol>
-                  <form class="pr"><i class="cur" aria-hidden="true"></i><input aria-label="Message Wishlist API" placeholder="Message Wishlist API…" autocomplete="off" spellcheck="false" enterkeyhint="send"></form>
+                  <form class="pr"><i class="cur" aria-hidden="true"></i><input aria-label="Message Wishlist API" placeholder="Message Wishlist API, or type help" maxlength="120" autocomplete="off" spellcheck="false" enterkeyhint="send"></form>
                 </div>
                 <div class="pane" data-p="page">
-                  <header><i class="av" style="--av: #636366">C</i><b>Wishlist page</b><small>Claude Code / wishlist-page</small><span class="st" data-s="working">Working</span></header>
-                  <ol class="log"><li><b>Update</b>(src/pages/product.html)<span>⎿ 6 additions, 1 removal</span></li><li><b>Write</b>(src/pages/wishlist.html)<span>⎿ Wrote 22 lines</span></li><li class="w"><i class="spin">✻</i> Testing the heart button…</li></ol>
-                  <form class="pr"><i class="cur" aria-hidden="true"></i><input aria-label="Message Wishlist page" placeholder="Message Wishlist page…" autocomplete="off" spellcheck="false" enterkeyhint="send"></form>
+                  <header><i class="av" style="--av: #636366">C</i><b>Wishlist page</b><small>Claude Code / wishlist-page</small><span class="st" data-s="needs">Needs you</span></header>
+                  <ol class="log"><li><b>Update</b>(src/pages/product.html)<span>⎿ 6 additions, 1 removal</span></li><li><b>Write</b>(src/pages/wishlist.html)<span>⎿ Wrote 22 lines</span></li><li class="ask" role="group" aria-label="Wishlist page asks to run npm install">Allow <b>Bash</b>(npm install playwright)?<br><button type="button" data-a="yes">1 Yes</button><button type="button" data-a="no">2 No</button></li></ol>
+                  <form class="pr"><i class="cur" aria-hidden="true"></i><input aria-label="Message Wishlist page" placeholder="Message Wishlist page, or type help" maxlength="120" autocomplete="off" spellcheck="false" enterkeyhint="send"></form>
                 </div>
                 <div class="pane" data-p="scout">
                   <header><i class="av" style="--av: #48484a">S</i><b>Scout</b><small>Code finder · haiku</small><span class="st" data-s="idle">Idle</span></header>
                   <ol class="log"><li><b>Grep</b>("formatPrice")<span>⎿ Found 3 files</span></li><li>formatPrice is in src/cart.js:9.</li></ol>
-                  <form class="pr"><i class="cur" aria-hidden="true"></i><input aria-label="Message Scout" placeholder="Ask Scout where something is…" autocomplete="off" spellcheck="false" enterkeyhint="send"></form>
+                  <form class="pr"><i class="cur" aria-hidden="true"></i><input aria-label="Message Scout" placeholder="Ask Scout where something is, or type help" maxlength="120" autocomplete="off" spellcheck="false" enterkeyhint="send"></form>
                 </div>
               </div>
-              <div class="status" aria-hidden="true"><span class="live">Live</span><span>4 running</span><span>1 working</span></div>
+              <div class="status" aria-hidden="true"><span class="live">Live</span><span>4 running</span><span>1 needs you</span></div>
+              <div id="needs" popover role="dialog" aria-label="Needs you"><p>Needs you</p><button type="button" data-go>Wishlist page wants to run <code>npm install</code></button></div>
             </main>
           </div>
+          </dialog>
         </div>
         <div class="base" aria-hidden="true"></div>
       </div>
+      <p class="sr-only" id="heroDesc">Agent Desk's Agents view: a Lead, two workers and Scout in a grid of terminal panes, each worker in its own git branch. Type into any prompt and that agent answers.</p>
       <div class="sugs" role="group" aria-label="Suggested prompts">
         <p>Click into any pane and type. Or try one:</p>
         <button type="button" class="chip-btn" data-p="lead" data-t="Add dark mode to the shop">Lead: add dark mode</button>
@@ -627,7 +666,7 @@
         <article class="tile reveal">
           <span class="kicker">Graph</span>
           <h3>See who's doing what, live.</h3>
-          <p>Every agent is a node. Lines show who messaged whom and who started whom, and new messages glow along them. Drag one around, or click it to read its terminal.</p>
+          <p>Every agent is a node. Lines show who messaged whom and who started whom, and new messages travel along them. Drag one around, or click it to read its terminal.</p>
           <div class="pic"><div class="desk gr" id="graph" role="group" aria-label="Graph demo: five agents and the messages between them">
             <svg viewBox="0 0 400 315"></svg>
             <p class="glegend" aria-hidden="true"><span><i></i>Messages</span><span><i class="d"></i>Started</span><span>Drag a node · click for its terminal</span></p>
@@ -816,27 +855,27 @@
     <div class="wrap">
       <h2 class="reveal center">Questions? Answers.</h2>
       <div class="faq">
-        <details>
+        <details name="faq">
           <summary>What do I need to run it?</summary>
           <p>A Mac with Apple silicon, and <a href="https://code.claude.com/docs/en/overview">Claude Code</a> installed and signed in. Codex, Gemini CLI and Cursor Agent are optional: install any of them and they show up in the New menu.</p>
         </details>
-        <details>
+        <details name="faq">
           <summary>Does it need an API key, or cost anything extra?</summary>
           <p>No. Agent Desk is free and MIT-licensed, and agents run in real terminals with your own CLI logins, so Claude Code uses your normal subscription. The Spend view shows what the same work would cost at API prices, so you can see where it went.</p>
         </details>
-        <details>
+        <details name="faq">
           <summary>macOS says it can't check the app. Is that expected?</summary>
           <p>Yes. The app is signed ad-hoc because there's no Apple developer account behind it. The first time, right-click the app and choose Open. On macOS 15 or later, go to System Settings → Privacy &amp; Security and click Open Anyway.</p>
         </details>
-        <details>
+        <details name="faq">
           <summary>Where does my data live?</summary>
           <p>The board, settings and secret are in <code>~/Library/Application Support/Agent Desk</code>. Agent worktrees and screenshots go in <code>.agent-desk/</code> inside each project, which is kept out of git.</p>
         </details>
-        <details>
+        <details name="faq">
           <summary>How does it update?</summary>
           <p>The version pill next to the logo checks GitHub releases. When a newer one is out it says Update, and one click downloads the new .dmg to your Downloads folder.</p>
         </details>
-        <details>
+        <details name="faq">
           <summary>Can I build it myself, or run it on an Intel Mac?</summary>
           <p>Yes, from source: clone the repo, then run <code>npm install</code> and <code>npm run app</code>. <code>npm start</code> runs it in your browser instead, and <code>npm run dist</code> builds a .dmg for your Mac.</p>
         </details>
@@ -1217,7 +1256,7 @@
     act.reset.addEventListener('click', () => { sel = 0; st = W.map(() => 'open'); status.textContent = ''; show(); });
   }
 
-  // 5. Graph: each agent is a node, lines show who messaged whom (dashed: who started whom), and new messages glow along them.
+  // 5. Graph: each agent is a node, lines show who messaged whom (dashed: who started whom), and new messages travel along them.
   const gbox = $('#graph');
   if (gbox) {
     const gsvg = $('svg', gbox), card = $('.gcard', gbox), term = $('.gterm', gbox), tlog = $('.log', term);
@@ -1370,13 +1409,26 @@
   // 6. Hero: a live Agents view. Type into a pane's prompt and that agent answers in Claude Code's style.
   const hero = $('#hero');
   if (hero) {
-    const panes = Object.fromEntries($$('.pane', hero).map(p => [p.dataset.p, p])), heroSay = $('#heroSay');
+    let panes;
+    const grab = () => { panes = Object.fromEntries($$('.pane', hero).map(p => [p.dataset.p, p])); };
+    const start = $('.grid', hero).innerHTML, heroSay = $('#heroSay'), timers = new Set();
+    const later = (fn, ms) => { const t = setTimeout(() => { timers.delete(t); fn(); }, ms); timers.add(t); };
+    grab();
     const esc = s => s.replace(/[&<>"]/g, c => `&#${c.charCodeAt(0)};`);
     const T = (name, arg, out) => `<b>${name}</b>(${arg})<span>⎿ ${out}</span>`;
     const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 22);
     // What an agent answers: tool lines, a short reply, and (for the lead) workers to start afterwards.
     function reply(id, text) {
-      const q = esc(text.replace(/[?.!\s]+$/, '')), low = text.toLowerCase();
+      const q = esc(text.replace(/[?.!\s]+$/, '')), low = text.toLowerCase(), p = panes[id];
+      // A few real-looking commands first. Each worker reports its own worktree branch.
+      const branch = $('header small', p).textContent.split('/ ')[1], cmd = {
+        help: { lines: [], say: 'Try git status, git diff, /cost or /clear. Or just ask for something.' },
+        'git status': { lines: [T('Bash', 'git status', `On branch ${branch ? `desk/${branch}` : 'main'} · 2 files changed`)], say: branch ? "I'm in my own worktree, so nobody else touches these files." : 'I work in the main folder; each worker has its own worktree.' },
+        'git diff': { lines: [T('Bash', 'git diff --stat', '+28 −0 in 2 files')], say: 'It waits in Review until you merge it.' },
+        '/cost': { lines: [], say: `This session: about $${(p.cost || 0.38).toFixed(2)} at API prices.` },
+        '/clear': { clear: true, lines: [], say: 'Cleared.' },
+      }[low];
+      if (cmd) return cmd;
       if (/^(hi|hey|hello|thanks|thank you)\b/.test(low)) return { lines: [], say: id === 'lead' ? 'Hi! Give me a goal, like “add dark mode”, and I’ll split it into tasks.' : 'Hi! Tell me what you need.' };
       if (id === 'lead') {
         const goal = q.replace(/^(please|can you|could you)\s+/i, '').slice(0, 26), jobs = [`${goal}: code`, `${goal}: tests`];
@@ -1399,9 +1451,11 @@
       const p = panes[id], log = $('.log', p), st = $('.st', p), name = $('b', p).textContent;
       if (p.busy) return;
       p.busy = true;
+      p.cost = (p.cost || 0.38) + 0.05 * r.lines.length;
       st.dataset.s = 'working';
       st.textContent = 'Working';
-      if (typed) line(log, `&gt; ${esc(typed)}`, 'p');
+      if (r.clear) log.replaceChildren();
+      else if (typed) line(log, `&gt; ${esc(typed)}`, 'p');
       const spin = el('li', 'w', '<i class="spin">✻</i> Thinking…'), items = [...r.lines, r.say];
       log.append(spin);
       const next = () => {
@@ -1410,22 +1464,22 @@
           p.busy = false;
           st.dataset.s = 'idle';
           st.textContent = 'Idle';
-          if (typed) heroSay.textContent = `${name}: ${r.say}`;
+          if (typed != null) heroSay.textContent = `${name}: ${r.say}`;
           return r.then?.();
         }
         line(log, items.shift());
         log.append(spin);
-        calm ? next() : setTimeout(next, 450);
+        calm ? next() : later(next, 450);
       };
-      calm ? next() : setTimeout(next, 600);
+      calm ? next() : later(next, 600);
     }
     function work(id, job) {
       const p = panes[id];
-      if (p.busy) return setTimeout(() => work(id, job), 800); // let it finish answering first
+      if (p.busy) return later(() => work(id, job), 800); // let it finish answering first
       $('header b', p).textContent = job;
       $('header small', p).textContent = `Claude Code / ${slug(job)}`;
       $('input', p).setAttribute('aria-label', `Message ${job}`);
-      $('input', p).placeholder = `Message ${job}…`;
+      $('input', p).placeholder = `Message ${job}, or type help`;
       run(id, { lines: [T('Read', 'src/app.js', 'Read 64 lines'), T('Write', `src/${slug(job)}.js`, 'Wrote 31 lines'), T('Bash', 'node --test', 'pass 9  fail 0'), T('update_task', slug(job), 'Moved to Review')], say: 'Done. Ready for review.' });
     }
     hero.addEventListener('submit', e => {
@@ -1433,7 +1487,73 @@
       const input = $('input', e.target), text = input.value.trim(), id = e.target.closest('.pane').dataset.p;
       if (!text || panes[id].busy) return;
       input.value = '';
+      panes[id].last = text; // ↑ in an empty prompt brings it back
       run(id, reply(id, text), text);
+    });
+    // "Needs you": Wishlist page waits for your OK to run a command, like Claude Code's permission prompt.
+    const bell = $('.bell', hero), needs = $('#needs');
+    function answer(yes) {
+      if (!$('.ask', hero)) return;
+      $('.ask', hero).remove();
+      bell.hidden = true;
+      $('.status', hero).lastElementChild.textContent = '1 working';
+      $('input', panes.page).focus();
+      run('page', {
+        lines: yes ? [T('Bash', 'npm install playwright', 'added 3 packages')] : [],
+        say: yes ? 'Installed. Back to testing the heart button.' : "OK, skipped. I'll test without it.",
+        then: () => { const st = $('.st', panes.page); st.dataset.s = 'working'; st.textContent = 'Working'; line($('.log', panes.page), '<i class="spin">✻</i> Testing the heart button…', 'w'); },
+      }, '');
+    }
+    hero.addEventListener('click', e => {
+      const a = e.target.closest('[data-a]');
+      if (a) answer(a.dataset.a === 'yes');
+      if (e.target.closest('[data-go]')) { needs.hidePopover(); if (!panes.page.offsetParent) opener.click(); /* phones hide that pane until expanded */ panes.page.scrollIntoView({ block: 'nearest' }); ($('.ask button', hero) || $('input', panes.page)).focus(); }
+    });
+    hero.addEventListener('keydown', e => {
+      const input = e.target.matches('.pr input') && e.target, p = e.target.closest('.pane');
+      if (input && e.key === 'ArrowUp' && !input.value && p.last) { e.preventDefault(); input.value = p.last; }
+      else if (!input && p?.dataset.p === 'page' && (e.key === '1' || e.key === '2')) answer(e.key === '1'); // like the CLI
+    });
+    needs.addEventListener('toggle', e => {
+      if (e.newState !== 'open') return;
+      const r = bell.getBoundingClientRect();
+      needs.style.top = `${r.bottom + 6}px`;
+      needs.style.left = `${Math.max(8, Math.min(r.right - 260, innerWidth - 268))}px`;
+      addEventListener('scroll', () => needs.matches(':popover-open') && needs.hidePopover(), { once: true, passive: true }); // it would drift from the bell
+    });
+    // Expand lifts the same live window into a modal, so nothing you typed is lost; Reset starts it over.
+    const stage = $('.stage'), lid = $('.lid'), closer = $('.stage-close'), opener = $('[data-stage=open]');
+    $('.stage-bar').addEventListener('click', e => {
+      const act = e.target.dataset.stage;
+      if (act === 'open') {
+        lid.style.minHeight = `${lid.offsetHeight}px`; // keep the MacBook from collapsing while the window is lifted out
+        stage.close();
+        stage.removeAttribute('role');
+        stage.showModal();
+        closer.hidden = false;
+        $('input', hero).focus();
+      } else if (act === 'reset') {
+        timers.forEach(clearTimeout);
+        timers.clear();
+        $('.grid', hero).innerHTML = start;
+        grab();
+        bell.hidden = false;
+        $('.status', hero).lastElementChild.textContent = '1 needs you';
+        heroSay.textContent = 'Demo reset';
+      }
+    });
+    closer.addEventListener('click', () => stage.close());
+    stage.addEventListener('close', () => {
+      if (stage.open) return; // the close() that Expand makes on the way to showModal()
+      stage.show();
+      stage.setAttribute('role', 'region');
+      closer.hidden = true;
+      lid.style.minHeight = '';
+      opener.focus();
+    });
+    stage.addEventListener('click', e => { // a click on the dimmed backdrop
+      const r = stage.getBoundingClientRect();
+      if (stage.matches(':modal') && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) stage.close();
     });
     // Suggested prompts type themselves into the right pane, then send.
     $('.sugs')?.addEventListener('click', e => {
