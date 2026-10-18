@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Verify a download · Agent Desk</title>
-<meta name="description" content="Check that an Agent Desk download is the file GitHub published, how it's signed, and that its code matches the source at that tag. Plus how to build it yourself.">
+<title>Verify a download · Relay</title>
+<meta name="description" content="Check that a Relay download is the file GitHub published, how it's signed, and that its code matches the source at that tag. Plus how to build it yourself.">
 <meta name="color-scheme" content="dark light">
 <link rel="canonical" href="https://aahannp.github.io/agent-desk/verify.html">
-<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="icon" href="assets/relay-favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/relay-180.png">
 <script>
   try { const t = localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
 </script>
@@ -50,6 +50,7 @@
   .nav .wrap { display: flex; align-items: center; height: 100%; gap: 22px; max-width: 1024px; }
   .brand { display: flex; align-items: center; gap: 9px; color: var(--text); font-size: 19px; font-weight: 600; margin-right: auto; }
   .brand:hover { text-decoration: none; }
+  .mark { flex: none; width: 24px; height: 24px; background: currentColor; -webkit-mask: url(assets/relay-mark-bold.svg) center / contain no-repeat; mask: url(assets/relay-mark-bold.svg) center / contain no-repeat; }
   .nav a:not(.brand) { color: var(--muted); font-size: 13px; }
   .nav a:not(.brand):hover { color: var(--text); text-decoration: none; }
 
@@ -92,7 +93,7 @@
 <a class="skip" href="#main">Skip to content</a>
 <header class="nav">
   <div class="wrap">
-    <a class="brand" href="./"><img src="assets/icon.svg" alt="" width="24" height="24">Agent Desk</a>
+    <a class="brand" href="./"><span class="mark" aria-hidden="true"></span>Relay</a>
     <a class="hide-sm" href="#build">Build it yourself</a>
     <a href="https://github.com/aahannp/agent-desk/releases">Releases</a>
     <a href="https://github.com/aahannp/agent-desk/issues">Issues</a>
@@ -102,7 +103,8 @@
 <main id="main">
   <div class="wrap">
     <h1>Verify a download.</h1>
-    <p class="lede">Agent Desk isn't notarized by Apple yet, so macOS can't vouch for it. These steps let you check it yourself: that your file is the one GitHub published, how it's signed, and that the app's code is the code in this repo at that version.</p>
+    <p class="lede">Relay isn't notarized by Apple yet, so macOS can't vouch for it. These steps let you check it yourself: that your file is the one GitHub published, how it's signed, and that the app's code is the code in this repo at that version.</p>
+    <p class="note">The example outputs below are from 1.8.2, when Relay was still called Agent Desk. For 1.8.x and earlier, use <code>Agent-Desk-*.dmg</code> and <code>/Applications/Agent Desk.app</code> in the commands.</p>
 
     <div class="latest" id="latest" hidden>
       <p>Latest release: <b id="ver"></b> · <span id="file"></span></p>
@@ -111,7 +113,7 @@
 
     <h2 id="checksum">1. Check the checksum</h2>
     <p>Every release on GitHub lists a SHA-256 checksum for each file. Work out the checksum of the file you downloaded:</p>
-    <pre><code>shasum -a 256 ~/Downloads/Agent-Desk-*.dmg</code></pre>
+    <pre><code>shasum -a 256 ~/Downloads/Relay-*.dmg</code></pre>
     <p>It prints one line per DMG in your Downloads folder, like this for 1.8.2:</p>
     <pre><code>9e9daaa1ee23ff2f80a9a02ce1fc43b5d3a0de8ff1ad055333d51a5ea138ac0e  …/Agent-Desk-1.8.2-arm64.dmg</code></pre>
     <p>The long number should be exactly the one shown above for the latest release, or the one GitHub lists for your version (step 2). If even one character differs, don't open the file, and please <a href="https://github.com/aahannp/agent-desk/issues/new">report it</a>.</p>
@@ -125,9 +127,9 @@
 
     <h2 id="signature">3. Check the signature</h2>
     <p>After you've copied the app to Applications:</p>
-    <pre><code>codesign -dv --verbose=2 "/Applications/Agent Desk.app"</code></pre>
+    <pre><code>codesign -dv --verbose=2 "/Applications/Relay.app"</code></pre>
     <p>The lines that matter, from 1.8.2:</p>
-    <pre><code>Identifier=com.aahan.agentdesk
+    <pre><code>Identifier=com.aahan.agentdesk   <span class="c"># com.aahan.relay from 1.9.0</span>
 CodeDirectory v=20500 size=436 flags=0x10002(adhoc,runtime) hashes=3+7 location=embedded
 Signature=adhoc
 TeamIdentifier=not set</code></pre>
@@ -136,23 +138,23 @@ TeamIdentifier=not set</code></pre>
       <li><b>runtime</b> means it uses the hardened runtime, which stops other code being injected into it.</li>
     </ul>
     <p>To check nothing in the app has changed since it was signed:</p>
-    <pre><code>codesign --verify --deep --strict --verbose=2 "/Applications/Agent Desk.app"</code></pre>
-    <p>It should end with <code>valid on disk</code> and <code>satisfies its Designated Requirement</code>. Gatekeeper's own check, <code>spctl -a -vv "/Applications/Agent Desk.app"</code>, says <code>rejected</code>: that's expected until the app is notarized.</p>
+    <pre><code>codesign --verify --deep --strict --verbose=2 "/Applications/Relay.app"</code></pre>
+    <p>It should end with <code>valid on disk</code> and <code>satisfies its Designated Requirement</code>. Gatekeeper's own check, <code>spctl -a -vv "/Applications/Relay.app"</code>, says <code>rejected</code>: that's expected until the app is notarized.</p>
     <p>Electron's security switches (fuses) are baked into the app too. To list them:</p>
-    <pre><code>npx --yes @electron/fuses@2.1.3 read --app "/Applications/Agent Desk.app"</code></pre>
+    <pre><code>npx --yes @electron/fuses@2.1.3 read --app "/Applications/Relay.app"</code></pre>
     <p>RunAsNode, NODE_OPTIONS and the inspector switches should be <b>Disabled</b>, and EnableEmbeddedAsarIntegrityValidation and OnlyLoadAppFromAsar <b>Enabled</b>, so the app refuses to run if its code bundle has been changed.</p>
 
     <h2 id="source">4. Check the app's code against the source</h2>
-    <p>All of Agent Desk's own code (the server, the page and the Electron shell) is plain JavaScript, packed into one file in the app: <code>Contents/Resources/app.asar</code>. You can unpack it and compare it with this repo at the same version. This only reads the app; it doesn't change it. You need Node.js and git.</p>
+    <p>All of Relay's own code (the server, the page and the Electron shell) is plain JavaScript, packed into one file in the app: <code>Contents/Resources/app.asar</code>. You can unpack it and compare it with this repo at the same version. This only reads the app; it doesn't change it. You need Node.js and git.</p>
     <pre><code><span class="c"># a new, empty folder to work in</span>
-mkdir ~/agent-desk-verify &amp;&amp; cd ~/agent-desk-verify
-v=$(defaults read "/Applications/Agent Desk.app/Contents/Info" CFBundleShortVersionString)
+mkdir ~/relay-verify &amp;&amp; cd ~/relay-verify
+v=$(defaults read "/Applications/Relay.app/Contents/Info" CFBundleShortVersionString)
 
 <span class="c"># unpack the app's code, and fetch the source at the same tag</span>
-npx --yes @electron/asar@4.3.1 extract "/Applications/Agent Desk.app/Contents/Resources/app.asar" app
+npx --yes @electron/asar@4.3.1 extract "/Applications/Relay.app/Contents/Resources/app.asar" app
 git clone --branch "v$v" --depth 1 https://github.com/aahannp/agent-desk src
 
-<span class="c"># Agent Desk's own code: should print "identical" five times</span>
+<span class="c"># Relay's own code: should print "identical" five times</span>
 for d in electron lib public shell server.mjs; do diff -r "src/$d" "app/$d" &amp;&amp; echo "$d: identical"; done
 
 <span class="c"># the dependencies, installed from the same lockfile</span>
@@ -174,30 +176,31 @@ for f in pty.node spawn-helper; do cmp &lt;(otool -t "src/$p/$f" | tail -n +2) &
 
     <h2 id="attestation">5. Check the build attestation <span class="soon">From v1.9</span></h2>
     <p>Once releases are built by GitHub Actions, each DMG will come with a signed attestation that records which workflow, commit and tag built it. You'll be able to check it with:</p>
-    <pre><code>gh attestation verify Agent-Desk-1.9.0-arm64.dmg -R aahannp/agent-desk</code></pre>
+    <pre><code>gh attestation verify Relay-1.9.0-arm64.dmg -R aahannp/agent-desk</code></pre>
     <p>This doesn't work for 1.8.2 and earlier, which were built on a Mac and uploaded by hand.</p>
 
     <h2 id="build">Build it yourself</h2>
-    <p>You can skip the download and build Agent Desk from the source. These steps start from a clean clone of a release tag:</p>
-    <pre><code>git clone --branch v1.8.2 --depth 1 https://github.com/aahannp/agent-desk
+    <p>You can skip the download and build Relay from the source. These steps start from a clean clone of a release tag:</p>
+    <pre><code>git clone --branch v1.9.0 --depth 1 https://github.com/aahannp/agent-desk
 cd agent-desk
 npm ci           <span class="c"># exact versions from package-lock.json</span>
 npm run app      <span class="c"># run it from source</span>
-npm run dist     <span class="c"># or build dist/Agent Desk-1.8.2-arm64.dmg</span></code></pre>
+npm run dist     <span class="c"># or build dist/Relay-1.9.0-arm64.dmg</span></code></pre>
     <p>You need a Mac with Apple silicon, git, Node.js with npm (we used Node 25.5.0 and npm 11.8.0), and the Xcode Command Line Tools (<code>xcode-select --install</code>) for <code>swiftc</code>, which builds the voice helper. <code>npm run dist</code> took under 3 minutes here.</p>
     <p class="note"><b>The DMG isn't reproducible bit for bit.</b> Our build of 1.8.2 had a different checksum from the release DMG, because a disk image records when it was made. So you can't check a download by building your own DMG and comparing checksums.</p>
     <p>What you can compare is what's inside. The app's code, <code>app.asar</code>, should come out the same SHA-256 as the release's (for 1.8.2, <code>77906f63…20c4</code>):</p>
-    <pre><code>shasum -a 256 "dist/mac-arm64/Agent Desk.app/Contents/Resources/app.asar" "/Applications/Agent Desk.app/Contents/Resources/app.asar"</code></pre>
-    <p>On our Mac the whole app matched: all 298 files in our <code>dist/mac-arm64/Agent Desk.app</code> were identical to the released app's, signatures included. That needs the same tools as the release build, though. A different Xcode compiles the voice helper differently, and a different version of macOS's <code>codesign</code> can sign differently. To compare whole apps, run this in each one and compare the two results:</p>
-    <pre><code>cd "/Applications/Agent Desk.app" &amp;&amp; find . -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256</code></pre>
+    <pre><code>shasum -a 256 "dist/mac-arm64/Relay.app/Contents/Resources/app.asar" "/Applications/Relay.app/Contents/Resources/app.asar"</code></pre>
+    <p>On our Mac the whole app matched: all 298 files in our <code>dist/mac-arm64/Relay.app</code> were identical to the released app's, signatures included. That needs the same tools as the release build, though. A different Xcode compiles the voice helper differently, and a different version of macOS's <code>codesign</code> can sign differently. To compare whole apps, run this in each one and compare the two results:</p>
+    <pre><code>cd "/Applications/Relay.app" &amp;&amp; find . -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256</code></pre>
 
     <h2 id="installer">What the Terminal installer does</h2>
     <p>The one-line installer on the home page, <code>curl -fsSL https://aahannp.github.io/agent-desk/install.sh | bash</code>, is <a href="install.sh">a short script</a> you can read first. It:</p>
     <ol>
-      <li>stops unless it's on macOS with Apple silicon, and unless Agent Desk is closed;</li>
+      <li>stops unless it's on macOS with Apple silicon;</li>
       <li>asks GitHub's API for the latest release and finds its .dmg;</li>
       <li>downloads it with curl into a temporary folder and mounts it read-only;</li>
-      <li>replaces <code>/Applications/Agent Desk.app</code> with the copy from the DMG, then opens it;</li>
+      <li>stops unless that app is closed, then replaces <code>/Applications/Relay.app</code> with the copy from the DMG and opens it (for a 1.8.x DMG, the app is still <code>Agent Desk.app</code>);</li>
+      <li>if you're moving to Relay and <code>Agent Desk.app</code> is still in Applications, says you can delete it (it never deletes it itself);</li>
       <li>unmounts the DMG and deletes the temporary folder.</li>
     </ol>
     <p>There's no macOS warning because files curl downloads aren't marked as quarantined, so Gatekeeper doesn't check them on first launch. That also means macOS checks nothing, and the script doesn't check the SHA-256 either. If you want those checks, download the DMG and follow steps 1 to 3.</p>
@@ -209,7 +212,7 @@ npm run dist     <span class="c"># or build dist/Agent Desk-1.8.2-arm64.dmg</spa
 
 <footer>
   <div class="wrap">
-    <span>Agent Desk · MIT licence</span>
+    <span>Relay · MIT licence</span>
     <nav aria-label="Footer">
       <a href="./">Home</a>
       <a href="https://github.com/aahannp/agent-desk">GitHub</a>

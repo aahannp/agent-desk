@@ -3,26 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agent Desk: your whole team of agents, one desk</title>
-<meta name="description" content="A Mac app that runs Claude Code, Codex, Gemini and Cursor agents side by side on one project. A lead agent plans the work, each worker gets its own git worktree, and you review every diff before it lands.">
+<title>Relay: Delegate the work. Own the outcome.</title>
+<meta name="description" content="Relay is a Mac app that runs Claude Code, Codex, Gemini and Cursor agents side by side on one project. A lead agent plans the work, each worker gets its own git worktree, and you review every diff before it lands.">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#000000">
 <link rel="canonical" href="https://aahannp.github.io/agent-desk/">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Agent Desk">
+<meta property="og:site_name" content="Relay">
 <meta property="og:url" content="https://aahannp.github.io/agent-desk/">
-<meta property="og:title" content="Agent Desk: your whole team of agents, one desk">
-<meta property="og:description" content="Run many Claude Code agents side by side on one project. A lead plans, workers build in their own worktrees, you review and merge.">
-<meta property="og:image" content="https://aahannp.github.io/agent-desk/assets/og.jpg">
+<meta property="og:title" content="Relay: Delegate the work. Own the outcome.">
+<meta property="og:description" content="Multiple coding agents. Isolated workspaces. One place to review and ship.">
+<meta property="og:image" content="https://aahannp.github.io/agent-desk/assets/relay-og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Agent Desk on a MacBook, with five coding agents working side by side.">
+<meta property="og:image:alt" content="The Relay logo and name, with the tagline: Delegate the work. Own the outcome.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Agent Desk">
-<meta name="twitter:description" content="Your whole team of agents. One desk.">
-<meta name="twitter:image" content="https://aahannp.github.io/agent-desk/assets/og.jpg">
-<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<meta name="twitter:title" content="Relay">
+<meta name="twitter:description" content="Delegate the work. Own the outcome.">
+<meta name="twitter:image" content="https://aahannp.github.io/agent-desk/assets/relay-og.png">
+<link rel="icon" href="assets/relay-favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/relay-180.png">
 <script>
   // Before first paint: the saved theme (if any), and a flag that turns on the scroll fade-ins.
   try { const t = localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
@@ -77,7 +77,8 @@
   .nav .wrap { display: flex; align-items: center; height: 100%; gap: 28px; }
   .brand { display: flex; align-items: center; gap: 9px; color: var(--text); font-size: 19px; font-weight: 600; letter-spacing: -.02em; margin-right: auto; }
   .brand:hover { text-decoration: none; }
-  .brand img { width: 24px; height: 24px; }
+  .mark { display: inline-block; flex: none; background: currentColor; -webkit-mask: url(assets/relay-mark-bold.svg) center / contain no-repeat; mask: url(assets/relay-mark-bold.svg) center / contain no-repeat; }
+  .brand .mark { width: 24px; height: 24px; }
   .nav-links { display: flex; gap: 26px; font-size: 13px; letter-spacing: -.01em; }
   .nav-links a { color: var(--muted); }
   .nav-links a:hover { color: var(--text); text-decoration: none; }
@@ -99,7 +100,7 @@
   /* Hero */
   .hero { text-align: center; padding: 96px 0 0; overflow: hidden; }
   .eyebrow { font-size: 24px; font-weight: 600; letter-spacing: -.01em; margin: 0 0 10px; }
-  h1 { font-size: clamp(48px, 8.4vw, 96px); line-height: 1.04; font-weight: 600; letter-spacing: -.035em; margin: 0 auto 22px; max-width: 11ch; }
+  h1 { font-size: clamp(36px, 10.5vw, 96px); line-height: 1.04; font-weight: 600; letter-spacing: -.035em; margin: 0 auto 22px; max-width: 15ch; }
   .hero .sub { font-size: clamp(19px, 2.2vw, 24px); line-height: 1.38; color: var(--muted); max-width: 30em; margin: 0 auto 34px; letter-spacing: -.015em; }
   .fine { font-size: 14px; color: var(--dim); margin: 22px 0 0; letter-spacing: -.01em; }
   .fine.first { margin-top: 6px; }
@@ -306,6 +307,7 @@
   .app { position: relative; display: grid; grid-template-columns: 180px minmax(0, 1fr); aspect-ratio: 16 / 10; border: 0; border-radius: 6px; box-shadow: none; font-size: 11.5px; }
   .app aside { display: flex; flex-direction: column; gap: 2px; padding: 12px 10px; overflow: auto; border-right: 1px solid var(--t-line); color: var(--t-dim); font: 12px var(--sans); }
   .brand2 { display: flex; align-items: center; gap: 8px; margin: 2px 4px 12px; color: var(--t-text); font-size: 13px; font-weight: 600; }
+  .brand2 .mark { width: 18px; height: 18px; }
   .proj { display: grid; margin-bottom: 10px; padding: 7px 9px; border: 1px solid var(--t-line); border-radius: 9px; background: none; color: var(--t-text); font: inherit; text-align: left; cursor: pointer; }
   .proj b { font-weight: 500; }
   .proj small { color: var(--t-dim); font: 10px var(--mono); }
@@ -497,6 +499,7 @@
   .steps { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin: 0 0 28px; padding-left: 22px; color: var(--muted); max-width: 46em; }
   .steps b { color: var(--text); font-weight: 600; }
   .cmd { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 6px 6px 6px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--alt); }
+  .cmd[hidden] { display: none; }
   .cmd code { flex: 1; min-width: 0; overflow-x: auto; padding: 4px 12px; white-space: nowrap; word-break: normal; }
   .compat { width: 100%; border-collapse: collapse; margin: -8px 0 20px; font-size: 15px; }
   .compat th, .compat td { text-align: left; vertical-align: top; padding: 9px 12px 9px 0; border-bottom: 1px solid var(--line); color: var(--muted); }
@@ -515,7 +518,7 @@
 
   /* Closing */
   .final { text-align: center; padding: 160px 0; }
-  .final .icon { width: 120px; height: 120px; margin: 0 auto 36px; }
+  .final .icon { display: block; width: 120px; height: 120px; margin: 0 auto 36px; -webkit-mask-image: url(assets/relay-mark.svg); mask-image: url(assets/relay-mark.svg); }
   .final h2 { max-width: none; }
   .final .lede { margin-bottom: 40px; }
 
@@ -622,7 +625,7 @@
 
 <header class="nav">
   <div class="wrap">
-    <a class="brand" href="#top"><img src="assets/icon.svg" alt="" width="24" height="24">Agent Desk</a>
+    <a class="brand" href="#top"><span class="mark" aria-hidden="true"></span>Relay</a>
     <nav class="nav-links" aria-label="Sections">
       <a href="#demo">Demo</a>
       <a href="#features">Features</a>
@@ -647,15 +650,15 @@
 <main id="main">
   <div class="hero" id="top">
     <div class="wrap">
-      <p class="eyebrow">Agent Desk</p>
-      <h1>Your whole team of agents. <span class="grad nowrap">One desk.</span></h1>
-      <p class="sub">Run Claude Code, Codex, Gemini and Cursor side by side. A lead plans the work, every worker builds in its own git worktree, and nothing lands until you say so.</p>
+      <p class="eyebrow">Relay</p>
+      <h1><span class="nowrap">Delegate the work.</span> <span class="grad nowrap">Own the outcome.</span></h1>
+      <p class="sub">Multiple coding agents. Isolated workspaces. One place to review and ship.</p>
       <div class="ctas">
         <a class="pill" data-download href="https://github.com/aahannp/agent-desk/releases/latest">Download for Mac</a>
         <a class="more" href="https://github.com/aahannp/agent-desk">View on GitHub</a>
       </div>
       <div class="release">
-        <p class="fine"><span data-release hidden><b data-ver></b> · SHA-256 of the .dmg · </span><a href="verify.html">How to verify a download ›</a></p>
+        <p class="fine"><span data-release hidden><b data-ver></b> · SHA-256 of the Relay .dmg · </span><a href="verify.html">How to verify a download ›</a></p>
         <div class="cmd" data-release hidden><code data-sha></code><button type="button" class="copy">Copy</button></div>
       </div>
       <p class="fine">Or install from Terminal, with no macOS warning (<a href="verify.html#installer">what it does</a>):</p>
@@ -671,11 +674,11 @@
       </div>
       <div class="mac reveal">
         <div class="lid">
-          <dialog class="stage" open role="region" aria-label="Live Agent Desk demo" aria-describedby="heroDesc">
+          <dialog class="stage" open role="region" aria-label="Live Relay demo" aria-describedby="heroDesc">
           <button type="button" class="linkish stage-close" data-stage="close" hidden>Close</button>
-          <div class="desk app" id="hero" role="group" aria-label="A live Agent Desk: type a message into any agent's prompt">
+          <div class="desk app" id="hero" role="group" aria-label="A live Relay: type a message into any agent's prompt">
             <aside id="heroNav">
-              <span class="brand2"><img src="assets/icon.svg" alt="" width="18" height="18">Agent Desk</span>
+              <span class="brand2"><span class="mark" aria-hidden="true"></span>Relay</span>
               <button type="button" class="proj" popovertarget="projs" aria-label="Project: acme-shop"><b>acme-shop</b><small>~/acme-shop</small></button>
               <nav class="views" aria-label="Views"><button type="button" class="nv" data-v="agents" aria-current="page">Agents</button><button type="button" class="nv" data-v="board">Board</button><button type="button" class="nv" data-v="files">Files</button><button type="button" class="nv" data-v="review">Review</button><button type="button" class="nv" data-v="artifacts">Artifacts</button><button type="button" class="nv" data-v="graph">Graph</button><button type="button" class="nv" data-v="spend">Spend</button><button type="button" class="nv" data-v="settings">Settings</button></nav>
               <h4 id="chatsH">Chats</h4>
@@ -765,7 +768,7 @@ test('two of a product add up', async () =&gt; {
         </div>
         <div class="base" aria-hidden="true"></div>
       </div>
-      <p class="sr-only" id="heroDesc">Agent Desk's Agents view: a Lead, two workers and Scout in a grid of terminal panes, each worker in its own git branch. Type into any prompt and that agent answers.</p>
+      <p class="sr-only" id="heroDesc">Relay's Agents view: a Lead, two workers and Scout in a grid of terminal panes, each worker in its own git branch. Type into any prompt and that agent answers.</p>
       <div class="sugs" role="group" aria-label="Suggested prompts">
         <p>Click into any pane and type. Or try one:</p>
         <button type="button" class="chip-btn" data-p="lead" data-t="Add dark mode to the shop">Lead: add dark mode</button>
@@ -800,8 +803,8 @@ test('two of a product add up', async () =&gt; {
           <button type="button" class="ghost" id="pause" hidden>Pause</button>
         </div>
       </div>
-      <div class="desk win" role="group" aria-label="Agent Desk demo">
-        <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>acme-shop · Agent Desk</span></div>
+      <div class="desk win" role="group" aria-label="Relay demo">
+        <div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>acme-shop · Relay</span></div>
         <div class="board">
           <div class="col"><h3><i class="dot" style="--c: var(--t-dim)"></i><span class="lbl">To do</span><span class="n">0</span></h3><ol aria-label="To do"></ol></div>
           <div class="col"><h3><i class="dot" style="--c: var(--t-accent)"></i><span class="lbl">In progress</span><span class="n">0</span></h3><ol aria-label="In progress"></ol></div>
@@ -819,7 +822,7 @@ test('two of a product add up', async () =&gt; {
       <p class="sr-only" aria-live="polite" id="demoSay"></p>
       <p class="after" id="demoAfter" hidden><a href="#review">Review the diffs ↓</a></p>
       <ol id="how" class="recap" aria-label="How it works">
-        <li><b>Open a project.</b> Point Agent Desk at any git repo.</li>
+        <li><b>Open a project.</b> Point Relay at any git repo.</li>
         <li><b>Give the lead a goal.</b> It plans tasks and starts a worker in a fresh worktree for each one.</li>
         <li><b>Review and merge.</b> Read every diff, merge what's good, discard the rest.</li>
       </ol>
@@ -829,7 +832,7 @@ test('two of a product add up', async () =&gt; {
   <section id="overview" class="center">
     <div class="wrap">
       <h2 class="reveal">Built for the way agents really work.</h2>
-      <p class="lede reveal">Every pane is a real terminal running the agent's own CLI, so Claude Code keeps <b>your login and your subscription.</b> Agent Desk adds what's missing around it: a plan, a place for each worker, and the final say for you.</p>
+      <p class="lede reveal">Every pane is a real terminal running the agent's own CLI, so Claude Code keeps <b>your login and your subscription.</b> Relay adds what's missing around it: a plan, a place for each worker, and the final say for you.</p>
       <div class="stats left">
         <div class="stat reveal"><strong>16</strong><span>agents and shells in one grid, each showing if it's working, idle or needs you.</span></div>
         <div class="stat reveal"><strong>4</strong><span>agent CLIs out of the box: Claude Code, Codex, Gemini and Cursor.</span></div>
@@ -1016,7 +1019,7 @@ test('two of a product add up', async () =&gt; {
   <section id="themes" class="alt center">
     <div class="wrap">
       <h2 class="reveal">Sixteen themes. Every pane follows.</h2>
-      <p class="lede reveal">Ten dark, six light, the same palettes as the app. Pick one and watch both panes repaint, just as open panes do in Agent Desk.</p>
+      <p class="lede reveal">Ten dark, six light, the same palettes as the app. Pick one and watch both panes repaint, just as open panes do in Relay.</p>
       <div class="swatches" id="swatches" role="radiogroup" aria-label="App theme">
         <div data-g="dark"><span>Dark</span></div>
         <div data-g="light"><span>Light</span></div>
@@ -1048,11 +1051,11 @@ test('two of a product add up', async () =&gt; {
   <section id="privacy" class="alt center">
     <div class="wrap">
       <h2 class="reveal">Private by design.</h2>
-      <p class="lede reveal">Agent Desk runs on your Mac. Beyond the agents you start, it only reaches GitHub: to check for a new release, and to publish a page when you ask.</p>
+      <p class="lede reveal">Relay runs on your Mac. Beyond the agents you start, it only reaches GitHub: to check for a new release, and to publish a page when you ask.</p>
       <div class="safe left">
         <div class="reveal">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          <b>Local only</b><p>The server listens on 127.0.0.1. Every request needs this install's secret and must come from Agent Desk's own page.</p>
+          <b>Local only</b><p>The server listens on 127.0.0.1. Every request needs this install's secret and must come from Relay's own page.</p>
         </div>
         <div class="reveal">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3 20 3M16 7l3 3M18 5l2 2"/></svg>
@@ -1130,19 +1133,19 @@ test('two of a product add up', async () =&gt; {
         </details>
         <details name="faq">
           <summary>Does it need an API key, or cost anything extra?</summary>
-          <p>No. Agent Desk is free and MIT-licensed, and agents run in real terminals with your own CLI logins, so Claude Code uses your normal subscription. The Spend view shows what the same work would cost at API prices, so you can see where it went.</p>
+          <p>No. Relay is free and MIT-licensed, and agents run in real terminals with your own CLI logins, so Claude Code uses your normal subscription. The Spend view shows what the same work would cost at API prices, so you can see where it went.</p>
         </details>
         <details name="faq" id="notarize">
-          <summary>macOS says Agent Desk can't be opened / not verified</summary>
-          <p>That's expected on first launch. Agent Desk is open source and unsigned, because it isn't enrolled in Apple's developer program yet, so macOS can't verify who made it. Either of these fixes it:</p>
+          <summary>macOS says Relay can't be opened / not verified</summary>
+          <p>That's expected on first launch. Relay is open source and unsigned, because it isn't enrolled in Apple's developer program yet, so macOS can't verify who made it. Either of these fixes it:</p>
           <ol class="steps">
-            <li>Click Done, open System Settings → Privacy &amp; Security, scroll down and click <b>Open Anyway</b> next to Agent Desk, then confirm.</li>
-            <li>Or run this in Terminal:<div class="cmd"><code>xattr -dr com.apple.quarantine "/Applications/Agent Desk.app"</code><button type="button" class="copy">Copy</button></div></li>
+            <li>Click Done, open System Settings → Privacy &amp; Security, scroll down and click <b>Open Anyway</b> next to Relay, then confirm.</li>
+            <li>Or run this in Terminal:<div class="cmd"><code>xattr -dr com.apple.quarantine "/Applications/Relay.app"</code><button type="button" class="copy">Copy</button></div></li>
           </ol>
         </details>
         <details name="faq">
           <summary>Where does my data live?</summary>
-          <p>The board, settings and secret are in <code>~/Library/Application Support/Agent Desk</code>. Agent worktrees and screenshots go in <code>.agent-desk/</code> inside each project, which is kept out of git.</p>
+          <p>The board, settings and secret are in <code>~/Library/Application Support/Relay</code> (or <code>…/Agent Desk</code> if you used Relay when it was called Agent Desk). Agent worktrees and screenshots go in <code>.agent-desk/</code> inside each project, which is kept out of git.</p>
         </details>
         <details name="faq">
           <summary>How does it update?</summary>
@@ -1158,8 +1161,8 @@ test('two of a product add up', async () =&gt; {
 
   <section class="final alt">
     <div class="wrap">
-      <img class="icon reveal" src="assets/icon.svg" alt="" width="120" height="120">
-      <h2 class="reveal">Get Agent Desk.</h2>
+      <span class="icon mark reveal" aria-hidden="true"></span>
+      <h2 class="reveal">Get Relay.</h2>
       <p class="lede reveal">Open a repo. Give the lead its first goal. Review what comes back.</p>
       <div class="ctas reveal">
         <a class="pill" data-download href="https://github.com/aahannp/agent-desk/releases/latest">Download for Mac</a>
@@ -1192,7 +1195,7 @@ test('two of a product add up', async () =&gt; {
   <div class="wrap">
     <p class="top">Spend figures are estimates at Anthropic's API list prices; a subscription plan isn't billed per token. Claude Code, Codex, Gemini and Cursor are trademarks of their respective owners. Mac and Apple silicon are trademarks of Apple Inc.</p>
     <div class="row">
-      <span>Agent Desk · MIT licence</span>
+      <span>Relay · MIT licence</span>
       <nav aria-label="Footer">
         <a href="https://github.com/aahannp/agent-desk">GitHub</a>
         <a href="https://github.com/aahannp/agent-desk/releases">Releases</a>
