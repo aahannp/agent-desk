@@ -380,7 +380,7 @@ route('POST', '/api/messages', async ({ req, body }) => {
   const matches = [...S.sessions.values()]
     .filter(s => !s.exited && s.kind === 'agent' && s.id !== from?.id
       && (s.id === to || (s.project === project && (s.specialist?.name.toLowerCase() === name || s.name.toLowerCase() === name))))
-    .filter(s => !asked || (({ model, effort }) => s.model === model && s.effort === effort)(T.settle(asked, T.find(s.specialist?.id) ?? {})))
+    .filter(s => !asked || (({ model, effort }) => s.model === model && s.effort === effort)(T.settle(asked, T.usual(T.find(s.specialist?.id), s.role))))
     .sort((a, b) => b.lastOutputAt - a.lastOutputAt); // the most recently active (on the model asked for, if one was)
   const signed = `${sign(from, text)}${from ? `\n\n(To answer, use message_agent to "${from.name}".)` : ''}`;
   let target = matches[0];
