@@ -222,8 +222,9 @@ and its app `Agent Desk.app`): [aahannp.github.io/agent-desk/verify.html](https:
    `devDependencies` and `build` sections; `node_modules` matches `npm ci --omit=dev` minus READMEs, typings,
    source maps and unused builds; node-pty's `pty.node` and `spawn-helper` are re-signed ad-hoc, so the files
    differ but their machine code (`otool -t`) is the same.
-4. **Build attestation** (from v1.9, once releases are built by GitHub Actions; not available for 1.8.2 or
-   earlier): `gh attestation verify Relay-<version>-arm64.dmg -R aahannp/agent-desk`.
+4. **Build attestation** (1.9.0 and later; not available for 1.8.3 or earlier, which were built on a Mac):
+   `gh attestation verify Relay-<version>-arm64.dmg -R aahannp/agent-desk`. It prints nothing and exits 0 when the
+   DMG matches; add `--format json` to see the workflow, commit and runner that built it.
 
 ## Build from source
 
@@ -255,6 +256,7 @@ From the code and the [release notes](https://github.com/aahannp/agent-desk/rele
 - Agents that message, read and copy each other; the team of specialists
 - Graph, Spend, Files, Artifacts with folders and GitHub Pages publishing, 16 themes, the update check
 - Token meter on each Claude pane, and workers on Sonnet by default (since 1.8.3)
+- Release builds on GitHub Actions, with a `.sha256` file and a signed build attestation (since 1.9.0)
 
 **Experimental**
 - Lead upkeep: auto-`/compact` and hand-over to a fresh lead (off by default, Settings → Team)
@@ -264,7 +266,6 @@ From the code and the [release notes](https://github.com/aahannp/agent-desk/rele
 - The browser version, `npm start` (see the cookie caveat under Safety)
 
 **Planned**
-- Release builds on GitHub Actions with build attestations (from v1.9)
 - Apple notarization (needs a developer account; no date yet)
 - Hooks that tell the lead when something is done, such as a pull request merging, so it can move on without being asked
 - A Windows app
