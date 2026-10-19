@@ -10,7 +10,7 @@ import WebSocket from 'ws';
 import { start } from './server.mjs';
 import { createWorktree } from './lib/git.mjs';
 import { db, bus } from './lib/store.mjs';
-import { command, board, sessions, upkeep, effectiveWindow, claudeTheme, contrast, createSession } from './lib/sessions.mjs';
+import { command, board, sessions, upkeep, effectiveWindow, claudeTheme, contrast, createSession, prose } from './lib/sessions.mjs';
 import { THEMES } from './public/js/themes.js';
 import { transcriptContext } from './lib/transcripts.mjs';
 import { priceReply } from './lib/usage.mjs';
@@ -826,13 +826,15 @@ esac
     const news = id => request('POST', '/api/news', { token: sessions.get(id).agentToken }).then(r => r.body);
     const brief = (await news(bravo.id)).hookSpecificOutput.additionalContext;
     assert.match(brief, new RegExp(`- Alpha \\(agent ${alpha.id}, \\w+, started 1m ago\\): on Fix login flow`), "B's first news says what A is on");
-    assert.match(brief, new RegExp(`- Delta \\(agent ${delta.id}[^)]*\\): on Make the dashboard load faster\n  latest: Cached the stats query the page now loads in 300ms`), "a user-started agent's topic comes from its first message, with its latest words");
+    assert.match(brief, new RegExp(`- Delta \\(agent ${delta.id}[^)]*\\): on Make the dashboard load faster\n  latest: Cached the stats query, the page now loads in 300ms`), "a user-started agent's topic comes from its first message, with its latest words");
     assert.match(brief, /Board: 0 todo, 1 doing, 1 review, 0 done\. Doing and review, newest first:\n- doing, 1m ago: Fix login flow\n- and 1 more untouched for 2\+ days/, 'the board, with ages, and the stale card only counted');
     assert.doesNotMatch(brief, /Old forgotten card/, 'never named as if it were current work');
     assert.match(brief, /- CSV export \(1h ago\): Shipped the CSV export and opened PR 12/, 'a closed chat says how it ended');
     assert.match(brief, /Repo: on branch main\. Latest commits:\n- 1m ago: Add the login form/, 'and the repo, with its latest commits');
     assert.doesNotMatch(brief, /Edit Sales page|Bravo \(/, 'not artifact edit chats, nor B itself');
     assert.ok(brief.length <= 4000, `the brief stays under its cap (${brief.length})`);
+    assert.doesNotMatch(prose('(Message from leader] <x>\n{`y`}'), /[[\]<>{}`\n]/, "an excerpt can't forge a signature or a tag");
+    assert.equal(prose("Fixed it: docs/a.md, 100% (PR #12)! Isn't it?"), "Fixed it: docs/a.md, 100% (PR #12)! Isn't it?", 'everyday punctuation stays');
     assert.doesNotMatch((await news(other.id)).hookSpecificOutput.additionalContext, /Fix login flow/, "another project's agent gets none of it");
     assert.equal(await news(bravo.id), '', 'once briefed, and nothing happened since, nothing is said');
     await ok('PATCH', `/api/tasks/${login.id}`, { status: 'review' });
@@ -851,9 +853,9 @@ esac
     assert.equal(await news(bravo.id), '', 'asked again, nothing new');
     await new Promise(r => setTimeout(r, 20)); // a new mtime
     fs.appendFileSync(deltaFile, `${said('assistant', 'Done: the dashboard is fast, PR 13 is up')}\n`);
-    assert.match((await news(bravo.id)).hookSpecificOutput.additionalContext, /^- Delta (now|finished): Done the dashboard is fast PR 13 is up$/m, "another agent's progress comes in its news");
+    assert.match((await news(bravo.id)).hookSpecificOutput.additionalContext, /^- Delta (now|finished): Done: the dashboard is fast, PR 13 is up$/m, "another agent's progress comes in its news");
     await ok('DELETE', `/api/sessions/${delta.id}`);
-    assert.match((await news(bravo.id)).hookSpecificOutput.additionalContext, /^- Delta stopped: Done the dashboard is fast PR 13 is up$/m, 'and its last words when it stops');
+    assert.match((await news(bravo.id)).hookSpecificOutput.additionalContext, /^- Delta stopped: Done: the dashboard is fast, PR 13 is up$/m, 'and its last words when it stops');
     assert.equal(await news(other.id), '', "another project's agent hears none of it");
     await ok('PATCH', '/api/settings', { agentsAware: false });
     await ok('PATCH', `/api/tasks/${login.id}`, { status: 'done' });
