@@ -82,7 +82,14 @@ actions.newSession = newSession;
 // Opens a chat: shows it if it's running, otherwise starts it again (Claude picks up the same conversation).
 // `place` puts its pane before or after another one; a finished pane for the chat keeps its spot.
 actions.openChat = guard(async (chatId, place = null) => {
-  if (!state.chats.some(c => c.id === chatId)) return; // drag data can come from anywhere, so only known chats
+  const chat = state.chats.find(c => c.id === chatId);
+  if (!chat) return; // drag data can come from anywhere, so only known chats
+  if (chat.artifactId) { // an "Edit with AI" chat opens beside its page, never in the grid
+    const { replaced } = await api('POST', `/api/chats/${encodeURIComponent(chatId)}/open`);
+    if (replaced) dispose(replaced);
+    await actions.refresh('sessions');
+    return actions.showArtifactChat(chat.artifactId);
+  }
   const old = [...panes.values()].find(p => p.session?.chatId === chatId);
   const spot = place ?? (old && { ref: old.id, side: 'replace' });
   const anchor = spot?.side === 'replace' ? old.el.nextElementSibling : null;
@@ -179,11 +186,13 @@ function sync() {
   const live = new Set();
   for (const s of state.sessions) {
     live.add(s.id);
-    const p = panes.get(s.id) ?? terminalPane(s);
-    p.session = s;
-    p.el.classList.toggle('hidden', !shows(s.project) || hidden.has(s.id));
-    renderHead(p);
     announce(s);
+    // An "Edit with AI" chat is docked beside its page by the Artifacts view (dockPane), not shown in the grid.
+    const p = panes.get(s.id) ?? (s.artifactId ? null : terminalPane(s));
+    if (!p) continue;
+    p.session = s;
+    if (!p.docked) p.el.classList.toggle('hidden', !shows(s.project) || hidden.has(s.id));
+    renderHead(p);
   }
   for (const [id, p] of panes) if (p.kind === 'term' && !live.has(id)) dispose(id);
   syncBrowsers();
@@ -220,7 +229,7 @@ actions.isHidden = id => hidden.has(id);
 
 function layout() {
   if (!grid) return;
-  const visible = [...panes.values()].filter(p => !p.el.classList.contains('hidden'));
+  const visible = [...panes.values()].filter(p => !p.docked && !p.el.classList.contains('hidden'));
   const n = visible.length;
   empty.hidden = n > 0;
   // Everything here hidden: say so, rather than inviting you to start an agent.
@@ -374,7 +383,7 @@ function smoothScroll(term, host) {
 // What a terminal looks like, shared with its peek row so the two match.
 const lookOf = term => Object.fromEntries(['fontFamily', 'fontSize', 'lineHeight', 'letterSpacing', 'fontWeight', 'fontWeightBold', 'theme', 'minimumContrastRatio'].map(k => [k, term.options[k]]));
 
-function terminalPane(s) {
+function terminalPane(s, parent = grid) {
   const term = new Terminal({
     fontFamily: MONO, fontSize: Number(state.settings.fontSize) || 13, lineHeight: 1.2, cursorBlink: true,
     allowProposedApi: true, macOptionIsMeta: true, scrollback: 5000, theme: state.termTheme, minimumContrastRatio: contrast(),
@@ -404,7 +413,7 @@ function terminalPane(s) {
       h('button', { class: 'icon-btn', title: 'Maximise (double-click the header)', onClick: () => toggleMaximise(id) }, icon('maximize', 14)),
       h('button', { class: 'icon-btn', title: 'Stop and close', onClick: () => closePane(id) }, icon('x', 15))));
   const el = h('div', { class: 'pane', 'data-id': id }, head, h('div', { class: 'pane-body' }, host, blocks), exitBar);
-  grid.append(el);
+  parent.append(el);
   term.open(host);
   // Draw on the GPU, as VS Code's terminal does: far less work per frame than the default renderer, which
   // rebuilds every row as page text on each scroll step. A page gets about 16 WebGL contexts, so a pane
@@ -415,7 +424,7 @@ function terminalPane(s) {
     term.loadAddon(webgl);
   } catch {}
 
-  const p = { id, kind: 'term', el, term, dot, state: state_, stateText, title, sub, face, folder, meter, exitBar, blocksEl: blocks, session: s, lastData: 0, ws: null, size: '' };
+  const p = { id, kind: 'term', docked: parent !== grid, el, term, dot, state: state_, stateText, title, sub, face, folder, meter, exitBar, blocksEl: blocks, session: s, lastData: 0, ws: null, size: '' };
   p.send = data => p.ws?.readyState === WebSocket.OPEN && p.ws.send(JSON.stringify({ t: 'in', d: data }));
   p.fit = () => {
     if (!host.offsetWidth) return;
@@ -513,7 +522,19 @@ function setFocus(id) {
 }
 actions.focusedSession = () => (panes.get(focusedId)?.kind === 'term' ? focusedId : null);
 
+// Shows a session's pane inside another view's element (the Artifacts view's side chat), made there if it's new.
+actions.dockPane = (s, parent, focus = false) => {
+  const p = panes.get(s.id) ?? terminalPane(s, parent);
+  if (p.el.parentNode !== parent) parent.append(p.el);
+  p.session = s;
+  renderHead(p);
+  requestAnimationFrame(() => { p.fit(); if (focus) p.term.focus(); });
+  return p.el;
+};
+
 function focusSession(id) {
+  const artifactId = state.sessions.find(s => s.id === id)?.artifactId;
+  if (artifactId) return actions.showArtifactChat(artifactId);
   const p = panes.get(id);
   if (!p) return;
   hidePane(id, false); // asking to see a pane brings it back
@@ -556,6 +577,7 @@ const closePane = guard(async id => {
   dispose(id);
   actions.refresh('sessions');
 });
+actions.closePane = closePane;
 
 function dispose(id) {
   const p = panes.get(id);
@@ -632,7 +654,7 @@ function dropTarget(root) {
     const chat = e.dataTransfer.getData(DRAG.chat);
     const pane = e.dataTransfer.getData(DRAG.pane);
     if (chat) actions.openChat(chat, spot);
-    else if (panes.has(pane)) {
+    else if (panes.has(pane) && !panes.get(pane).docked) {
       movePane(pane, spot ?? { ref: [...grid.children].at(-1)?.dataset.id, side: 'after' });
       saveOrder();
       layout();

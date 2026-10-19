@@ -1,7 +1,8 @@
 // Artifacts view: pages, reports and visuals your agents saved with save_artifact. Pick one to view it,
 // open it in your browser, or publish it to GitHub Pages. Folders group them: pick one on the left, drag a page
-// onto one, or use a page's right-click menu to move it. A page with no folder is Unfiled.
-import { state, api, h, icon, on, toast, guard, actions, modal, confirmDialog, askText, menu, baseName, ago, DRAG } from './ui.js';
+// onto one, or use a page's right-click menu to move it. A page with no folder is Unfiled. "Edit with AI" opens a
+// chat beside the page that edits it (a small model by default, see artifactEditModel in Settings).
+import { state, api, h, icon, on, toast, guard, actions, modal, confirmDialog, askText, menu, baseName, ago, copy, DRAG } from './ui.js';
 
 const ALL = '*'; // the view names; a folder's name starts with a letter or number, so it can't be either
 const UNFILED = '-';
@@ -9,7 +10,8 @@ const KEY = 'desk.artifacts';
 const saved = (() => { try { return JSON.parse(localStorage.getItem(KEY)) ?? {}; } catch { return {}; } })();
 let view = saved.view || ALL;
 const collapsed = new Set(saved.collapsed); // groups folded shut in the All view
-const remember = () => { try { localStorage.setItem(KEY, JSON.stringify({ view, collapsed: [...collapsed] })); } catch {} };
+let chatOpen = saved.chat === true;
+const remember = () => { try { localStorage.setItem(KEY, JSON.stringify({ view, collapsed: [...collapsed], chat: chatOpen })); } catch {} };
 
 let side;
 let foldersEl;
@@ -18,6 +20,8 @@ let find;
 let stage;
 let selected = null;
 let shown = ''; // the id and version in the frame, so a refresh doesn't reload an unchanged page
+let arts;
+let chat; // the "Edit with AI" panel: { el, model, stop, body }
 
 export function mount(el) {
   find = h('input', { class: 'input', type: 'search', placeholder: 'Search pages', spellcheck: false, 'aria-label': 'Search pages by title', onInput: render });
@@ -27,13 +31,28 @@ export function mount(el) {
     h('div', { class: 'art-find' }, find, h('button', { class: 'icon-btn', title: 'New folder', 'aria-label': 'New folder', onClick: () => newFolder() }, icon('plus', 16))),
     foldersEl, listEl);
   stage = h('div', { class: 'art-stage' });
-  el.append(h('div', { class: 'arts' }, side, stage));
+  chat = {
+    model: h('select', { class: 'input art-chat-model', 'aria-label': 'Model for edits', onChange: e => actions.setSetting({ artifactEditModel: e.target.value }) },
+      [['haiku', 'Haiku'], ['sonnet', 'Sonnet'], ['opus', 'Opus']].map(([id, label]) => h('option', { value: id }, label))),
+    stop: h('button', { class: 'icon-btn', title: 'Stop the edit chat', 'aria-label': 'Stop the edit chat', onClick: () => actions.closePane(sessionOf(current())?.id) }, icon('stop', 14)),
+    body: h('div', { class: 'art-chat-body' }),
+  };
+  chat.el = h('aside', { class: 'art-chat', 'aria-label': 'Edit with AI' },
+    h('div', { class: 'art-chat-head' }, icon('sparkles', 14), h('span', { class: 'art-chat-title' }, 'Edit with AI'), chat.model, chat.stop,
+      h('button', { class: 'icon-btn', title: 'Close the panel (the chat keeps running)', 'aria-label': 'Close the edit panel', onClick: () => toggleChat(false) }, icon('x', 15))),
+    chat.body);
+  arts = h('div', { class: 'arts' }, side, stage, chat.el);
+  el.append(arts);
   on('artifacts', render);
+  on('sessions', () => renderChat());
+  on('settings', () => renderChat());
 }
 export const show = () => render();
 
 const current = () => state.artifacts.find(a => a.id === selected) ?? null;
 const openInBrowser = a => window.open(`${location.origin}/a/${a.id}`, '_blank'); // the Mac app hands this to your browser
+const copyLink = a => (a.published ? copy(a.published.url, 'Link copied')
+  : copy(`${location.origin}/a/${a.id}`, 'Link copied. It works on this Mac while Relay is open; Publish makes a link anyone can open.'));
 
 export function toolbar() {
   const a = current();
@@ -41,6 +60,8 @@ export function toolbar() {
   return [
     a.published && h('button', { class: 'btn', onClick: () => window.open(a.published.url, '_blank'), title: a.published.url }, icon('globe', 15), 'Published page'),
     a.published && h('button', { class: 'btn', onClick: () => unpublish(a) }, icon('x', 15), 'Unpublish'),
+    h('button', { class: 'btn', 'data-edit-ai': '', 'aria-pressed': String(chatOpen), title: 'Chat beside the page to change it', 'aria-label': 'Edit with AI', onClick: () => toggleChat(!chatOpen) }, icon('sparkles', 15), h('span', { class: 'wide' }, 'Edit with AI')),
+    h('button', { class: 'icon-btn', title: 'Copy link', 'aria-label': 'Copy link', onClick: () => copyLink(a) }, icon('copy', 15)),
     h('button', { class: 'icon-btn', title: 'Move to a folder', 'aria-label': 'Move to a folder', 'aria-haspopup': 'menu', onClick: e => menu(e.currentTarget, moveItems(a), { align: 'right' }) }, icon('folder', 15)),
     h('button', { class: 'icon-btn', title: 'Rename', onClick: () => rename(a) }, icon('pen', 15)),
     h('button', { class: 'icon-btn', title: 'Delete', onClick: () => remove(a) }, icon('trash', 15)),
@@ -99,8 +120,67 @@ function render() {
     });
     stage.append(frame);
   }
+  renderChat();
   if (actions.currentView?.() === 'artifacts') actions.renderToolbar();
 }
+
+// ---------- Edit with AI ----------
+// One chat per page, run by the server in a copy of it (see /api/artifacts/:id/edit-chat). It saves new versions
+// with save_artifact, and the frame above reloads on each. Closing the panel leaves it running; Stop ends it.
+const sessionOf = a => a && (state.sessions.find(s => s.artifactId === a.id && !s.exited) ?? state.sessions.find(s => s.artifactId === a.id));
+
+function renderChat(focus = false) {
+  if (!chat) return;
+  const a = current();
+  const s = sessionOf(a);
+  const open = chatOpen && !!a;
+  arts.classList.toggle('chatting', open);
+  chat.el.hidden = !open;
+  if (!open) return;
+  const live = s && !s.exited;
+  chat.model.value = live ? s.model : state.settings.artifactEditModel;
+  chat.model.disabled = live; // a running chat keeps its model; stop it to switch
+  chat.model.title = live ? 'Stop the chat to change its model' : 'The model for new edit chats';
+  chat.stop.hidden = !live;
+  const keep = s ? actions.dockPane(s, chat.body, focus) : chat.body.querySelector('.art-chat-start') ?? startCard();
+  if (keep.parentNode !== chat.body) chat.body.append(keep);
+  for (const el of [...chat.body.children]) if (el !== keep) el.remove(); // another page's chat keeps running, just not here
+  if (focus && !s) keep.querySelector('button').focus();
+}
+
+const startCard = () => h('div', { class: 'art-chat-start' },
+  h('p', { class: 'muted' }, 'Tell a small model what to change on this page. It saves a new version, and the page here updates.'),
+  h('button', { class: 'btn primary', onClick: () => startChat() }, icon('sparkles', 15), 'Start editing'));
+
+const startChat = guard(async () => {
+  const a = current();
+  if (!a) return;
+  await api('POST', `/api/artifacts/${a.id}/edit-chat`, { model: chat.model.value });
+  await actions.refresh('sessions');
+  renderChat(true);
+});
+
+function toggleChat(on) {
+  chatOpen = on;
+  remember();
+  renderChat(on);
+  actions.renderToolbar();
+  if (on && !sessionOf(current())) startChat();
+  if (!on) document.querySelector('[data-edit-ai]')?.focus(); // focus isn't left in the hidden panel
+}
+
+// The sidebar and the agents' "Show" buttons bring an edit chat up beside its page.
+actions.showArtifactChat = id => {
+  if (!state.artifacts.some(a => a.id === id)) return;
+  selected = id;
+  find.value = '';
+  if (!inView(current())) view = ALL;
+  chatOpen = true;
+  remember();
+  actions.showView('artifacts');
+  render();
+  renderChat(true);
+};
 
 const rename = guard(async a => {
   const title = await askText('Rename artifact', { value: a.title });
@@ -214,6 +294,8 @@ const moveItems = a => [
 ];
 const more = (anchor, a) => menu(anchor, [
   { label: 'Open in browser', icon: 'external', onClick: () => openInBrowser(a) },
+  { label: 'Copy link', icon: 'copy', onClick: () => copyLink(a) },
+  { label: 'Edit with AI', icon: 'sparkles', onClick: () => { selected = a.id; render(); toggleChat(true); } },
   { label: 'Rename', icon: 'pen', onClick: () => rename(a) },
   'sep', ...moveItems(a), 'sep',
   { label: 'Delete', icon: 'trash', onClick: () => remove(a) },

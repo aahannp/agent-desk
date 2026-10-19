@@ -682,6 +682,29 @@ try {
   await ok('DELETE', '/api/artifact-folders/Empty');
   await ok('DELETE', `/api/artifacts/${filed.id}`);
 
+  // "Edit with AI": a small-model chat beside the page, on a copy of it, that saves back by id
+  fs.writeFileSync(path.join(fakeBin, 'claude'), '#!/bin/sh\necho "FAKE-CLAUDE $*"\nexec cat\n', { mode: 0o755 }); // stays running
+  const editChat = (body = {}, headers = {}) => request('POST', `/api/artifacts/${art.id}/edit-chat`, { body, headers });
+  assert.equal((await editChat({}, { 'x-desk-session': shell.id })).status, 403, "agents can't open an edit chat");
+  assert.equal((await editChat({ model: 'gpt' })).status, 400, 'the edit model is haiku, sonnet or opus');
+  const editor = (await editChat()).body;
+  const workCopy = path.join(tmp, 'data', 'artifact-edits', art.id, 'page.html');
+  assert.equal(fs.readFileSync(workCopy, 'utf8'), '<h1>v2</h1>', 'it works on a copy of the page');
+  assert.deepEqual([editor.artifactId, editor.model, editor.cwd], [art.id, 'haiku', path.dirname(workCopy)], "tagged with the page, on Haiku by default, in the copy's folder");
+  assert.equal((await editChat({ model: 'opus' })).body.id, editor.id, 'asking again reopens the same chat');
+  assert.equal([...sessions.values()].filter(s => s.artifactId === art.id).length, 1, 'and starts no second one');
+  assert.equal(db.chats.find(c => c.id === editor.chatId)?.artifactId, art.id, 'its chat remembers the page too');
+  fs.writeFileSync(workCopy, '<h1>v3</h1>');
+  const resaved = await rpc('tools/call', { name: 'save_artifact', arguments: { id: art.id, title: 'Q3 report', file: 'page.html' } }, { 'x-desk-session': editor.id });
+  assert.equal(JSON.parse(resaved.result.content[0].text).id, art.id, 'the chat saves page.html by id');
+  assert.equal((await request('GET', `/a/${art.id}`, { token: '' })).body, '<h1>v3</h1>', 'which updates the page');
+  assert.equal((await ok('PATCH', '/api/settings', { artifactEditModel: 'sonnet' })).artifactEditModel, 'sonnet', 'the edit model is a setting');
+  assert.equal((await request('PATCH', '/api/settings', { body: { artifactEditModel: 'gpt' } })).status, 400, 'and only a known one');
+  await ok('PATCH', '/api/settings', { artifactEditModel: 'haiku' });
+  await ok('DELETE', `/api/sessions/${editor.id}`);
+  await tool('save_artifact', { id: art.id, title: 'Q3 report', html: '<h1>v2</h1>' }); // as the publishing checks below expect
+  fs.writeFileSync(path.join(fakeBin, 'claude'), '#!/bin/sh\necho "FAKE-CLAUDE $*"\n', { mode: 0o755 });
+
   fs.writeFileSync(path.join(fakeBin, 'gh'), `#!/bin/sh
 case "$*" in
   "auth status --hostname github.com --json hosts") echo '{"hosts":{"github.com":[{"login":"me","active":false,"state":"success"},{"login":"work","active":true,"state":"success"}]}}' ;;
