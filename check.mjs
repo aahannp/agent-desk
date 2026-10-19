@@ -623,6 +623,18 @@ try {
   assert.equal(viewed.headers['referrer-policy'], 'no-referrer', 'its address is not leaked to the sites it loads');
   assert.equal((await request('GET', `/a/${'x'.repeat(22)}`, { token: '' })).status, 404, 'unknown artifacts are not found');
   assert.equal((await request('GET', '/api/artifacts', { token: '' })).status, 401, 'the list still needs the token');
+  const served = async html => {
+    const { id } = await tool('save_artifact', { title: 'Diagram', html });
+    const { body } = await request('GET', `/a/${id}`, { token: '' });
+    await ok('DELETE', `/api/artifacts/${id}`);
+    return body;
+  };
+  const diagram = '<pre class="mermaid">flowchart LR\n  a --> b</pre>';
+  const drawn = await served(diagram);
+  assert.ok(drawn.startsWith(diagram) && drawn.match(/mermaid@11\.4\.1\/dist\/mermaid\.esm\.min\.mjs/g)?.length === 1, 'a page with a Mermaid diagram but no script gets Mermaid added once');
+  assert.match(await served(`<body>${diagram}</body>`), /<\/script><\/body>$/, 'before </body> when there is one');
+  const loaded = `${diagram}<script src="https://cdn.example/mermaid.min.js"></script><script>mermaid.run()</script></body>`;
+  assert.equal(await served(loaded), loaded, 'a page that loads Mermaid itself is served as it is'); // and the Q3 page above shows one with no diagram is too
   fs.writeFileSync(path.join(repo, 'chart.html'), '<h1>chart v1</h1>');
   const fromFile = await tool('save_artifact', { title: 'Chart', file: 'chart.html' });
   assert.equal((await request('GET', `/a/${fromFile.id}`, { token: '' })).body, '<h1>chart v1</h1>', "a file is read from the agent's own folder");
@@ -702,6 +714,10 @@ try {
   assert.equal((await request('PATCH', '/api/settings', { body: { artifactEditModel: 'gpt' } })).status, 400, 'and only a known one');
   await ok('PATCH', '/api/settings', { artifactEditModel: 'haiku' });
   await ok('DELETE', `/api/sessions/${editor.id}`);
+  await tool('save_artifact', { id: art.id, title: 'Q3 report', html: diagram });
+  const mermaidEditor = (await editChat()).body;
+  assert.equal(fs.readFileSync(workCopy, 'utf8'), diagram, "the copy is the stored page, without the Mermaid script it's served with, so saving it back can't store that");
+  await ok('DELETE', `/api/sessions/${mermaidEditor.id}`);
   await tool('save_artifact', { id: art.id, title: 'Q3 report', html: '<h1>v2</h1>' }); // as the publishing checks below expect
   fs.writeFileSync(path.join(fakeBin, 'claude'), '#!/bin/sh\necho "FAKE-CLAUDE $*"\n', { mode: 0o755 });
 

@@ -851,7 +851,7 @@ async function respond(req, res) {
       'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer',
       'content-security-policy': 'sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms allow-modals allow-downloads',
     });
-    return res.end(A.read(a));
+    return res.end(A.serve(a));
   }
 
   if (!url.pathname.startsWith('/api/')) {
