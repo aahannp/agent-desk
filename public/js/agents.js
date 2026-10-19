@@ -392,7 +392,8 @@ function terminalPane(s) {
     }
   };
   term.onData(d => p.send(d));
-  host.addEventListener('focusin', () => setFocus(id));
+  // A pane open in two windows has one terminal size: the window you click into gets it.
+  host.addEventListener('focusin', () => { setFocus(id); p.size = ''; p.fit(); });
   p.peek = smoothScroll(term, host);
   new ResizeObserver(() => p.fit()).observe(host);
   if (s.kind === 'shell') commandBlocks(p);

@@ -1,4 +1,4 @@
-// Relay for macOS: runs the server inside the app and shows its page in one window.
+// Relay for macOS: runs the server inside the app and shows its page in one or more windows.
 import { app, BrowserWindow, Menu, desktopCapturer, dialog, session, shell } from 'electron';
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
@@ -21,9 +21,10 @@ function loginShellPath() {
 
 const openOutside = url => /^(https?|mailto):/.test(url) && shell.openExternal(url);
 
-function createWindow() {
+function createWindow({ from, project } = {}) {
   const win = new BrowserWindow({
     width: 1440, height: 900, minWidth: 1100, minHeight: 700,
+    ...(from && { x: from.getBounds().x + 28, y: from.getBounds().y + 28 }), // a step off the one it came from
     titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 18, y: 18 },
     backgroundColor: '#0b0c10', show: false, title: 'Relay',
   });
@@ -35,7 +36,16 @@ function createWindow() {
     event.preventDefault();
     openOutside(url);
   });
-  win.loadURL(server.url); // exactly the URL start() returns: it carries the login token
+  const url = new URL(server.url); // the URL start() returns: it carries the login token
+  if (project) url.searchParams.set('project', project);
+  win.loadURL(url.href);
+}
+
+// A new window opens on the project of the window you opened it from (each page keeps it in its ?project=).
+function newWindow() {
+  const from = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+  const project = from && new URL(from.webContents.getURL()).searchParams.get('project');
+  createWindow({ from, project });
 }
 
 async function boot() {
@@ -82,7 +92,10 @@ async function boot() {
     desktopCapturer.getSources({ types: ['screen'] }).then(([screen]) => callback({ video: screen }), () => callback({}));
   }, { useSystemPicker: true });
   // Terminals and inputs need the Edit menu for copy, paste and select all to work.
-  Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' }]));
+  const newItem = { label: 'New Window', accelerator: 'CmdOrCtrl+Shift+N', click: newWindow };
+  Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'appMenu' }, { label: 'File', submenu: [newItem, { type: 'separator' }, { role: 'close' }] },
+    { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' }]));
+  app.dock?.setMenu(Menu.buildFromTemplate([{ label: 'New Window', click: newWindow }]));
   createWindow();
 }
 

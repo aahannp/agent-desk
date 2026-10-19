@@ -91,6 +91,8 @@ try {
   assert.equal((await request('GET', '/', { token: '' })).status, 401, 'page without the token shows the lock screen');
   const login = await request('GET', `/?t=${desk.token}`, { token: '' });
   assert.equal(login.status, 302, 'the link with the token redirects');
+  assert.equal(login.headers.location, '/', 'and drops the token from the address');
+  assert.equal((await request('GET', `/?t=${desk.token}&project=%2Ftmp%2Fa`, { token: '' })).headers.location, '/?project=%2Ftmp%2Fa', "a new window's project survives it");
   const cookie = login.headers['set-cookie'][0].split(';')[0];
   assert.equal((await request('GET', '/api/sessions', { token: '', headers: { cookie } })).status, 200, 'the cookie works');
   assert.equal((await request('GET', '/api/sessions', { headers: { host: `evil.example:${desk.port}` } })).status, 403, 'DNS-rebinding host is refused');

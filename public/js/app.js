@@ -70,7 +70,7 @@ actions.refresh = refresh;
 function loaded(kind) {
   if (kind === 'settings' || kind === 'projects') {
     const before = state.project;
-    state.project = state.settings.lastProject || state.projects[0]?.path || '';
+    pickProject();
     if (kind === 'settings') applyTheme();
     if (before !== state.project) emit('project');
   }
@@ -251,7 +251,21 @@ function buildSidebar() {
 }
 
 // ---------- Projects ----------
-const switchProject = path => actions.setSetting({ lastProject: path });
+// Each window keeps its own project in its address (?project=), so reloads keep it and windows don't follow each
+// other. lastProject is only where the next window or launch starts.
+function pickProject(path = state.project || new URLSearchParams(location.search).get('project')) {
+  const known = p => p && state.projects.some(x => x.path === p);
+  state.project = [path, state.settings.lastProject, state.projects[0]?.path].find(known) || '';
+  const url = new URL(location.href);
+  url.searchParams.set('project', state.project);
+  history.replaceState(null, '', url);
+}
+function switchProject(path) {
+  const before = state.project;
+  pickProject(path);
+  if (before !== state.project) emit('project');
+  actions.setSetting({ lastProject: state.project }); // re-renders the sidebar too
+}
 actions.switchProject = switchProject;
 
 // A folder input that suggests folders as you type.
@@ -269,8 +283,9 @@ function folderField(onSubmit) {
 }
 
 const openProject = guard(async path => {
-  await api('POST', '/api/projects', { path: path.replace(/\/+$/, '') || path });
+  const { path: added } = await api('POST', '/api/projects', { path: path.replace(/\/+$/, '') || path });
   await Promise.all([refresh('projects'), refresh('settings')]);
+  switchProject(added);
   document.querySelector('.welcome')?.remove();
   toast(`Opened ${baseName(state.project)}`, 'ok');
   return true;
@@ -376,7 +391,7 @@ command('Add a project folder', addProject, { icon: 'folder' });
   applyTheme();
   [state.info, state.agents] = await Promise.all([api('GET', '/api/info'), api('GET', '/api/agents')]);
   await Promise.all(Object.values(loaders).map(load => load()));
-  state.project = state.settings.lastProject || state.projects[0]?.path || '';
+  pickProject();
   applyTheme();
 
   const views = $('views');
