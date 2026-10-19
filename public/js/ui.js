@@ -93,6 +93,7 @@ const ICONS = {
   external: '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>',
   sparkles: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/>',
   layers: '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>',
+  stack: '<rect x="3" y="3" width="18" height="8" rx="2"/><rect x="3" y="13" width="18" height="8" rx="2"/>',
   sidebar: '<rect x="3" y="4" width="18" height="16" rx="3"/><line x1="9" y1="4" x2="9" y2="20"/>',
   shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
   graph: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>',
@@ -205,8 +206,11 @@ export const projectSessions = () => state.sessions.filter(s => s.project === st
 export const projectTasks = () => state.tasks.filter(t => t.project === state.project);
 export const projectChats = () => state.chats.filter(c => c.project === state.project);
 // With "Agents from every folder in one grid" on (Settings), the grid, its sidebar list and counts cover every project.
-export const mixed = () => state.settings.mixFolders === true;
-export const gridSessions = () => (mixed() ? state.sessions : projectSessions());
+// The spaces open in the Agents grid: the current one first, then any you showed beside it.
+export const openSpaces = () => [...new Set([state.project, ...(state.settings.openSpaces ?? [])])].filter(p => state.projects.some(x => x.path === p));
+// "2 agents · 1 needs you", as the sidebar and each space's header in the grid say it.
+export const spaceSummary = (n, waiting) => n ? `${n} agent${n === 1 ? '' : 's'}${waiting ? ` · ${waiting} need${waiting === 1 ? 's' : ''} you` : ''}` : 'No agents';
+export const gridSessions = () => (open => state.sessions.filter(s => open.includes(s.project)))(openSpaces());
 // A chat's best name: your rename, Claude's own title, or what the pane was called.
 export const chatTitle = s => state.chats.find(c => c.id === s.chatId)?.title ?? s.name;
 // Drag payloads between the sidebar and the grid.

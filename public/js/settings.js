@@ -74,8 +74,6 @@ function render() {
         h('div', { class: 'segmented' }, PERMISSIONS.map(([id, label]) => h('button', { class: s.permissionMode === id ? 'on' : '', onClick: () => set({ permissionMode: id }) }, label)))),
       setting('Give new tasks their own git worktree', 'Agents running at the same time then never edit the same files. You merge their work from Review.',
         h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.worktreeByDefault, onChange: e => set({ worktreeByDefault: e.target.checked }) }))),
-      setting('Agents from every folder in one grid', 'Show and start agents from all your project folders side by side.',
-        h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.mixFolders === true, onChange: e => set({ mixFolders: e.target.checked }) }))),
       setting("Tell agents what's happening around them", 'Each agent starts with a short summary of the other agents and the board, and hears what changed before each turn, like a task moving or another agent editing the same file.',
         h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.agentsAware !== false, onChange: e => set({ agentsAware: e.target.checked }) }))),
       setting('Let spaces ask each other', 'Each project folder is a space. An agent can ask another folder\'s lead a question and gets a short answer back; it never reads their chats or board.',

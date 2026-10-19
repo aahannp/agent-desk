@@ -41,6 +41,11 @@ assert.deepEqual(db.settings.agentDefaults, { claude: { model: 'sonnet', effort:
 const migrated = (settings, projects = []) => migrate({ projects, settings: { ...structuredClone(db.settings), ...settings } }).settings;
 assert.deepEqual([migrated({ departmentsCanAsk: false }).spacesCanAsk, 'departmentsCanAsk' in migrated({ departmentsCanAsk: false })], [false, false], 'departmentsCanAsk off becomes spacesCanAsk off');
 assert.equal(migrated({ departmentsCanAsk: true }).spacesCanAsk, true);
+const [spA, spB] = [{ path: '/x/a' }, { path: '/x/b' }];
+assert.deepEqual(migrated({ mixFolders: true, lastProject: '/x/b', openSpaces: [] }, [spA, spB]).openSpaces, ['/x/b', '/x/a'], 'every folder in one grid becomes every space open, the current one first');
+assert.deepEqual(migrated({ mixFolders: false, openSpaces: [] }, [spA, spB]).openSpaces, [], 'off: just the current one');
+assert.ok(!('mixFolders' in migrated({ mixFolders: true }, [spA])), 'the old switch is gone');
+assert.deepEqual(migrated({ openSpaces: ['/x/a', '/gone', '/x/a', '/x/b'] }, [spA, spB]).openSpaces, ['/x/a', '/x/b'], 'removed folders and repeats drop out');
 assert.ok(desk.token.length >= 32, 'an empty token file is replaced with a real secret');
 assert.ok(!fs.existsSync(path.join(tmp, 'data', 'mcp', 'gone1234.json')), "a session's MCP file never outlives a restart");
 const SELF = `http://127.0.0.1:${desk.port}`;
@@ -476,6 +481,16 @@ try {
   assert.deepEqual((await runOf({ kind: 'agent', agent: 'claude', role: 'lead' })).slice(0, 2), ['opus', 'high'], 'a lead agent has its own defaults');
   assert.equal((await request('PATCH', '/api/settings', { body: { agentDefaults: { claude: { model: 'gpt', effort: '' }, lead: { model: '', effort: '' } } } })).status, 400, 'defaults must be known models');
   assert.equal((await request('PATCH', '/api/settings', { body: { scrollSpeed: 10 } })).status, 400, 'scroll speed has a sensible range');
+  {
+    const { lastProject } = await ok('GET', '/api/settings');
+    const extra = fs.mkdtempSync(path.join(tmp, 'space-'));
+    await ok('POST', '/api/projects', { path: extra });
+    assert.equal((await request('PATCH', '/api/settings', { body: { openSpaces: 'all' } })).status, 400, 'open spaces are a list of folders');
+    assert.deepEqual((await ok('PATCH', '/api/settings', { openSpaces: [repo, '/no/such/space', extra, repo] })).openSpaces, [repo, extra], 'only known folders, once each');
+    await ok('DELETE', `/api/projects?path=${encodeURIComponent(extra)}`);
+    assert.deepEqual((await ok('GET', '/api/settings')).openSpaces, [repo], 'a removed space closes in the grid');
+    await ok('PATCH', '/api/settings', { lastProject, openSpaces: [] });
+  }
   await ok('PATCH', '/api/settings', { agentDefaults: { claude: { model: 'sonnet', effort: 'low' }, lead: { model: 'opus', effort: 'high' } } });
   assert.deepEqual((await runOf({ kind: 'agent', agent: 'claude' })).slice(0, 2), ['sonnet', 'low'], 'and you can change them in Settings');
   const plainSpec = await ok('POST', '/api/specialists', { name: 'Plain', role: 'Left on the default model' });

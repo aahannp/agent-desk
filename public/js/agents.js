@@ -1,9 +1,11 @@
 // Agents view: every agent, shell and browser pane for the project, tiled in a grid of real terminals.
-import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, commands, menu, askText, modal, confirmDialog, agentLabel, shortBranch, baseName, copy, chatTitle, meterView, mixed, DRAG, MONO, STATUS_LABEL } from './ui.js';
+import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, commands, menu, askText, modal, confirmDialog, agentLabel, shortBranch, baseName, copy, chatTitle, meterView, openSpaces, spaceSummary, DRAG, MONO, STATUS_LABEL } from './ui.js';
 
 const panes = new Map(); // id -> pane (a session's terminal, or a browser)
 const seen = new Map(); // session id -> last status we told you about
-let grid;
+let stack; // a section per space, the open ones first and in order, each with its own grid of panes
+const sections = new Map(); // project -> { project, el, grid, name, sum, add, close, note, shown }
+let dragging = null; // the pane being dragged by its header, so a drop only lands in its own space
 let empty;
 let emptyCard;
 let hiddenCard;
@@ -16,7 +18,7 @@ const hidden = new Set((() => { try { return JSON.parse(sessionStorage.getItem(H
 const saveHidden = () => { try { sessionStorage.setItem(HIDDEN, JSON.stringify([...hidden])); } catch {} };
 
 export function mount(root) {
-  grid = h('div', { class: 'grid' });
+  stack = h('div', { class: 'stack' });
   emptyCard = h('div', { class: 'empty-card' },
     h('div', { class: 'art' }, icon('terminal', 36)),
     h('h2', {}, 'Your agents work here'),
@@ -35,13 +37,12 @@ export function mount(root) {
     h('p', {}, 'They keep running and still show in the sidebar, the Board and the Graph. Click one in the sidebar to bring it back.'),
     h('div', { class: 'row' }, h('button', { class: 'btn primary', onClick: showHidden }, icon('eye', 15), 'Show all')));
   empty = h('div', { class: 'empty-state' }, emptyCard, hiddenCard);
-  root.append(grid, empty);
-  new ResizeObserver(layout).observe(grid);
+  root.append(stack, empty);
   dropTarget(root);
   on('sessions', sync);
   on('chats', () => { for (const p of panes.values()) if (p.kind === 'term') renderHead(p); });
   on('project', sync);
-  on('settings', sync); // also picks up "every folder in one grid" being switched
+  on('settings', sync); // also picks up spaces opened or closed beside this one
   on('theme', retheme);
   setInterval(tick, 1000);
 }
@@ -57,7 +58,7 @@ export function toolbar() {
         ...installed.map(a => ({ label: a.label, icon: 'terminal', onClick: () => newSession({ agent: a.id }) })),
         { heading: 'In its own git worktree' },
         ...installed.map(a => ({ label: a.label, icon: 'branch', onClick: () => newSession({ agent: a.id, worktree: true }) })),
-        ...(mixed() ? [{ heading: 'In another folder' },
+        ...(openSpaces().length > 1 ? [{ heading: 'In another space' },
           ...state.projects.filter(p => p.path !== state.project).map(p => ({ label: p.name, sub: p.path.replace(state.info.home, '~'), icon: 'folder', onClick: () => newSession({ project: p.path }) })),
           { label: 'Choose a folder…', icon: 'plus', onClick: () => actions.addProject(path => newSession({ project: path })) }] : []),
         ...(claudeReady() && state.specialists.length ? [{ heading: 'Specialists' },
@@ -96,9 +97,9 @@ actions.openChat = guard(async (chatId, place = null) => {
   const { session, replaced } = await api('POST', `/api/chats/${encodeURIComponent(chatId)}/open`);
   if (replaced) dispose(replaced);
   await actions.refresh('sessions');
-  if (anchor?.isConnected) put(panes.get(session.id).el, anchor);
+  if (anchor?.parentNode === panes.get(session.id).el.parentNode) put(anchor.parentNode, panes.get(session.id).el, anchor);
   else if (spot && spot.side !== 'replace') movePane(session.id, spot);
-  saveOrder();
+  saveOrder(session.project);
   layout();
   focusSession(session.id);
 });
@@ -178,11 +179,65 @@ command('Hide this pane', () => (focusedId ? hidePane(focusedId) : toast('Click 
 command('Show hidden panes', () => showHidden(), { icon: 'eye' });
 
 // ---------- Keeping panes in step with the server ----------
-// The grid shows the current project's panes, or every project's when Settings mixes folders.
-const shows = project => mixed() || project === state.project;
+// The grid shows the panes of each open space: the current one, and any you showed beside it from the sidebar.
+const shows = project => openSpaces().includes(project);
+const projectOf = p => (p.kind === 'term' ? p.session.project : p.project);
+
+// Each space's panes live in its own section, made the first time it has one, so a pane never changes parent
+// (moving a browser pane's iframe would reload its page). Sections of spaces that aren't open are hidden.
+function sectionFor(project) {
+  if (sections.has(project)) return sections.get(project);
+  const name = h('span', { class: 'space-head-name' });
+  const sum = h('span', { class: 'space-sum' });
+  const add = h('button', { class: 'icon-btn sm', onClick: () => newSession({ project }) }, icon('plus', 14));
+  const close = h('button', { class: 'icon-btn sm', onClick: () => actions.showSpaces(openSpaces().filter(p => p !== project)) }, icon('x', 14));
+  const note = h('div', { class: 'space-note' });
+  const grid = h('div', { class: 'grid' });
+  const el = h('section', { class: 'space-section', hidden: true }, h('div', { class: 'space-head' }, icon('folder', 14), name, sum, h('span', { class: 'grow' }), add, close), note, grid);
+  const sec = { project, el, grid, name, sum, add, close, note, shown: '' };
+  sections.set(project, sec);
+  stack.append(el);
+  new ResizeObserver(layout).observe(grid);
+  return sec;
+}
+
+// Open spaces' sections in order, the current one on top.
+function placeSections() {
+  const open = openSpaces();
+  open.forEach((project, i) => (el => stack.children[i] !== el && put(stack, el, stack.children[i]))(sectionFor(project).el));
+  for (const sec of sections.values()) sec.el.hidden = !open.includes(sec.project);
+  stack.classList.toggle('many', open.length > 1);
+  renderSectionHeads();
+}
+
+// A section's header: the space, how its agents are doing, and buttons to start one there or hide the space.
+// Built once and updated in place, since it changes every second and a rebuild mid-click would lose the click.
+function renderSectionHeads() {
+  const open = openSpaces();
+  for (const project of open) {
+    const sec = sections.get(project);
+    const name = state.projects.find(p => p.path === project)?.name ?? baseName(project);
+    const agents = state.sessions.filter(s => s.project === project && !s.exited && !s.artifactId);
+    const statuses = agents.map(statusOf);
+    const waiting = statuses.filter(x => x === 'needs-input').length;
+    const now = JSON.stringify([name, statuses, open.length]);
+    if (now === sec.shown) continue;
+    sec.shown = now;
+    sec.el.setAttribute('aria-label', `${name} space`);
+    sec.name.textContent = name;
+    sec.name.title = project;
+    sec.sum.className = `space-sum${waiting ? ' attn' : ''}`;
+    sec.sum.replaceChildren(...statuses.slice(0, 8).map(x => h('span', { class: `dot ${x}`, title: STATUS_LABEL[x] ?? '' })), h('span', {}, spaceSummary(agents.length, waiting)));
+    sec.add.title = `New agent in ${name}`;
+    sec.add.setAttribute('aria-label', sec.add.title);
+    sec.close.title = `Hide ${name} from the grid (its agents keep running)`;
+    sec.close.setAttribute('aria-label', `Hide ${name} from the grid`);
+    sec.close.hidden = open.length < 2; // the last open space stays
+  }
+}
 
 function sync() {
-  if (!grid) return;
+  if (!stack) return;
   const live = new Set();
   for (const s of state.sessions) {
     live.add(s.id);
@@ -195,24 +250,27 @@ function sync() {
     renderHead(p);
   }
   for (const [id, p] of panes) if (p.kind === 'term' && !live.has(id)) dispose(id);
+  placeSections();
   syncBrowsers();
   restoreOrder();
 }
 
-// The order you arrange panes in is remembered per project (or once for the mixed grid), in this browser only (a convenience, not data).
-const orderKey = () => `agent-desk:order:${mixed() ? '*' : state.project}`;
-function saveOrder() {
-  try { localStorage.setItem(orderKey(), JSON.stringify([...grid.children].map(el => el.dataset.id))); } catch {}
+// The order you arrange panes in is remembered per space, in this browser only (a convenience, not data).
+const orderKey = project => `agent-desk:order:${project}`;
+function saveOrder(project) {
+  try { localStorage.setItem(orderKey(project), JSON.stringify([...sectionFor(project).grid.children].map(el => el.dataset.id))); } catch {}
   emit('tick'); // the sidebar lists open panes in the same order
 }
 function restoreOrder() {
-  let saved = [];
-  try { saved = JSON.parse(localStorage.getItem(orderKey()) || '[]'); } catch {}
-  const rank = new Map(saved.map((id, i) => [id, i]));
-  const sorted = [...grid.children].sort((a, b) => (rank.get(a.dataset.id) ?? Infinity) - (rank.get(b.dataset.id) ?? Infinity));
-  sorted.forEach((el, i) => grid.children[i] !== el && put(el, grid.children[i])); // only what's out of place moves
+  for (const { project, grid } of sections.values()) {
+    let saved = [];
+    try { saved = JSON.parse(localStorage.getItem(orderKey(project)) || '[]'); } catch {}
+    const rank = new Map(saved.map((id, i) => [id, i]));
+    const sorted = [...grid.children].sort((a, b) => (rank.get(a.dataset.id) ?? Infinity) - (rank.get(b.dataset.id) ?? Infinity));
+    sorted.forEach((el, i) => grid.children[i] !== el && put(grid, el, grid.children[i])); // only what's out of place moves
+  }
 }
-actions.paneOrder = () => [...grid.children].map(el => el.dataset.id);
+actions.paneOrder = () => [...stack.querySelectorAll('.grid > .pane')].map(el => el.dataset.id);
 
 function hidePane(id, on = true) {
   if (!panes.has(id) || on === hidden.has(id)) return;
@@ -228,23 +286,33 @@ const showHidden = () => [...hidden].forEach(id => hidePane(id, false));
 actions.isHidden = id => hidden.has(id);
 
 function layout() {
-  if (!grid) return;
-  const visible = [...panes.values()].filter(p => !p.docked && !p.el.classList.contains('hidden'));
-  const n = visible.length;
-  empty.hidden = n > 0;
+  if (!stack) return;
+  const many = openSpaces().length > 1;
+  let total = 0;
+  for (const sec of sections.values()) {
+    if (sec.el.hidden) continue;
+    const { grid } = sec;
+    const n = grid.querySelectorAll(':scope > .pane:not(.hidden)').length;
+    total += n;
+    // With several spaces open, one with nothing on screen folds down to its header and a line saying why.
+    const off = [...grid.children].filter(el => hidden.has(el.dataset.id)).length;
+    sec.el.classList.toggle('empty', !n);
+    sec.note.textContent = off ? `${off} pane${off === 1 ? '' : 's'} hidden. Click one in the sidebar to bring it back.` : 'Nothing running in this space yet.';
+    let cols = Math.ceil(Math.sqrt(n)) || 1;
+    if (n === 3 && grid.clientWidth > 1300) cols = 3;
+    if (n === 2 && grid.clientWidth < 900) cols = 1;
+    grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+    grid.classList.toggle('one-col', cols === 1); // panes stack, so "before" and "after" mean above and below
+    grid.style.gridTemplateRows = `repeat(${Math.ceil(n / cols) || 1}, minmax(0, 1fr))`;
+  }
+  empty.hidden = total > 0 || many;
   // Everything here hidden: say so, rather than inviting you to start an agent.
-  const off = [...panes.values()].filter(p => hidden.has(p.id) && shows(p.kind === 'term' ? p.session.project : p.project)).length;
+  const off = [...panes.values()].filter(p => hidden.has(p.id) && shows(projectOf(p))).length;
   emptyCard.hidden = off > 0;
   hiddenCard.hidden = !off;
   hiddenCard.querySelector('h2').textContent = `${off} pane${off === 1 ? '' : 's'} hidden`;
-  let cols = Math.ceil(Math.sqrt(n)) || 1;
-  if (n === 3 && grid.clientWidth > 1300) cols = 3;
-  if (n === 2 && grid.clientWidth < 900) cols = 1;
-  grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
-  grid.classList.toggle('one-col', cols === 1); // panes stack, so "before" and "after" mean above and below
-  grid.style.gridTemplateRows = `repeat(${Math.ceil(n / cols) || 1}, minmax(0, 1fr))`;
-  const max = grid.querySelector('.pane.max');
-  if (max && max.classList.contains('hidden')) unmaximise();
+  const max = stack.querySelector('.pane.max');
+  if (max && (max.classList.contains('hidden') || max.closest('.space-section').hidden)) unmaximise();
 }
 
 // What a session is doing right now. Output in the last 2.5s means it's working.
@@ -265,6 +333,7 @@ function tick() {
     p.dot.className = `dot ${status}`;
     p.stateText.textContent = STATUS_LABEL[status] ?? status;
   }
+  renderSectionHeads();
   emit('tick');
 }
 
@@ -383,7 +452,7 @@ function smoothScroll(term, host) {
 // What a terminal looks like, shared with its peek row so the two match.
 const lookOf = term => Object.fromEntries(['fontFamily', 'fontSize', 'lineHeight', 'letterSpacing', 'fontWeight', 'fontWeightBold', 'theme', 'minimumContrastRatio'].map(k => [k, term.options[k]]));
 
-function terminalPane(s, parent = grid) {
+function terminalPane(s, parent) {
   const term = new Terminal({
     fontFamily: MONO, fontSize: Number(state.settings.fontSize) || 13, lineHeight: 1.2, cursorBlink: true,
     allowProposedApi: true, macOptionIsMeta: true, scrollback: 5000, theme: state.termTheme, minimumContrastRatio: contrast(),
@@ -397,7 +466,6 @@ function terminalPane(s, parent = grid) {
   const title = h('span', { class: 'pane-title' });
   const sub = h('span', { class: 'pane-sub' });
   const face = h('span', {});
-  const folder = h('span', { class: 'chip pane-folder' });
   const meter = h('span', { class: 'meter', role: 'meter', 'aria-label': 'Context and cost', 'aria-valuemin': 0, 'aria-valuemax': 100, tabindex: 0, hidden: true });
   const host = h('div', { class: 'term-host' });
   const blocks = h('div', { class: 'blocks' });
@@ -405,7 +473,7 @@ function terminalPane(s, parent = grid) {
   const id = s.id;
   const blocksBtn = s.kind === 'shell' && h('button', { class: 'icon-btn', title: 'Command blocks', onClick: () => blocksBtn.classList.toggle('on', el.classList.toggle('show-blocks')) }, icon('list', 15));
   const head = h('div', { class: 'pane-head', draggable: true, title: 'Drag to move this pane', onDragstart: e => dragPane(e, id), onDragend: () => el.classList.remove('dragging'), onDblclick: e => !e.target.closest('button') && toggleMaximise(id) },
-    face, h('div', { class: 'pane-titles' }, title, sub), folder, meter, state_,
+    face, h('div', { class: 'pane-titles' }, title, sub), meter, state_,
     h('div', { class: 'pane-tools' },
       blocksBtn,
       s.chatId && h('button', { class: 'icon-btn', title: 'Name this agent', onClick: () => renameAgent(s) }, icon('pen', 13)),
@@ -413,7 +481,7 @@ function terminalPane(s, parent = grid) {
       h('button', { class: 'icon-btn', title: 'Maximise (double-click the header)', onClick: () => toggleMaximise(id) }, icon('maximize', 14)),
       h('button', { class: 'icon-btn', title: 'Stop and close', onClick: () => closePane(id) }, icon('x', 15))));
   const el = h('div', { class: 'pane', 'data-id': id }, head, h('div', { class: 'pane-body' }, host, blocks), exitBar);
-  parent.append(el);
+  (parent ?? sectionFor(s.project).grid).append(el);
   term.open(host);
   // Draw on the GPU, as VS Code's terminal does: far less work per frame than the default renderer, which
   // rebuilds every row as page text on each scroll step. A page gets about 16 WebGL contexts, so a pane
@@ -424,7 +492,7 @@ function terminalPane(s, parent = grid) {
     term.loadAddon(webgl);
   } catch {}
 
-  const p = { id, kind: 'term', docked: parent !== grid, el, term, dot, state: state_, stateText, title, sub, face, folder, meter, exitBar, blocksEl: blocks, session: s, lastData: 0, ws: null, size: '' };
+  const p = { id, kind: 'term', docked: Boolean(parent), el, term, dot, state: state_, stateText, title, sub, face, meter, exitBar, blocksEl: blocks, session: s, lastData: 0, ws: null, size: '' };
   p.send = data => p.ws?.readyState === WebSocket.OPEN && p.ws.send(JSON.stringify({ t: 'in', d: data }));
   p.fit = () => {
     if (!host.offsetWidth) return;
@@ -487,7 +555,6 @@ function renderHead(p) {
   const s = p.session;
   p.title.textContent = chatTitle(s);
   p.face.replaceChildren(avatar(s));
-  folderChip(p.folder, s.project);
   const kind = [s.specialist ? s.specialist.role.split(':')[0] : s.role === 'lead' ? 'Lead agent' : s.kind === 'shell' ? 'Shell' : agentLabel(s.agent), s.model, s.effort].filter(Boolean).join(' · ');
   p.sub.replaceChildren(...[
     h('span', {}, kind), h('span', { class: 'sep' }, '/'),
@@ -506,14 +573,6 @@ function renderHead(p) {
       h('button', { class: 'btn xs', onClick: () => closePane(p.id) }, 'Close'),
     ].filter(Boolean));
   }
-}
-
-// Which project folder a pane belongs to, shown only when the grid mixes folders.
-function folderChip(el, project) {
-  el.hidden = !mixed();
-  el.title = project;
-  if (el.dataset.project !== project) el.replaceChildren(icon('folder', 11), h('span', {}, baseName(project)));
-  el.dataset.project = project;
 }
 
 function setFocus(id) {
@@ -538,9 +597,9 @@ function focusSession(id) {
   const p = panes.get(id);
   if (!p) return;
   hidePane(id, false); // asking to see a pane brings it back
-  if (!shows(p.session.project)) actions.switchProject(p.session.project); // a mixed grid stays on your project
+  if (!shows(p.session.project)) actions.switchProject(p.session.project); // a space already open stays as it is
   actions.showView('agents');
-  if (grid.classList.contains('solo') && !p.el.classList.contains('max')) toggleMaximise(id);
+  if (stack.classList.contains('solo') && !p.el.classList.contains('max')) toggleMaximise(id);
   setFocus(id);
   setTimeout(() => p.term.focus());
 }
@@ -559,13 +618,13 @@ actions.runningAgents = () => [...panes.values()].filter(p => p.kind === 'term' 
 function toggleMaximise(id) {
   const p = panes.get(id);
   const on = !p.el.classList.contains('max');
-  grid.querySelectorAll('.pane.max').forEach(x => x.classList.remove('max'));
+  unmaximise();
   p.el.classList.toggle('max', on);
-  grid.classList.toggle('solo', on);
+  stack.classList.toggle('solo', on); // the maximised pane takes the whole view, other spaces too
 }
 const unmaximise = () => {
-  grid.querySelectorAll('.pane.max').forEach(x => x.classList.remove('max'));
-  grid.classList.remove('solo');
+  stack.querySelectorAll('.pane.max').forEach(x => x.classList.remove('max'));
+  stack.classList.remove('solo');
 };
 
 const closePane = guard(async id => {
@@ -597,6 +656,7 @@ function dispose(id) {
 // Chats from the sidebar and pane headers can be dropped onto the grid: the left (or, when panes stack, top)
 // half of a pane puts it before that pane, the other half after it, anywhere else at the end.
 function dragPane(e, id) {
+  dragging = id;
   e.dataTransfer.setData(DRAG.pane, id);
   e.dataTransfer.effectAllowed = 'move';
   panes.get(id)?.el.classList.add('dragging');
@@ -607,35 +667,38 @@ const carries = e => [DRAG.chat, DRAG.pane].some(t => e.dataTransfer.types.inclu
 function spotAt(e) {
   const el = e.target.closest?.('.pane');
   const p = el && panes.get(el.dataset.id);
-  if (!p || p.el.classList.contains('hidden')) return null;
+  if (!p || p.docked || p.el.classList.contains('hidden')) return null;
+  if (dragging && panes.get(dragging)?.el.parentNode !== el.parentNode) return null; // panes move only within their space
   const r = el.getBoundingClientRect();
-  const before = grid.classList.contains('one-col') ? e.clientY < r.top + r.height / 2 : e.clientX < r.left + r.width / 2;
+  const before = el.parentNode.classList.contains('one-col') ? e.clientY < r.top + r.height / 2 : e.clientX < r.left + r.width / 2;
   return { ref: p.id, side: before ? 'before' : 'after' };
 }
 
-function markDrop(spot) {
+// Dropped on no pane, it goes at the end of its space's grid: the dragged pane's own, else the one under the pointer.
+function markDrop(spot, e) {
   for (const p of panes.values()) p.el.classList.remove('drop-before', 'drop-after');
-  grid.classList.toggle('drop-end', !spot);
+  const end = !spot && e && (dragging ? panes.get(dragging)?.el.parentNode : e.target.closest?.('.grid'));
+  for (const { grid } of sections.values()) grid.classList.toggle('drop-end', grid === end);
   if (spot) panes.get(spot.ref)?.el.classList.add(`drop-${spot.side}`);
 }
 const clearDrop = () => {
   markDrop(null);
-  grid.classList.remove('drop-end');
+  dragging = null;
 };
 
 // moveBefore keeps a moved element alive; insertBefore would reload a browser pane's page.
-function put(el, before) {
+function put(parent, el, before = null) {
   try {
-    if (grid.moveBefore) return grid.moveBefore(el, before);
+    if (parent.moveBefore) return parent.moveBefore(el, before);
   } catch {} // not movable in place (older browser): fall back
-  grid.insertBefore(el, before);
+  parent.insertBefore(el, before);
 }
 
 function movePane(id, spot) {
   const el = panes.get(id)?.el;
   const ref = spot && panes.get(spot.ref)?.el;
-  if (!el || !ref || ref === el) return;
-  put(el, spot.side === 'before' ? ref : ref.nextSibling);
+  if (!el || !ref || ref === el || ref.parentNode !== el.parentNode) return; // never into another space
+  put(el.parentNode, el, spot.side === 'before' ? ref : ref.nextSibling);
 }
 
 function dropTarget(root) {
@@ -643,7 +706,7 @@ function dropTarget(root) {
     if (!carries(e)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    markDrop(spotAt(e));
+    markDrop(spotAt(e), e);
   });
   root.addEventListener('dragleave', e => !root.contains(e.relatedTarget) && clearDrop());
   root.addEventListener('drop', e => {
@@ -655,8 +718,9 @@ function dropTarget(root) {
     const pane = e.dataTransfer.getData(DRAG.pane);
     if (chat) actions.openChat(chat, spot);
     else if (panes.has(pane) && !panes.get(pane).docked) {
-      movePane(pane, spot ?? { ref: [...grid.children].at(-1)?.dataset.id, side: 'after' });
-      saveOrder();
+      const p = panes.get(pane);
+      movePane(pane, spot ?? { ref: p.el.parentNode.lastElementChild?.dataset.id, side: 'after' });
+      saveOrder(projectOf(p));
       layout();
     }
   });
@@ -733,8 +797,8 @@ function newBrowser(url = 'http://localhost:3000') {
 }
 
 function syncBrowsers() {
-  if (!grid) return;
-  for (const project of mixed() ? state.projects.map(x => x.path) : [state.project]) {
+  if (!stack) return;
+  for (const project of openSpaces()) {
     for (const b of browserList(project)) if (!panes.has(b.id)) browserPane(b, project);
   }
   for (const [id, p] of panes) {
@@ -742,7 +806,6 @@ function syncBrowsers() {
     if (!browserList(p.project).some(b => b.id === id)) dispose(id);
     else {
       p.el.classList.toggle('hidden', !shows(p.project) || hidden.has(id));
-      folderChip(p.folder, p.project);
     }
   }
   layout();
@@ -772,20 +835,19 @@ function browserPane(b, project) {
     input.value = url;
     saveBrowsers(project, browserList(project).map(x => (x.id === b.id ? { ...x, url } : x)));
   };
-  const folder = h('span', { class: 'chip pane-folder' });
   const input = h('input', { class: 'url-input', value: b.url, spellcheck: false, title: 'Type a URL or just a port, like 3000', onKeydown: e => e.key === 'Enter' && go(input.value) });
   const el = h('div', { class: 'pane', 'data-id': b.id },
     h('div', { class: 'pane-head', onDblclick: e => e.target === e.currentTarget && toggleMaximise(b.id) },
       // The globe is the drag handle here, so dragging in the address bar still selects text.
-      h('span', { draggable: true, title: 'Drag to move this pane', style: { cursor: 'grab' }, onDragstart: e => dragPane(e, b.id), onDragend: () => el.classList.remove('dragging') }, avatar({ kind: 'browser' })), input, folder,
+      h('span', { draggable: true, title: 'Drag to move this pane', style: { cursor: 'grab' }, onDragstart: e => dragPane(e, b.id), onDragend: () => el.classList.remove('dragging') }, avatar({ kind: 'browser' })), input,
       h('button', { class: 'icon-btn', title: 'Reload', onClick: () => { frame.src = frame.src; } }, icon('refresh', 14)),
       h('button', { class: 'icon-btn', title: 'Open in your browser', onClick: () => safeUrl(input.value) && window.open(safeUrl(input.value), '_blank', 'noopener') }, icon('external', 14)),
       h('button', { class: 'icon-btn', title: 'Hide from the grid', onClick: () => hidePane(b.id) }, icon('eyeOff', 14)),
       h('button', { class: 'icon-btn', title: 'Maximise', onClick: () => toggleMaximise(b.id) }, icon('maximize', 14)),
       h('button', { class: 'icon-btn', title: 'Close', onClick: () => closePane(b.id) }, icon('x', 15))),
     h('div', { class: 'pane-body' }, frame));
-  grid.append(el);
-  panes.set(b.id, { id: b.id, kind: 'browser', el, project, folder });
+  sectionFor(project).grid.append(el);
+  panes.set(b.id, { id: b.id, kind: 'browser', el, project });
 }
 
 function removeBrowser(p) {

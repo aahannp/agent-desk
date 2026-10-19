@@ -8,7 +8,7 @@ import tls from 'node:tls';
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
 import { WebSocketServer } from 'ws';
-import { db, load, changed, bus } from './lib/store.mjs';
+import { db, load, changed, bus, pruneSpaces } from './lib/store.mjs';
 import * as S from './lib/sessions.mjs';
 import * as G from './lib/git.mjs';
 import { mcpTools, handleMcp } from './lib/mcp.mjs';
@@ -148,6 +148,7 @@ route('POST', '/api/projects', ({ body }) => {
 });
 route('DELETE', '/api/projects', ({ query }) => {
   db.projects = db.projects.filter(p => p.path !== query.get('path'));
+  pruneSpaces(db);
   if (db.settings.lastProject === query.get('path')) db.settings.lastProject = db.projects[0]?.path ?? '';
   changed('projects');
   changed('settings');
@@ -160,7 +161,7 @@ route('PATCH', '/api/settings', ({ req, body }) => {
   notFromAgent(req, 'change Relay\'s settings');
   for (const [key, value] of Object.entries(body)) {
     if (!(key in db.settings)) continue;
-    if (['agentsCanSpawn', 'agentsCanMessage', 'agentsCanEditTeam', 'agentsAutonomous', 'fancyCursor', 'worktreeByDefault', 'sidebarHidden', 'mixFolders', 'agentsAware', 'spacesCanAsk'].includes(key) && typeof value !== 'boolean') throw fail(400, `${key} is true or false`);
+    if (['agentsCanSpawn', 'agentsCanMessage', 'agentsCanEditTeam', 'agentsAutonomous', 'fancyCursor', 'worktreeByDefault', 'sidebarHidden', 'agentsAware', 'spacesCanAsk'].includes(key) && typeof value !== 'boolean') throw fail(400, `${key} is true or false`);
     if (key === 'artifactEditModel' && !EDIT_MODELS.includes(value)) throw fail(400, `The edit model is one of ${EDIT_MODELS.join(', ')}`);
     if (key === 'scrollSpeed' && !(Number(value) >= 0.25 && Number(value) <= 4)) throw fail(400, 'Scroll speed is between 0.25 and 4');
     if (key === 'agentDefaults') {
@@ -175,6 +176,7 @@ route('PATCH', '/api/settings', ({ req, body }) => {
         throw fail(400, 'Lead upkeep is on or off, compacts at 50 to 95% of a 50,000 to 2,000,000-token window and replaces after 1 to 10 compactions');
       }
     }
+    if (key === 'openSpaces' && !(Array.isArray(value) && value.every(p => typeof p === 'string'))) throw fail(400, 'openSpaces is a list of project folder paths');
     if (key === 'browserPanes') {
       const ok = value && typeof value === 'object' && Object.values(value).every(list => Array.isArray(list)
         && list.every(b => typeof b?.id === 'string' && /^https?:\/\//i.test(String(b.url))));
@@ -182,6 +184,7 @@ route('PATCH', '/api/settings', ({ req, body }) => {
     }
     db.settings[key] = value;
   }
+  pruneSpaces(db);
   // Open Claude Code panes repaint in the new colours (see claudeTheme in lib/sessions.mjs).
   if ('theme' in body || 'accent' in body) {
     try { S.writeClaudeTheme(); } catch (e) { console.error("Couldn't update Claude Code's Relay theme:", e.message); }

@@ -128,6 +128,9 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .space-sum.attn > span:last-child { color: var(--warn); }
 .space-row .icon-btn:not(.space-chev) { opacity: 0; }
 .space-row:hover .icon-btn, .space-row:focus-within .icon-btn, .space.current .space-row .icon-btn { opacity: 1; }
+.space-row .space-beside[aria-pressed="true"] { opacity: 1; color: var(--accent); } /* shown beside the current one in the grid */
+.space-beside[hidden] { display: none; }
+.space.beside:not(.current) { box-shadow: inset 2px 0 0 var(--accent); }
 .space-agents { display: flex; flex-direction: column; gap: 1px; padding: 0 4px 6px 24px; }
 .space-agents[hidden] { display: none; }
 .space-new { margin-top: 2px; }
@@ -312,9 +315,26 @@ textarea.input { resize: vertical; min-height: 84px; line-height: 1.55; }
 .tips span { display: inline-flex; gap: 7px; align-items: center; }
 
 /* ---------- Agents: terminal grid ---------- */
-.grid { position: absolute; inset: 0; display: grid; gap: 12px; padding: 12px; }
-.grid.solo .pane:not(.max) { display: none; }
-.grid.solo .pane.max { grid-area: 1 / 1 / -1 / -1; }
+/* One section per open space, stacked; with several, each gets a slim header and a fair share of the height (scrolling past that). */
+.stack { position: absolute; inset: 0; display: flex; flex-direction: column; overflow-y: auto; }
+.space-section { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+.space-section[hidden] { display: none; }
+.stack.many .space-section { min-height: 340px; }
+.stack.many .space-section:not(:first-child) { border-top: 1px solid var(--hair); }
+.space-head { display: none; align-items: center; gap: 8px; height: 38px; flex-shrink: 0; padding: 8px 14px 0 18px; color: var(--dim); }
+.stack.many .space-head { display: flex; }
+.space-head-name { font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.space-head .space-sum { min-width: 0; }
+.space-head .icon-btn[hidden] { display: none; }
+.space-note { display: none; padding: 4px 18px 14px; font-size: 12px; color: var(--dim); }
+.stack.many .space-section.empty { flex: 0 0 auto; min-height: 0; }
+.stack.many .space-section.empty .space-note { display: block; }
+.space-section.empty .grid { display: none; }
+.grid { position: relative; flex: 1; min-height: 0; display: grid; gap: 12px; padding: 12px; }
+.stack.solo .space-section:not(:has(.pane.max)), .stack.solo .space-head { display: none; }
+.stack.solo .space-section { flex: 1 1 0; min-height: 0; }
+.stack.solo .pane:not(.max) { display: none; }
+.stack.solo .pane.max { grid-area: 1 / 1 / -1 / -1; }
 .pane { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; border-radius: 16px; overflow: hidden;
   background: var(--term-bg, var(--bg)); border: 1px solid var(--hair-strong); box-shadow: var(--shadow-sm), var(--lift);
   transition: border-color .25s, box-shadow .25s; animation: paneIn .35s var(--ease); }
@@ -794,6 +814,3 @@ select.input.art-chat-model { width: auto; padding: 4px 8px; font-size: 12px; bo
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
-/* The folder a pane runs in, when the grid mixes project folders (Settings). */
-.pane-folder { flex-shrink: 1; min-width: 0; max-width: 30%; }
-.pane-folder span { overflow: hidden; text-overflow: ellipsis; }
