@@ -122,6 +122,10 @@ flowchart LR
   read another's conversation to catch up (`read_agent_chat`), and can copy itself or another agent with its
   whole conversation to take on another part (`clone_agent`). Settings decides whether they do this without
   asking you each time; their edits and commands still ask.
+- **Agents know what's around them** (Settings, on by default): each Claude agent starts with a short brief of the
+  project's other agents (status, branch, what each is on), the board and recent chats, and before each turn
+  hears what changed since (tasks moving, agents starting or waiting, PR links, messages), with a heads-up first
+  when another agent edited a file it edited too. Under 1,600 and 600 characters, and nothing when nothing changed.
 - **Model and effort**: defaults for Claude Code agents, lead agents and each specialist (Christie on Sonnet,
   Browner on Opus, Scout on Haiku). Ask for "a lighter model" or "more effort" and the agent goes one step from
   its default.
