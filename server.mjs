@@ -54,7 +54,7 @@ function sameSite(req) {
   return !origin || LOCAL.has(origin.replace(/^https?:\/\//, ''));
 }
 
-const AGENT_ROUTES = new Set(['POST /mcp', 'POST /api/claude-session', 'POST /api/touched', 'POST /api/context']);
+const AGENT_ROUTES = new Set(['POST /mcp', 'POST /api/claude-session', 'POST /api/touched', 'POST /api/context', 'POST /api/news']);
 // { kind: 'ui' } for the master token, { kind: 'agent', session } for an agent's token on one of
 // AGENT_ROUTES (header only, never a cookie or ?t=), otherwise null: anywhere else an agent token counts for nothing.
 function auth(req, url) {
@@ -160,7 +160,7 @@ route('PATCH', '/api/settings', ({ req, body }) => {
   notFromAgent(req, 'change Relay\'s settings');
   for (const [key, value] of Object.entries(body)) {
     if (!(key in db.settings)) continue;
-    if (['agentsCanSpawn', 'agentsCanMessage', 'agentsCanEditTeam', 'agentsAutonomous', 'fancyCursor', 'worktreeByDefault', 'sidebarHidden', 'mixFolders'].includes(key) && typeof value !== 'boolean') throw fail(400, `${key} is true or false`);
+    if (['agentsCanSpawn', 'agentsCanMessage', 'agentsCanEditTeam', 'agentsAutonomous', 'fancyCursor', 'worktreeByDefault', 'sidebarHidden', 'mixFolders', 'agentsAware'].includes(key) && typeof value !== 'boolean') throw fail(400, `${key} is true or false`);
     if (key === 'scrollSpeed' && !(Number(value) >= 0.25 && Number(value) <= 4)) throw fail(400, 'Scroll speed is between 0.25 and 4');
     if (key === 'agentDefaults') {
       const ok = ['claude', 'lead'].every(k => T.MODELS.includes(value?.[k]?.model) && T.EFFORTS.includes(value?.[k]?.effort));
@@ -225,7 +225,9 @@ route('POST', '/api/context', ({ req, body }) => {
 route('POST', '/api/touched', async ({ req, body }) => {
   const from = caller(req);
   const input = body.tool_input ?? {};
-  const where = await G.touched(String(input.file_path ?? input.notebook_path ?? ''), from);
+  const file = String(input.file_path ?? input.notebook_path ?? '');
+  S.noteTouched(from, file);
+  const where = await G.touched(file, from);
   if (where?.added) changed('tasks');
   if (!where || (from && `${from.project}/`.startsWith(`${where.main}/`))) return {}; // the agent's own project already covers it
   let added = false;
@@ -240,6 +242,15 @@ route('POST', '/api/touched', async ({ req, body }) => {
   }
   if (added) changed('projects');
   return {};
+});
+
+// Claude's UserPromptSubmit hook: what other agents did since this one's last turn, as context for it (see news
+// in lib/sessions.mjs). Nothing at all when nothing changed, so a quiet turn costs no tokens.
+route('POST', '/api/news', ({ req }) => {
+  const s = caller(req);
+  if (!s) throw fail(404, 'Unknown session');
+  const text = S.news(s);
+  return { raw: text ? JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: text } }) : '', type: 'application/json' };
 });
 
 // Chats: agent conversations kept after their pane closes or the app quits, so they can be opened again
@@ -363,6 +374,7 @@ function recentMessages(project) {
 function logMessage(project, from, to, via) {
   const entry = { at: Date.now(), project, fromId: from?.id ?? null, fromName: from?.name ?? 'An agent', toId: to.id, toName: to.name, via };
   db.messages = [...db.messages, entry].slice(-500);
+  S.note(project, from?.id ?? null, 'messages between agents', `${S.plain(entry.fromName)} messaged ${S.plain(to.name)}`);
   changed('messages');
   return entry;
 }
@@ -523,9 +535,12 @@ route('GET', '/api/usage', async ({ query }) => {
 route('GET', '/api/tasknotes', () => TN.openTasks());
 route('POST', '/api/tasknotes/import', async ({ req, body }) =>
   addTask(req, await TN.bringOver({ id: String(body.id || ''), date: String(body.date || '') }, projectFor(req, body.project))));
-route('PATCH', '/api/tasks/:id', ({ params, body }) => {
+// A task changing column, for the other agents' news (see note in lib/sessions.mjs).
+const moved = (req, task, to) => S.note(task.project, caller(req)?.id ?? null, `tasks moved to ${to}`, `Task ${S.plain(task.title, 60)} moved to ${to}`);
+route('PATCH', '/api/tasks/:id', ({ req, params, body }) => {
   const task = findTask(params.id);
   if (body.status !== undefined && !STATUSES.includes(body.status)) throw fail(400, `Status must be one of: ${STATUSES.join(', ')}`);
+  if (body.status !== undefined && body.status !== task.status) moved(req, task, body.status);
   for (const key of ['title', 'description', 'status', 'agent', 'worktree']) if (body[key] !== undefined) task[key] = body[key];
   if (body.before !== undefined) { // drag-and-drop: place this task just before another one
     db.tasks.splice(db.tasks.indexOf(task), 1);
@@ -545,6 +560,9 @@ route('POST', '/api/tasks/:id/comments', ({ req, params, body }) => {
   const task = findTask(params.id);
   if (!String(body.text || '').trim()) throw fail(400, 'Comment is empty');
   task.notes.push({ at: Date.now(), by: caller(req)?.name || 'You', text: body.text.trim() });
+  for (const pr of new Set(body.text.match(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g))) {
+    S.note(task.project, caller(req)?.id ?? null, 'PR links posted', `${S.plain(caller(req)?.name || 'You')} posted ${pr} on ${S.plain(task.title, 60)}`);
+  }
   task.updatedAt = Date.now();
   changed('tasks');
   return task;
@@ -558,6 +576,7 @@ route('POST', '/api/tasks/:id/start', async ({ req, params, body }) => {
   const worktree = body.worktree ?? task.worktree;
   const prompt = task.description ? `${task.title}\n\n${task.description}` : task.title;
   const s = await S.createSession({ project: task.project, agent, prompt, name: task.title, taskId: task.id, worktree, specialist: body.specialist || null, model: body.model || '', effort: body.effort || '', startedBy: starter(req) });
+  if (task.status !== 'doing') S.note(task.project, s.id, 'tasks moved to doing', `Task ${S.plain(task.title, 60)} moved to doing`); // by its own agent, which knows
   Object.assign(task, { status: 'doing', sessionId: s.id, agent, worktree, branch: s.worktree?.branch ?? null, worktreePath: s.worktree?.path ?? null, updatedAt: Date.now() });
   changed('tasks');
   return { task, session: S.info(s) };
@@ -588,10 +607,11 @@ route('GET', '/api/review/diff', async ({ req, query }) => {
   return { text: await G.diffText(dir) };
 });
 route('POST', '/api/review/commit', ({ body }) => G.commit(existingDir(body.worktree), String(body.message || 'Relay changes')));
-route('POST', '/api/review/merge', async ({ body }) => {
+route('POST', '/api/review/merge', async ({ req, body }) => {
   const meta = await G.merge(existingDir(body.worktree));
   const task = meta.taskId && db.tasks.find(t => t.id === meta.taskId);
   if (task) {
+    if (task.status !== 'done') moved(req, task, 'done');
     task.status = 'done';
     task.notes.push({ at: Date.now(), by: 'You', text: `Merged ${meta.branch} into ${meta.base}.` });
     changed('tasks');
@@ -772,7 +792,7 @@ async function respond(req, res) {
       const params = Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])]));
       const body = ['POST', 'PUT', 'PATCH'].includes(req.method) ? await readBody(req) : {};
       const result = await r.handler({ req, params, query: url.searchParams, body });
-      if (result?.raw) {
+      if (result?.raw !== undefined) {
         res.writeHead(200, { 'content-type': result.type, 'x-content-type-options': 'nosniff', 'content-security-policy': 'sandbox' });
         return res.end(result.raw);
       }
