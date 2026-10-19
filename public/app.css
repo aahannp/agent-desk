@@ -83,7 +83,7 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .side-toggle { -webkit-app-region: no-drag; margin-right: -8px; }
 .side { position: relative; display: flex; flex-direction: column; min-height: 0; padding: 0 12px 12px;
   background: color-mix(in srgb, var(--side) 72%, transparent); backdrop-filter: blur(24px) saturate(150%); border-right: 1px solid var(--hair); }
-.side > * { flex-shrink: 0; } /* only the departments and chats lists give way when the window is short */
+.side > * { flex-shrink: 0; } /* only the departments and chats lists give way */
 .side-top { height: 58px; display: flex; align-items: center; padding: 0 6px; -webkit-app-region: drag; }
 .is-app .side-top { padding-left: 80px; }
 .brand { display: flex; align-items: center; gap: 10px; font: 650 14.5px var(--display); letter-spacing: -.02em; }
@@ -102,7 +102,7 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .nav-item .count.attn { color: #fff; background: var(--accent);  }
 .side-label { display: flex; align-items: center; gap: 8px; font: 600 10px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--dim); padding: 22px 10px 8px; opacity: .75; }
 .side-label::after { content: ""; flex: 1; height: 1px; background: var(--hair); }
-.running { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 2px; min-height: 96px; }
+.running { flex: 2 1 0; overflow: auto; display: flex; flex-direction: column; gap: 2px; min-height: 0; max-height: max-content; }
 .run-item { display: flex; align-items: center; gap: 9px; padding: 6px 8px; border: 0; background: none; border-radius: 9px; color: var(--dim); text-align: left; font-size: 12.5px; transition: background .2s, color .2s; }
 .run-item:hover { background: var(--softer); color: var(--text); }
 .run-item .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
@@ -112,7 +112,7 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .run-item.gone { opacity: .45; }
 .run-item.off .name { opacity: .55; } /* hidden from the grid, still running */
 .side-label.sub { padding: 14px 10px 6px; }
-.depts { display: flex; flex-direction: column; gap: 2px; overflow: auto; flex: 0 1 auto; min-height: 64px; max-height: 40vh; }
+.depts { display: flex; flex-direction: column; gap: 2px; overflow: auto; flex: 3 1 0; min-height: 0; max-height: max-content; } /* the two lists share the room 60/40 when both are long; whatever one doesn't need goes to the other */
 .dept { border-radius: 10px; }
 .dept.current { background: var(--accent-soft); }
 .dept-row { display: flex; align-items: center; gap: 2px; padding: 2px 4px 2px 2px; }
@@ -131,7 +131,7 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .dept-agents { display: flex; flex-direction: column; gap: 1px; padding: 0 4px 6px 24px; }
 .dept-agents[hidden] { display: none; }
 .dept-new { margin-top: 2px; }
-.side-foot { display: flex; flex-direction: column; gap: 6px; padding-top: 12px; }
+.side-foot { display: flex; flex-direction: column; gap: 6px; padding-top: 12px; margin-top: auto; }
 .voice-btn, .palette-btn { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 11px; border: 1px solid var(--hair); background: var(--glass); color: var(--text); box-shadow: var(--lift); transition: border-color .2s, background .2s, box-shadow .2s; }
 .voice-btn kbd, .palette-btn kbd { margin-left: auto; }
 .voice-btn:hover, .palette-btn:hover { border-color: var(--hair-strong); background: var(--glass-strong); }

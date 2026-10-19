@@ -162,11 +162,13 @@ function renderChrome() {
 // Departments: every project folder, with who's running in it. Click one to go there; open it to see its agents.
 const OPEN_DEPTS = 'agent-desk:open-departments';
 const openDepts = new Set((() => { try { return JSON.parse(localStorage.getItem(OPEN_DEPTS)) ?? []; } catch { return []; } })());
+let revealDept = null; // a department to scroll into view on the next build: the one just opened, or the current one at start
 const toggleDept = path => {
-  openDepts.has(path) ? openDepts.delete(path) : openDepts.add(path);
+  openDepts.has(path) ? openDepts.delete(path) : (openDepts.add(path), (revealDept = path));
   try { localStorage.setItem(OPEN_DEPTS, JSON.stringify([...openDepts])); } catch {}
-  renderDepartments();
+  renderChrome(); // Chats too: it leaves out what the current department now shows
 };
+const showsAgentsOf = path => path === state.project && openDepts.has(path);
 
 let deptsShown = '';
 function renderDepartments() {
@@ -178,14 +180,16 @@ function renderDepartments() {
   // This runs every second: rebuild only on a real change (a rebuild mid-click loses the click), and keep keyboard focus.
   const now = JSON.stringify([state.project, [...openDepts], list.map(d => [d.p.path, d.p.name, d.statuses, d.agents.map(s => [s.id, chatTitle(s), s.cwd])])]);
   if (now === deptsShown) return;
+  if (!deptsShown) revealDept = state.project;
   deptsShown = now;
   const focused = el.contains(document.activeElement) ? document.activeElement.dataset.key : null;
+  const scrolled = el.scrollTop; // emptying the list would reset it
   el.replaceChildren(...list.map(({ p, agents, statuses }, i) => {
     const waiting = statuses.filter(x => x === 'needs-input').length;
     const open = openDepts.has(p.path);
     const current = p.path === state.project;
     const summary = agents.length ? `${agents.length} agent${agents.length === 1 ? '' : 's'}${waiting ? ` · ${waiting} need${waiting === 1 ? 's' : ''} you` : ''}` : 'No agents';
-    return h('div', { class: `dept${current ? ' current' : ''}`, role: 'listitem' },
+    return h('div', { class: `dept${current ? ' current' : ''}`, role: 'listitem', 'data-path': p.path },
       h('div', { class: 'dept-row' },
         h('button', { class: `icon-btn sm dept-chev${open ? ' open' : ''}`, 'data-key': `chev:${p.path}`, 'aria-expanded': String(open), 'aria-controls': `dept-${i}`,
           'aria-label': `Show agents in ${p.name}`, title: open ? 'Hide agents' : 'Show agents', onClick: () => toggleDept(p.path) }, icon('chevronRight', 12)),
@@ -201,7 +205,14 @@ function renderDepartments() {
           avatar(s, true), h('span', { class: 'name' }, chatTitle(s)), h('span', { class: `dot ${statuses[j]}`, title: STATUS_LABEL[statuses[j]] ?? '' })))
           : [h('div', { class: 'run-empty' }, 'Nothing running')])));
   }), h('button', { class: 'run-item dept-new', 'data-key': 'new', onClick: () => addProject() }, icon('plus', 13), h('span', { class: 'name' }, 'New department')));
-  if (focused) el.querySelector(`[data-key="${CSS.escape(focused)}"]`)?.focus();
+  el.scrollTop = scrolled;
+  if (focused) el.querySelector(`[data-key="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
+  const show = revealDept && el.querySelector(`.dept[data-path="${CSS.escape(revealDept)}"]`);
+  revealDept = null;
+  if (show) { // as much of it as fits, never scrolling its header out of view
+    const top = show.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
+    el.scrollTop = Math.min(top, Math.max(el.scrollTop, top + show.offsetHeight - el.clientHeight));
+  }
 }
 
 function deptMenu(e, p) {
@@ -220,8 +231,9 @@ let sidebarDrag = false; // rebuilding the list mid-drag would detach the dragge
 function renderChats(unordered) {
   if (sidebarDrag) return;
   const order = actions.paneOrder?.() ?? [];
-  const sessions = [...unordered].sort((a, b) => (order.indexOf(a.id) + 1 || Infinity) - (order.indexOf(b.id) + 1 || Infinity));
-  const openIds = new Set(sessions.map(s => s.chatId).filter(Boolean));
+  const listed = unordered.filter(s => !s.exited && !s.artifactId && showsAgentsOf(s.project));
+  const sessions = unordered.filter(s => !listed.includes(s)).sort((a, b) => (order.indexOf(a.id) + 1 || Infinity) - (order.indexOf(b.id) + 1 || Infinity));
+  const openIds = new Set(unordered.map(s => s.chatId).filter(Boolean)); // all of them: a listed agent's chat isn't "Recent" either
   const recent = projectChats().filter(c => !openIds.has(c.id)).slice(0, 40);
   const drag = (type, id) => e => {
     e.dataTransfer.setData(type, id);
@@ -242,7 +254,7 @@ function renderChats(unordered) {
     onContextmenu: e => chatMenu(e, c),
   }, avatar(c, true), h('span', { class: 'name' }, c.title), h('span', { class: 'when' }, ago(c.lastActiveAt).replace(' ago', ''))));
   $('running').replaceChildren(
-    ...(open.length ? open : [h('div', { class: 'run-empty' }, 'Nothing open')]),
+    ...(open.length ? open : [h('div', { class: 'run-empty' }, listed.length ? `Open ones are under ${baseName(state.project)}` : 'Nothing open')]),
     ...(earlier.length ? [h('div', { class: 'side-label sub' }, 'Recent'), ...earlier] : []));
 }
 
@@ -284,6 +296,7 @@ function renderStatus() {
   ].filter(Boolean));
 }
 on('tick', renderChrome);
+on('project', renderChrome); // the new department lights up at once, not after the settings round trip
 
 function buildSidebar() {
   $('nav').replaceChildren(...VIEWS.map((v, i) => h('button', { class: 'nav-item', id: `nav-${v.id}`, title: `${v.label} (⌘${i + 1})`, onClick: () => showView(v.id) },
