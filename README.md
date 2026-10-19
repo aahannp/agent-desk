@@ -112,6 +112,8 @@ flowchart LR
   whether it's working, idle, needs you, or finished, and you get a notification when an agent needs you.
 - **Every folder in one grid** (Settings, off by default): agents from all your project folders side by side, each
   pane marked with its folder; the New Claude Code menu starts one in another folder.
+- **More windows**: File → New Window (⌘⇧N) or the Dock menu. Each window has its own project and starts on the
+  one you opened it from; a pane open in two windows streams to both, and takes the size of the one you click into.
 - **Agents talk to each other**: tell an agent to ask Christie something, and the message is typed into
   Christie's pane, signed with who sent it, where you can watch the exchange. She answers the same way. If no
   Christie is running in the project, a new one starts. Each agent asks you before its first message. Messages

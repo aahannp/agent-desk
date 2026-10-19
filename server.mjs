@@ -736,7 +736,8 @@ async function respond(req, res) {
   if (!url.pathname.startsWith('/api/')) {
     if (url.pathname === '/' && url.searchParams.has('t')) { // trade the link's secret for a cookie, then drop it from the address bar
       if (req.auth?.kind !== 'ui') return res.writeHead(302, { location: '/' }).end();
-      return res.writeHead(302, { location: '/', 'set-cookie': `${COOKIE}=${TOKEN}; HttpOnly; SameSite=Strict; Path=/` }).end();
+      url.searchParams.delete('t'); // a new window's ?project= stays
+      return res.writeHead(302, { location: `/${url.search}`, 'set-cookie': `${COOKIE}=${TOKEN}; HttpOnly; SameSite=Strict; Path=/` }).end();
     }
     if (url.pathname === '/' && req.auth?.kind !== 'ui') return res.writeHead(401, { 'content-type': 'text/html' }).end(LOCKED_PAGE);
     const file = req.method === 'GET' && staticPath(url.pathname);
