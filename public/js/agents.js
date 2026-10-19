@@ -1,5 +1,5 @@
 // Agents view: every agent, shell and browser pane for the project, tiled in a grid of real terminals.
-import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, commands, menu, askText, modal, confirmDialog, agentLabel, shortBranch, baseName, copy, chatTitle, meterView, DRAG, MONO, STATUS_LABEL } from './ui.js';
+import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, commands, menu, askText, modal, confirmDialog, agentLabel, shortBranch, baseName, copy, chatTitle, meterView, mixed, DRAG, MONO, STATUS_LABEL } from './ui.js';
 
 const panes = new Map(); // id -> pane (a session's terminal, or a browser)
 const seen = new Map(); // session id -> last status we told you about
@@ -27,7 +27,7 @@ export function mount(root) {
   on('sessions', sync);
   on('chats', () => { for (const p of panes.values()) if (p.kind === 'term') renderHead(p); });
   on('project', sync);
-  on('settings', syncBrowsers);
+  on('settings', sync); // also picks up "every folder in one grid" being switched
   on('theme', retheme);
   setInterval(tick, 1000);
 }
@@ -43,6 +43,9 @@ export function toolbar() {
         ...installed.map(a => ({ label: a.label, icon: 'terminal', onClick: () => newSession({ agent: a.id }) })),
         { heading: 'In its own git worktree' },
         ...installed.map(a => ({ label: a.label, icon: 'branch', onClick: () => newSession({ agent: a.id, worktree: true }) })),
+        ...(mixed() ? [{ heading: 'In another folder' },
+          ...state.projects.filter(p => p.path !== state.project).map(p => ({ label: p.name, sub: p.path.replace(state.info.home, '~'), icon: 'folder', onClick: () => newSession({ project: p.path }) })),
+          { label: 'Choose a folder…', icon: 'plus', onClick: () => actions.addProject(path => newSession({ project: path })) }] : []),
         ...(claudeReady() && state.specialists.length ? [{ heading: 'Specialists' },
           ...state.specialists.map(x => ({ label: x.name, sub: x.role.split(':')[0], icon: 'sparkles', onClick: () => startSpecialist(x) }))] : []),
         'sep',
@@ -152,6 +155,9 @@ command('New shell', () => newSession({ kind: 'shell' }), { icon: 'terminal' });
 command('New browser pane', () => newBrowser(), { icon: 'globe' });
 
 // ---------- Keeping panes in step with the server ----------
+// The grid shows the current project's panes, or every project's when Settings mixes folders.
+const shows = project => mixed() || project === state.project;
+
 function sync() {
   if (!grid) return;
   const live = new Set();
@@ -159,7 +165,7 @@ function sync() {
     live.add(s.id);
     const p = panes.get(s.id) ?? terminalPane(s);
     p.session = s;
-    p.el.classList.toggle('hidden', s.project !== state.project);
+    p.el.classList.toggle('hidden', !shows(s.project));
     renderHead(p);
     announce(s);
   }
@@ -168,8 +174,8 @@ function sync() {
   restoreOrder();
 }
 
-// The order you arrange panes in is remembered per project, in this browser only (a convenience, not data).
-const orderKey = () => `agent-desk:order:${state.project}`;
+// The order you arrange panes in is remembered per project (or once for the mixed grid), in this browser only (a convenience, not data).
+const orderKey = () => `agent-desk:order:${mixed() ? '*' : state.project}`;
 function saveOrder() {
   try { localStorage.setItem(orderKey(), JSON.stringify([...grid.children].map(el => el.dataset.id))); } catch {}
   emit('tick'); // the sidebar lists open panes in the same order
@@ -348,6 +354,7 @@ function terminalPane(s) {
   const title = h('span', { class: 'pane-title' });
   const sub = h('span', { class: 'pane-sub' });
   const face = h('span', {});
+  const folder = h('span', { class: 'chip pane-folder' });
   const meter = h('span', { class: 'meter', role: 'meter', 'aria-label': 'Context and cost', 'aria-valuemin': 0, 'aria-valuemax': 100, tabindex: 0, hidden: true });
   const host = h('div', { class: 'term-host' });
   const blocks = h('div', { class: 'blocks' });
@@ -355,7 +362,7 @@ function terminalPane(s) {
   const id = s.id;
   const blocksBtn = s.kind === 'shell' && h('button', { class: 'icon-btn', title: 'Command blocks', onClick: () => blocksBtn.classList.toggle('on', el.classList.toggle('show-blocks')) }, icon('list', 15));
   const head = h('div', { class: 'pane-head', draggable: true, title: 'Drag to move this pane', onDragstart: e => dragPane(e, id), onDragend: () => el.classList.remove('dragging'), onDblclick: e => !e.target.closest('button') && toggleMaximise(id) },
-    face, h('div', { class: 'pane-titles' }, title, sub), meter, state_,
+    face, h('div', { class: 'pane-titles' }, title, sub), folder, meter, state_,
     h('div', { class: 'pane-tools' },
       blocksBtn,
       s.chatId && h('button', { class: 'icon-btn', title: 'Name this agent', onClick: () => renameAgent(s) }, icon('pen', 13)),
@@ -373,7 +380,7 @@ function terminalPane(s) {
     term.loadAddon(webgl);
   } catch {}
 
-  const p = { id, kind: 'term', el, term, dot, state: state_, stateText, title, sub, face, meter, exitBar, blocksEl: blocks, session: s, lastData: 0, ws: null, size: '' };
+  const p = { id, kind: 'term', el, term, dot, state: state_, stateText, title, sub, face, folder, meter, exitBar, blocksEl: blocks, session: s, lastData: 0, ws: null, size: '' };
   p.send = data => p.ws?.readyState === WebSocket.OPEN && p.ws.send(JSON.stringify({ t: 'in', d: data }));
   p.fit = () => {
     if (!host.offsetWidth) return;
@@ -435,6 +442,7 @@ function renderHead(p) {
   const s = p.session;
   p.title.textContent = chatTitle(s);
   p.face.replaceChildren(avatar(s));
+  folderChip(p.folder, s.project);
   const kind = [s.specialist ? s.specialist.role.split(':')[0] : s.role === 'lead' ? 'Lead agent' : s.kind === 'shell' ? 'Shell' : agentLabel(s.agent), s.model, s.effort].filter(Boolean).join(' · ');
   p.sub.replaceChildren(...[
     h('span', {}, kind), h('span', { class: 'sep' }, '/'),
@@ -455,6 +463,14 @@ function renderHead(p) {
   }
 }
 
+// Which project folder a pane belongs to, shown only when the grid mixes folders.
+function folderChip(el, project) {
+  el.hidden = !mixed();
+  el.title = project;
+  if (el.dataset.project !== project) el.replaceChildren(icon('folder', 11), h('span', {}, baseName(project)));
+  el.dataset.project = project;
+}
+
 function setFocus(id) {
   focusedId = id;
   for (const p of panes.values()) p.el.classList.toggle('focus', p.id === id);
@@ -464,7 +480,7 @@ actions.focusedSession = () => (panes.get(focusedId)?.kind === 'term' ? focusedI
 function focusSession(id) {
   const p = panes.get(id);
   if (!p) return;
-  if (p.session.project !== state.project) actions.switchProject(p.session.project);
+  if (!shows(p.session.project)) actions.switchProject(p.session.project); // a mixed grid stays on your project
   actions.showView('agents');
   if (grid.classList.contains('solo') && !p.el.classList.contains('max')) toggleMaximise(id);
   setFocus(id);
@@ -480,7 +496,7 @@ actions.typeInto = (id, text, submit = false) => {
   if (submit) setTimeout(() => p.send('\r'), 120);
   return true;
 };
-actions.runningAgents = () => [...panes.values()].filter(p => p.kind === 'term' && !p.session.exited && p.session.project === state.project).map(p => p.session);
+actions.runningAgents = () => [...panes.values()].filter(p => p.kind === 'term' && !p.session.exited && shows(p.session.project)).map(p => p.session);
 
 function toggleMaximise(id) {
   const p = panes.get(id);
@@ -658,11 +674,16 @@ function newBrowser(url = 'http://localhost:3000') {
 
 function syncBrowsers() {
   if (!grid) return;
-  for (const b of browserList(state.project)) if (!panes.has(b.id)) browserPane(b, state.project);
+  for (const project of mixed() ? state.projects.map(x => x.path) : [state.project]) {
+    for (const b of browserList(project)) if (!panes.has(b.id)) browserPane(b, project);
+  }
   for (const [id, p] of panes) {
     if (p.kind !== 'browser') continue;
     if (!browserList(p.project).some(b => b.id === id)) dispose(id);
-    else p.el.classList.toggle('hidden', p.project !== state.project);
+    else {
+      p.el.classList.toggle('hidden', !shows(p.project));
+      folderChip(p.folder, p.project);
+    }
   }
   layout();
 }
@@ -691,18 +712,19 @@ function browserPane(b, project) {
     input.value = url;
     saveBrowsers(project, browserList(project).map(x => (x.id === b.id ? { ...x, url } : x)));
   };
+  const folder = h('span', { class: 'chip pane-folder' });
   const input = h('input', { class: 'url-input', value: b.url, spellcheck: false, title: 'Type a URL or just a port, like 3000', onKeydown: e => e.key === 'Enter' && go(input.value) });
   const el = h('div', { class: 'pane', 'data-id': b.id },
     h('div', { class: 'pane-head', onDblclick: e => e.target === e.currentTarget && toggleMaximise(b.id) },
       // The globe is the drag handle here, so dragging in the address bar still selects text.
-      h('span', { draggable: true, title: 'Drag to move this pane', style: { cursor: 'grab' }, onDragstart: e => dragPane(e, b.id), onDragend: () => el.classList.remove('dragging') }, avatar({ kind: 'browser' })), input,
+      h('span', { draggable: true, title: 'Drag to move this pane', style: { cursor: 'grab' }, onDragstart: e => dragPane(e, b.id), onDragend: () => el.classList.remove('dragging') }, avatar({ kind: 'browser' })), input, folder,
       h('button', { class: 'icon-btn', title: 'Reload', onClick: () => { frame.src = frame.src; } }, icon('refresh', 14)),
       h('button', { class: 'icon-btn', title: 'Open in your browser', onClick: () => safeUrl(input.value) && window.open(safeUrl(input.value), '_blank', 'noopener') }, icon('external', 14)),
       h('button', { class: 'icon-btn', title: 'Maximise', onClick: () => toggleMaximise(b.id) }, icon('maximize', 14)),
       h('button', { class: 'icon-btn', title: 'Close', onClick: () => closePane(b.id) }, icon('x', 15))),
     h('div', { class: 'pane-body' }, frame));
   grid.append(el);
-  panes.set(b.id, { id: b.id, kind: 'browser', el, project });
+  panes.set(b.id, { id: b.id, kind: 'browser', el, project, folder });
 }
 
 function removeBrowser(p) {

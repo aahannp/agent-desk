@@ -758,3 +758,6 @@ textarea.input { resize: vertical; min-height: 84px; line-height: 1.55; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+/* The folder a pane runs in, when the grid mixes project folders (Settings). */
+.pane-folder { flex-shrink: 1; min-width: 0; max-width: 30%; }
+.pane-folder span { overflow: hidden; text-overflow: ellipsis; }

@@ -73,7 +73,9 @@ function render() {
       setting('Permissions for Claude agents', PERMISSIONS.find(p => p[0] === s.permissionMode)?.[2] ?? '',
         h('div', { class: 'segmented' }, PERMISSIONS.map(([id, label]) => h('button', { class: s.permissionMode === id ? 'on' : '', onClick: () => set({ permissionMode: id }) }, label)))),
       setting('Give new tasks their own git worktree', 'Agents running at the same time then never edit the same files. You merge their work from Review.',
-        h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.worktreeByDefault, onChange: e => set({ worktreeByDefault: e.target.checked }) })))),
+        h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.worktreeByDefault, onChange: e => set({ worktreeByDefault: e.target.checked }) }))),
+      setting('Agents from every folder in one grid', 'Show and start agents from all your project folders side by side.',
+        h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.mixFolders === true, onChange: e => set({ mixFolders: e.target.checked }) })))),
 
     section('Team', 'Specialists are Claude agents with a name, one area of expertise, their own instructions and, if you like, a model. Every agent knows who is on the team, so it can hand a job to the right one. Start one from the New Claude Code menu.',
       h('div', { class: 'agent-list' }, state.specialists.map(x => h('div', { class: 'agent-row' },

@@ -1,5 +1,5 @@
 // The app shell: navigation, projects, live updates from the server, the command palette and shortcuts.
-import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, commands, menu, modal, askText, confirmDialog, ago, baseName, ltr, projectSessions, projectTasks, projectChats, chatTitle, DRAG, STATUS_LABEL } from './ui.js';
+import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, commands, menu, modal, askText, confirmDialog, ago, baseName, ltr, projectSessions, projectTasks, projectChats, gridSessions, chatTitle, DRAG, STATUS_LABEL } from './ui.js';
 import { THEMES, applyTheme } from './themes.js';
 import * as agents from './agents.js';
 import * as board from './board.js';
@@ -143,7 +143,7 @@ function renderChrome() {
   $('projectSwitch').querySelector('.project-path').textContent = project ? ltr(project.path.replace(state.info.home, '~')) : 'Add a folder to start';
   document.title = project ? `${project.name} · Relay` : 'Relay';
 
-  const sessions = projectSessions();
+  const sessions = gridSessions();
   const live = sessions.filter(s => !s.exited);
   const waiting = sessions.filter(s => s.status === 'needs-input').length;
   const counts = {
@@ -213,7 +213,7 @@ function chatMenu(e, chat) {
 // The thin bar along the bottom: connection, what's running, and the guardrails in force.
 const PERMISSION_NAMES = { default: 'Ask me', acceptEdits: 'Accept edits', auto: 'Auto', plan: 'Plan only' };
 function renderStatus() {
-  const sessions = projectSessions();
+  const sessions = gridSessions();
   const running = sessions.filter(s => !s.exited);
   const waiting = sessions.filter(s => s.status === 'needs-input');
   const busy = running.filter(s => actions.statusOf?.(s) === 'working');
@@ -277,15 +277,18 @@ const openProject = guard(async path => {
 });
 actions.openProject = openProject;
 
-function addProject() {
+// Adding a folder switches to it; `then` gets its path (the Agents menu starts an agent there).
+function addProject(then) {
   let close;
-  const field = folderField(async value => (await openProject(value)) && close());
+  const add = async value => Boolean(await openProject(value)) && (then?.(state.project), true);
+  const field = folderField(async value => (await add(value)) && close());
   close = modal({
     title: 'Add a project folder', width: 520,
     body: [h('p', { class: 'muted' }, 'Agents start in this folder. A git repository lets each agent work in its own worktree.'), field.el],
-    actions: [{ label: 'Cancel' }, { label: 'Add project', primary: true, onClick: async () => Boolean(await openProject(field.input.value)) }],
+    actions: [{ label: 'Cancel' }, { label: 'Add project', primary: true, onClick: () => add(field.input.value) }],
   });
 }
+actions.addProject = addProject;
 
 const removeProject = guard(async () => {
   await api('DELETE', `/api/projects?path=${encodeURIComponent(state.project)}`);
@@ -319,7 +322,7 @@ function openPalette() {
   const all = () => [
     ...commands,
     ...VIEWS.map((v, i) => ({ title: `Go to ${v.label}`, icon: v.icon, sub: `⌘${i + 1}`, run: () => showView(v.id) })),
-    ...projectSessions().map(s => ({ title: `Show ${s.name}`, icon: 'terminal', sub: s.agent || s.kind, run: () => actions.focusSession(s.id) })),
+    ...gridSessions().map(s => ({ title: `Show ${s.name}`, icon: 'terminal', sub: s.agent || s.kind, run: () => actions.focusSession(s.id) })),
     ...state.projects.filter(p => p.path !== state.project).map(p => ({ title: `Switch to ${p.name}`, icon: 'folder', sub: p.path.replace(state.info.home, '~'), run: () => switchProject(p.path) })),
     ...Object.entries(THEMES).map(([id, t]) => ({ title: `Theme: ${t.name}`, icon: 'sparkles', run: () => actions.setSetting({ theme: id }) })),
   ];
