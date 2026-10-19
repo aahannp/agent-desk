@@ -118,6 +118,7 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .run-item .when { font: 10.5px var(--mono); color: var(--dim); flex-shrink: 0; }
 .run-item.chat { color: color-mix(in srgb, var(--dim) 85%, var(--text)); }
 .run-item.gone { opacity: .45; }
+.run-item.off .name { opacity: .55; } /* hidden from the grid, still running */
 .side-label.sub { padding: 14px 10px 6px; }
 .side-foot { display: flex; flex-direction: column; gap: 6px; padding-top: 12px; }
 .voice-btn, .palette-btn { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 11px; border: 1px solid var(--hair); background: var(--glass); color: var(--text); box-shadow: var(--lift); transition: border-color .2s, background .2s, box-shadow .2s; }

@@ -177,10 +177,11 @@ function renderChats(unordered) {
     e.currentTarget.addEventListener('dragend', () => { sidebarDrag = false; renderChrome(); }, { once: true });
   };
   const open = sessions.map(s => h('button', {
-    class: 'run-item', title: s.cwd, draggable: true, onDragstart: drag(DRAG.pane, s.id),
+    class: `run-item${actions.isHidden?.(s.id) ? ' off' : ''}`, title: actions.isHidden?.(s.id) ? 'Hidden from the grid. Click to show it.' : s.cwd,
+    'aria-label': actions.isHidden?.(s.id) ? `${chatTitle(s)}, hidden` : null, draggable: true, onDragstart: drag(DRAG.pane, s.id),
     onClick: () => actions.focusSession(s.id),
     onContextmenu: e => s.chatId && chatMenu(e, state.chats.find(c => c.id === s.chatId)),
-  }, avatar(s, true), h('span', { class: 'name' }, chatTitle(s)), h('span', { class: `dot ${actions.statusOf?.(s) ?? s.status}` })));
+  }, avatar(s, true), h('span', { class: 'name' }, chatTitle(s)), actions.isHidden?.(s.id) && icon('eyeOff', 12), h('span', { class: `dot ${actions.statusOf?.(s) ?? s.status}` })));
   const earlier = recent.map(c => h('button', {
     class: `run-item chat${c.folderMissing ? ' gone' : ''}`, draggable: !c.folderMissing, onDragstart: drag(DRAG.chat, c.id),
     title: c.folderMissing ? `Its folder is gone: ${c.cwd}` : `Click or drag into the grid to ${c.resumable ? 'pick this chat up again' : 'start it again'}`,

@@ -5,11 +5,19 @@ const panes = new Map(); // id -> pane (a session's terminal, or a browser)
 const seen = new Map(); // session id -> last status we told you about
 let grid;
 let empty;
+let emptyCard;
+let hiddenCard;
 let focusedId = null;
+
+// Panes you've hidden from the grid. They keep running and show everywhere else (sidebar, Board, Graph).
+// Kept per window, since another window may want them on screen.
+const HIDDEN = 'agent-desk:hidden';
+const hidden = new Set((() => { try { return JSON.parse(sessionStorage.getItem(HIDDEN) || '[]'); } catch { return []; } })());
+const saveHidden = () => { try { sessionStorage.setItem(HIDDEN, JSON.stringify([...hidden])); } catch {} };
 
 export function mount(root) {
   grid = h('div', { class: 'grid' });
-  empty = h('div', { class: 'empty-state' }, h('div', { class: 'empty-card' },
+  emptyCard = h('div', { class: 'empty-card' },
     h('div', { class: 'art' }, icon('terminal', 36)),
     h('h2', {}, 'Your agents work here'),
     h('p', {}, 'Start a Claude Code agent, let a lead agent plan and split the work, or open a plain shell. Every pane is a real terminal using your own login.'),
@@ -20,7 +28,13 @@ export function mount(root) {
     h('div', { class: 'tips' },
       h('span', {}, h('kbd', {}, '⌘K'), 'commands'),
       h('span', {}, h('kbd', {}, '⌘⇧M'), 'voice'),
-      h('span', {}, 'Double-click a pane header to maximise it'))));
+      h('span', {}, 'Double-click a pane header to maximise it')));
+  hiddenCard = h('div', { class: 'empty-card', hidden: true },
+    h('div', { class: 'art' }, icon('eyeOff', 36)),
+    h('h2', {}),
+    h('p', {}, 'They keep running and still show in the sidebar, the Board and the Graph. Click one in the sidebar to bring it back.'),
+    h('div', { class: 'row' }, h('button', { class: 'btn primary', onClick: showHidden }, icon('eye', 15), 'Show all')));
+  empty = h('div', { class: 'empty-state' }, emptyCard, hiddenCard);
   root.append(grid, empty);
   new ResizeObserver(layout).observe(grid);
   dropTarget(root);
@@ -153,6 +167,8 @@ command('New agent in its own worktree', () => newSession({ worktree: true }), {
 command('Start a lead agent', () => actions.startLead(), { icon: 'star' });
 command('New shell', () => newSession({ kind: 'shell' }), { icon: 'terminal' });
 command('New browser pane', () => newBrowser(), { icon: 'globe' });
+command('Hide this pane', () => (focusedId ? hidePane(focusedId) : toast('Click into a pane first', 'error')), { icon: 'eyeOff' });
+command('Show hidden panes', () => showHidden(), { icon: 'eye' });
 
 // ---------- Keeping panes in step with the server ----------
 // The grid shows the current project's panes, or every project's when Settings mixes folders.
@@ -165,7 +181,7 @@ function sync() {
     live.add(s.id);
     const p = panes.get(s.id) ?? terminalPane(s);
     p.session = s;
-    p.el.classList.toggle('hidden', !shows(s.project));
+    p.el.classList.toggle('hidden', !shows(s.project) || hidden.has(s.id));
     renderHead(p);
     announce(s);
   }
@@ -189,11 +205,29 @@ function restoreOrder() {
 }
 actions.paneOrder = () => [...grid.children].map(el => el.dataset.id);
 
+function hidePane(id, on = true) {
+  if (!panes.has(id) || on === hidden.has(id)) return;
+  hidden[on ? 'add' : 'delete'](id);
+  saveHidden();
+  if (on && focusedId === id) setFocus(null);
+  sync();
+  emit('tick'); // the sidebar marks hidden panes
+  if (on && !empty.hidden) hiddenCard.querySelector('button').focus(); // keyboard focus isn't left on a vanished pane
+  if (!on) requestAnimationFrame(() => panes.get(id)?.fit?.()); // the grid may have changed size while it was away
+}
+const showHidden = () => [...hidden].forEach(id => hidePane(id, false));
+actions.isHidden = id => hidden.has(id);
+
 function layout() {
   if (!grid) return;
   const visible = [...panes.values()].filter(p => !p.el.classList.contains('hidden'));
   const n = visible.length;
   empty.hidden = n > 0;
+  // Everything here hidden: say so, rather than inviting you to start an agent.
+  const off = [...panes.values()].filter(p => hidden.has(p.id) && shows(p.kind === 'term' ? p.session.project : p.project)).length;
+  emptyCard.hidden = off > 0;
+  hiddenCard.hidden = !off;
+  hiddenCard.querySelector('h2').textContent = `${off} pane${off === 1 ? '' : 's'} hidden`;
   let cols = Math.ceil(Math.sqrt(n)) || 1;
   if (n === 3 && grid.clientWidth > 1300) cols = 3;
   if (n === 2 && grid.clientWidth < 900) cols = 1;
@@ -231,7 +265,7 @@ function announce(s) {
   const before = seen.get(s.id);
   seen.set(s.id, now);
   if (!before || before === now || now === 'running') return;
-  if (document.hasFocus() && focusedId === s.id) return;
+  if (document.hasFocus() && focusedId === s.id && !hidden.has(s.id)) return;
   const body = now === 'exited' ? `Finished (exit code ${s.exitCode})` : 'Needs your input';
   if ('Notification' in window && Notification.permission === 'granted') {
     new Notification(s.name, { body }).onclick = () => { window.focus(); focusSession(s.id); };
@@ -366,6 +400,7 @@ function terminalPane(s) {
     h('div', { class: 'pane-tools' },
       blocksBtn,
       s.chatId && h('button', { class: 'icon-btn', title: 'Name this agent', onClick: () => renameAgent(s) }, icon('pen', 13)),
+      h('button', { class: 'icon-btn', title: 'Hide from the grid (it keeps running)', onClick: () => hidePane(id) }, icon('eyeOff', 14)),
       h('button', { class: 'icon-btn', title: 'Maximise (double-click the header)', onClick: () => toggleMaximise(id) }, icon('maximize', 14)),
       h('button', { class: 'icon-btn', title: 'Stop and close', onClick: () => closePane(id) }, icon('x', 15))));
   const el = h('div', { class: 'pane', 'data-id': id }, head, h('div', { class: 'pane-body' }, host, blocks), exitBar);
@@ -481,6 +516,7 @@ actions.focusedSession = () => (panes.get(focusedId)?.kind === 'term' ? focusedI
 function focusSession(id) {
   const p = panes.get(id);
   if (!p) return;
+  hidePane(id, false); // asking to see a pane brings it back
   if (!shows(p.session.project)) actions.switchProject(p.session.project); // a mixed grid stays on your project
   actions.showView('agents');
   if (grid.classList.contains('solo') && !p.el.classList.contains('max')) toggleMaximise(id);
@@ -525,6 +561,7 @@ function dispose(id) {
   const p = panes.get(id);
   if (!p) return;
   panes.delete(id);
+  if (hidden.delete(id)) saveHidden();
   if (p.ws) { p.ws.onclose = null; p.ws.close(); }
   p.term?.dispose();
   p.peek?.dispose();
@@ -682,7 +719,7 @@ function syncBrowsers() {
     if (p.kind !== 'browser') continue;
     if (!browserList(p.project).some(b => b.id === id)) dispose(id);
     else {
-      p.el.classList.toggle('hidden', !shows(p.project));
+      p.el.classList.toggle('hidden', !shows(p.project) || hidden.has(id));
       folderChip(p.folder, p.project);
     }
   }
@@ -721,6 +758,7 @@ function browserPane(b, project) {
       h('span', { draggable: true, title: 'Drag to move this pane', style: { cursor: 'grab' }, onDragstart: e => dragPane(e, b.id), onDragend: () => el.classList.remove('dragging') }, avatar({ kind: 'browser' })), input, folder,
       h('button', { class: 'icon-btn', title: 'Reload', onClick: () => { frame.src = frame.src; } }, icon('refresh', 14)),
       h('button', { class: 'icon-btn', title: 'Open in your browser', onClick: () => safeUrl(input.value) && window.open(safeUrl(input.value), '_blank', 'noopener') }, icon('external', 14)),
+      h('button', { class: 'icon-btn', title: 'Hide from the grid', onClick: () => hidePane(b.id) }, icon('eyeOff', 14)),
       h('button', { class: 'icon-btn', title: 'Maximise', onClick: () => toggleMaximise(b.id) }, icon('maximize', 14)),
       h('button', { class: 'icon-btn', title: 'Close', onClick: () => closePane(b.id) }, icon('x', 15))),
     h('div', { class: 'pane-body' }, frame));

@@ -114,6 +114,8 @@ flowchart LR
   pane marked with its folder; the New Claude Code menu starts one in another folder.
 - **More windows**: File → New Window (⌘⇧N) or the Dock menu. Each window has its own project and starts on the
   one you opened it from; a pane open in two windows streams to both, and takes the size of the one you click into.
+- **Hide a pane** (the eye on its header, or ⌘K → Hide this pane): it leaves the grid but keeps running, and stays
+  in the sidebar, the Board and the Graph. Click it in the sidebar to bring it back. Remembered per window.
 - **Agents talk to each other**: tell an agent to ask Christie something, and the message is typed into
   Christie's pane, signed with who sent it, where you can watch the exchange. She answers the same way. If no
   Christie is running in the project, a new one starts. Each agent asks you before its first message. Messages
