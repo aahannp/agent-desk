@@ -246,9 +246,19 @@ export function ago(t) {
   return new Date(t).toLocaleDateString();
 }
 
-export async function copy(text) {
-  await navigator.clipboard.writeText(text);
-  toast('Copied', 'ok');
+// Falls back to a selected textarea when the page isn't given clipboard access (the Mac app may not be).
+export async function copy(text, said = 'Copied') {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const area = h('textarea', { value: text, readOnly: true, style: { position: 'fixed', opacity: 0 } });
+    document.body.append(area);
+    area.select();
+    const done = document.execCommand('copy');
+    area.remove();
+    if (!done) return toast(`Couldn't copy. The link is ${text}`, 'error');
+  }
+  toast(said, 'ok');
 }
 
 // ---------- Markdown, for what agents say and for release notes ----------

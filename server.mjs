@@ -161,6 +161,7 @@ route('PATCH', '/api/settings', ({ req, body }) => {
   for (const [key, value] of Object.entries(body)) {
     if (!(key in db.settings)) continue;
     if (['agentsCanSpawn', 'agentsCanMessage', 'agentsCanEditTeam', 'agentsAutonomous', 'fancyCursor', 'worktreeByDefault', 'sidebarHidden', 'mixFolders', 'agentsAware', 'departmentsCanAsk'].includes(key) && typeof value !== 'boolean') throw fail(400, `${key} is true or false`);
+    if (key === 'artifactEditModel' && !EDIT_MODELS.includes(value)) throw fail(400, `The edit model is one of ${EDIT_MODELS.join(', ')}`);
     if (key === 'scrollSpeed' && !(Number(value) >= 0.25 && Number(value) <= 4)) throw fail(400, 'Scroll speed is between 0.25 and 4');
     if (key === 'agentDefaults') {
       const ok = ['claude', 'lead'].every(k => T.MODELS.includes(value?.[k]?.model) && T.EFFORTS.includes(value?.[k]?.effort));
@@ -587,7 +588,28 @@ route('GET', '/api/artifact-folders', () => A.folders());
 route('POST', '/api/artifact-folders', ({ req, body }) => (notFromAgent(req, 'change artifact folders'), A.addFolder(body.name), A.folders()));
 route('PATCH', '/api/artifact-folders/:name', ({ req, params, body }) => (notFromAgent(req, 'change artifact folders'), A.renameFolder(params.name, body.name), A.folders()));
 route('DELETE', '/api/artifact-folders/:name', ({ req, params }) => (notFromAgent(req, 'change artifact folders'), A.removeFolder(params.name), A.folders()));
-route('DELETE', '/api/artifacts/:id', ({ params }) => (A.remove(findArtifact(params.id)), {})); // a published copy stays on GitHub
+route('DELETE', '/api/artifacts/:id', ({ params }) => {
+  const a = findArtifact(params.id);
+  for (const s of editSessions(a.id)) S.stop(s);
+  A.remove(a);
+  return {}; // a published copy stays on GitHub
+});
+// "Edit with AI": a small-model chat beside the page, working on a copy of it and saving back by id. One per page:
+// asking again returns the one still running.
+const EDIT_MODELS = ['haiku', 'sonnet', 'opus'];
+const editSessions = id => [...S.sessions.values()].filter(s => s.artifactId === id);
+route('POST', '/api/artifacts/:id/edit-chat', async ({ req, params, body }) => {
+  notFromAgent(req, 'open an edit chat');
+  const a = findArtifact(params.id);
+  const live = editSessions(a.id).find(s => !s.exited);
+  if (live) return S.info(live);
+  const model = body.model ?? db.settings.artifactEditModel;
+  if (!EDIT_MODELS.includes(model)) throw fail(400, `The edit model is one of ${EDIT_MODELS.join(', ')}`);
+  for (const s of editSessions(a.id)) S.stop(s); // a finished one gives way, like a reopened chat
+  const project = a.project && isDir(a.project) ? a.project : db.settings.lastProject;
+  if (!isDir(project)) throw fail(400, 'Pick a project folder first');
+  return S.info(await S.createSession({ project, name: `Edit ${S.plain(a.title)}`, model, cwd: A.editCopy(a), artifactId: a.id }));
+});
 route('GET', '/api/github/accounts', () => A.accounts());
 route('POST', '/api/artifacts/:id/unpublish', ({ req, params }) => (notFromAgent(req, 'take pages down'), A.unpublish(findArtifact(params.id))));
 route('POST', '/api/artifacts/:id/publish', ({ params, body }) =>

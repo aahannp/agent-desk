@@ -173,7 +173,9 @@ flowchart LR
 - **Artifacts**: pages, reports and charts your agents make (they save them with the `save_artifact` tool). Sort them into folders by dragging a page onto one or using its right-click menu, and agents can file a page in a folder as they save it.
   View them in the app or your browser, and publish one to GitHub Pages with one click, using an account
   you're signed in to with `gh`. Relay keeps them in one repo it makes, and never writes to any other.
-  Unpublish takes a page down again.
+  Unpublish takes a page down again. **Edit with AI** opens a chat beside the page that changes it and saves a
+  new version as you watch, on Haiku by default (pick Sonnet or Opus in the panel). **Copy link** copies the
+  published link, or a local one that works on this Mac while Relay is open.
 - **Task Notes**: the Board's Task Notes button lists your open tasks from the Task Notes app. Add one to hand
   it to an agent, and Task Notes follows its card (In progress and Review show as in progress, Done marks it
   done). Only tasks you brought over are written back, and only their status.
