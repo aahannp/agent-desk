@@ -424,6 +424,10 @@ route('POST', '/api/messages', async ({ req, body }) => {
 });
 
 route('GET', '/api/messages', ({ req, query }) => {
+  if (query.get('all')) { // the Graph's "All departments" view: every folder's log, including asks between them. Yours only.
+    notFromAgent(req, "read other departments' messages");
+    return db.messages;
+  }
   const project = projectFor(req, query.get('project'));
   return db.messages.filter(m => m.project === project);
 });

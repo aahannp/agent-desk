@@ -138,9 +138,6 @@ on('project', renderToolbar);
 // ---------- Sidebar ----------
 function renderChrome() {
   const project = state.projects.find(p => p.path === state.project);
-  $('projectSwitch').querySelector('.project-name').textContent = project?.name ?? 'No project';
-  $('projectSwitch').querySelector('.project-avatar').textContent = (project?.name ?? 'A').replace(/[^a-z0-9]/gi, '').slice(0, 1).toUpperCase() || 'A';
-  $('projectSwitch').querySelector('.project-path').textContent = project ? ltr(project.path.replace(state.info.home, '~')) : 'Add a folder to start';
   document.title = project ? `${project.name} · Relay` : 'Relay';
 
   const sessions = gridSessions();
@@ -157,8 +154,64 @@ function renderChrome() {
     if (counts[v.id]) btn.append(counts[v.id]);
   }
 
+  renderDepartments();
   renderChats(sessions);
   renderStatus();
+}
+
+// Departments: every project folder, with who's running in it. Click one to go there; open it to see its agents.
+const OPEN_DEPTS = 'agent-desk:open-departments';
+const openDepts = new Set((() => { try { return JSON.parse(localStorage.getItem(OPEN_DEPTS)) ?? []; } catch { return []; } })());
+const toggleDept = path => {
+  openDepts.has(path) ? openDepts.delete(path) : openDepts.add(path);
+  try { localStorage.setItem(OPEN_DEPTS, JSON.stringify([...openDepts])); } catch {}
+  renderDepartments();
+};
+
+let deptsShown = '';
+function renderDepartments() {
+  const el = $('depts');
+  const list = state.projects.map(p => {
+    const agents = state.sessions.filter(s => s.project === p.path && !s.exited && !s.artifactId);
+    return { p, agents, statuses: agents.map(s => actions.statusOf?.(s) ?? s.status) };
+  });
+  // This runs every second: rebuild only on a real change (a rebuild mid-click loses the click), and keep keyboard focus.
+  const now = JSON.stringify([state.project, [...openDepts], list.map(d => [d.p.path, d.p.name, d.statuses, d.agents.map(s => [s.id, chatTitle(s), s.cwd])])]);
+  if (now === deptsShown) return;
+  deptsShown = now;
+  const focused = el.contains(document.activeElement) ? document.activeElement.dataset.key : null;
+  el.replaceChildren(...list.map(({ p, agents, statuses }, i) => {
+    const waiting = statuses.filter(x => x === 'needs-input').length;
+    const open = openDepts.has(p.path);
+    const current = p.path === state.project;
+    const summary = agents.length ? `${agents.length} agent${agents.length === 1 ? '' : 's'}${waiting ? ` · ${waiting} need${waiting === 1 ? 's' : ''} you` : ''}` : 'No agents';
+    return h('div', { class: `dept${current ? ' current' : ''}`, role: 'listitem' },
+      h('div', { class: 'dept-row' },
+        h('button', { class: `icon-btn sm dept-chev${open ? ' open' : ''}`, 'data-key': `chev:${p.path}`, 'aria-expanded': String(open), 'aria-controls': `dept-${i}`,
+          'aria-label': `Show agents in ${p.name}`, title: open ? 'Hide agents' : 'Show agents', onClick: () => toggleDept(p.path) }, icon('chevronRight', 12)),
+        h('button', { class: 'dept-main', 'data-key': `main:${p.path}`, 'aria-current': current ? 'true' : null, title: ltr(p.path.replace(state.info.home, '~')),
+          'aria-label': `${p.name}, ${summary}`, onClick: () => switchProject(p.path), onContextmenu: e => deptMenu(e, p) },
+          h('span', { class: 'dept-name' }, p.name),
+          h('span', { class: `dept-sum${waiting ? ' attn' : ''}` },
+            ...statuses.slice(0, 8).map(x => h('span', { class: `dot ${x}` })), h('span', {}, summary))),
+        h('button', { class: 'icon-btn sm', 'data-key': `add:${p.path}`, 'aria-label': `New agent in ${p.name}`, title: `New agent in ${p.name}`,
+          onClick: () => actions.newSession({ project: p.path }) }, icon('plus', 13))),
+      h('div', { class: 'dept-agents', id: `dept-${i}`, hidden: !open },
+        ...(agents.length ? agents.map((s, j) => h('button', { class: 'run-item', 'data-key': `agent:${s.id}`, title: s.cwd, onClick: () => actions.focusSession(s.id) },
+          avatar(s, true), h('span', { class: 'name' }, chatTitle(s)), h('span', { class: `dot ${statuses[j]}`, title: STATUS_LABEL[statuses[j]] ?? '' })))
+          : [h('div', { class: 'run-empty' }, 'Nothing running')])));
+  }), h('button', { class: 'run-item dept-new', 'data-key': 'new', onClick: () => addProject() }, icon('plus', 13), h('span', { class: 'name' }, 'New department')));
+  if (focused) el.querySelector(`[data-key="${CSS.escape(focused)}"]`)?.focus();
+}
+
+function deptMenu(e, p) {
+  e.preventDefault();
+  menu(e.currentTarget, [
+    { label: 'New agent here', icon: 'plus', onClick: () => actions.newSession({ project: p.path }) },
+    { label: 'Shell here', icon: 'terminal', onClick: () => actions.newSession({ project: p.path, kind: 'shell' }) },
+    'sep',
+    { label: 'Remove from the list', icon: 'x', onClick: () => removeProject(p.path) },
+  ]);
 }
 
 // Sidebar chats: what's open now, then earlier chats you can click or drag into the grid to pick up again.
@@ -235,14 +288,6 @@ on('tick', renderChrome);
 function buildSidebar() {
   $('nav').replaceChildren(...VIEWS.map((v, i) => h('button', { class: 'nav-item', id: `nav-${v.id}`, title: `${v.label} (⌘${i + 1})`, onClick: () => showView(v.id) },
     icon(v.icon), h('span', {}, v.label))));
-  $('projectSwitch').querySelector('.chev').replaceWith(icon('chevron', 14));
-  $('projectSwitch').onclick = e => menu(e.currentTarget, [
-    { heading: 'Projects' },
-    ...state.projects.map(p => ({ label: p.name, sub: p.path.replace(state.info.home, '~'), icon: p.path === state.project ? 'check' : 'folder', onClick: () => switchProject(p.path) })),
-    'sep',
-    { label: 'Add a project folder…', icon: 'plus', onClick: addProject },
-    ...(state.project ? [{ label: 'Remove this project from the list', icon: 'x', onClick: removeProject }] : []),
-  ]);
   const voice = $('voiceBtn');
   voice.querySelector('.mic').replaceWith(icon('mic', 15));
   voice.onclick = () => actions.toggleVoice();
@@ -306,8 +351,8 @@ function addProject(then) {
 }
 actions.addProject = addProject;
 
-const removeProject = guard(async () => {
-  await api('DELETE', `/api/projects?path=${encodeURIComponent(state.project)}`);
+const removeProject = guard(async (path = state.project) => {
+  await api('DELETE', `/api/projects?path=${encodeURIComponent(path)}`);
   toast('Removed from the list. No files were touched.', 'ok');
 });
 
@@ -340,6 +385,7 @@ function openPalette() {
     ...VIEWS.map((v, i) => ({ title: `Go to ${v.label}`, icon: v.icon, sub: `⌘${i + 1}`, run: () => showView(v.id) })),
     ...gridSessions().map(s => ({ title: `Show ${s.name}`, icon: 'terminal', sub: s.agent || s.kind, run: () => actions.focusSession(s.id) })),
     ...state.projects.filter(p => p.path !== state.project).map(p => ({ title: `Switch to ${p.name}`, icon: 'folder', sub: p.path.replace(state.info.home, '~'), run: () => switchProject(p.path) })),
+    ...(state.project ? [{ title: `Remove ${baseName(state.project)} from the departments`, icon: 'x', sub: 'No files are touched', run: () => removeProject() }] : []),
     ...Object.entries(THEMES).map(([id, t]) => ({ title: `Theme: ${t.name}`, icon: 'sparkles', run: () => actions.setSetting({ theme: id }) })),
   ];
   const select = i => {
@@ -385,7 +431,7 @@ document.addEventListener('keydown', e => {
 command('New task', () => { showView('board'); actions.newTask?.(); }, { icon: 'plus' });
 command('Show or hide the sidebar', () => toggleSidebar(), { icon: 'sidebar', sub: '⌘B' });
 $('sideToggle').addEventListener('click', () => toggleSidebar());
-command('Add a project folder', addProject, { icon: 'folder' });
+command('New department (add a project folder)', () => addProject(), { icon: 'folder' });
 
 // ---------- Start ----------
 (async () => {
