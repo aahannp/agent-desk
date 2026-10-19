@@ -150,6 +150,19 @@
   .points b { display: block; font-size: 19px; font-weight: 600; margin-bottom: 6px; letter-spacing: -.02em; }
   .points p { color: var(--muted); margin: 0; font-size: 15px; }
 
+  /* Terminals vs Relay: three columns on wide screens, one labelled stack per row on phones */
+  .vs { max-width: 920px; margin: 72px auto 0; }
+  .vs ul { margin: 0; padding: 0; list-style: none; }
+  .vs-head, .vs li { display: grid; grid-template-columns: 170px minmax(0, 1fr) minmax(0, 1fr); gap: 32px; }
+  .vs-head { padding-bottom: 14px; color: var(--muted); font-size: 13px; font-weight: 600; }
+  .vs-head span:last-child { color: var(--text); }
+  .vs li { padding: 22px 0; border-top: 1px solid var(--line); }
+  .vs h3 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -.02em; }
+  .vs p { margin: 0; color: var(--muted); font-size: 15px; }
+  .vs p:last-child { color: var(--text); }
+  .vs-k { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } /* the column header, read out per row */
+  .vs + .caveat { margin-top: 32px; }
+
   .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
   [tabindex="-1"]:focus { outline: none; }
   button { font-family: var(--sans); }
@@ -545,6 +558,7 @@
     .tile { padding: 40px 40px 0; }
     .minis, .safe { grid-template-columns: 1fr 1fr; }
     .points { grid-template-columns: 1fr; gap: 40px; }
+    .vs-head, .vs li { grid-template-columns: 120px minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
     .kbd { width: 32px; padding: 0; border: 0; }
     .app { grid-template-columns: minmax(0, 1fr); }
     .app aside { display: none; }
@@ -572,6 +586,10 @@
     .tile { padding-right: 28px; }
     .tile.full .text { padding-right: 28px; }
     .minis, .safe { grid-template-columns: 1fr; }
+    .vs { margin-top: 48px; }
+    .vs-head { display: none; }
+    .vs li { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+    .vs-k { position: static; display: block; width: auto; height: auto; margin-bottom: 2px; overflow: visible; clip-path: none; color: var(--dim); font-size: 12px; font-weight: 600; }
     summary { font-size: 18px; }
     .final { padding: 110px 0; }
     .final .icon { width: 96px; height: 96px; }
@@ -628,6 +646,7 @@
     <a class="brand" href="#top"><span class="mark" aria-hidden="true"></span>Relay</a>
     <nav class="nav-links" aria-label="Sections">
       <a href="#demo">Demo</a>
+      <a href="#why">Why Relay</a>
       <a href="#features">Features</a>
       <a href="#review">Review</a>
       <a href="#themes">Themes</a>
@@ -839,6 +858,27 @@ test('two of a product add up', async () =&gt; {
         <div class="stat reveal"><strong>1</strong><span>git worktree for every worker, so no two agents edit the same files.</span></div>
         <div class="stat reveal"><strong>0</strong><span>API keys. It drops them before an agent starts, so you stay on your plan.</span></div>
       </div>
+    </div>
+  </section>
+
+  <section id="why" class="center">
+    <div class="wrap">
+      <h2 class="reveal">Why not just open a few terminals?</h2>
+      <p class="lede reveal">You can run Claude Code in a few tabs, and it's the same agent in Relay. The difference is <b>what happens between the tabs.</b></p>
+      <div class="vs left">
+        <div class="vs-head" aria-hidden="true"><span></span><span>Several terminals</span><span>Relay</span></div>
+        <ul>
+          <li class="reveal"><h3>Files</h3><p><span class="vs-k">Several terminals</span>Every session edits the same folder, so one agent can overwrite another's work.</p><p><span class="vs-k">Relay</span>Each worker gets its own git worktree and branch, so they never clash.</p></li>
+          <li class="reveal"><h3>Planning</h3><p><span class="vs-k">Several terminals</span>You split the work and brief each tab. The sessions don't know about each other.</p><p><span class="vs-k">Relay</span>A lead agent splits a goal into tasks on a shared Board and starts a worker for each.</p></li>
+          <li class="reveal"><h3>Talking</h3><p><span class="vs-k">Several terminals</span>You copy and paste between tabs.</p><p><span class="vs-k">Relay</span>Agents message each other or read each other's chat. Messages are signed, show in the pane, and are rate-limited.</p></li>
+          <li class="reveal"><h3>Status</h3><p><span class="vs-k">Several terminals</span>You click through tabs to see who's done.</p><p><span class="vs-k">Relay</span>One grid shows who's working, idle or needs you, and a notification tells you when one does.</p></li>
+          <li class="reveal"><h3>Review</h3><p><span class="vs-k">Several terminals</span>You find each branch and diff it yourself.</p><p><span class="vs-k">Relay</span>Every worker's diff is in one Review tab. You merge or discard.</p></li>
+          <li class="reveal"><h3>Cost</h3><p><span class="vs-k">Several terminals</span>You run <span class="mono">/cost</span> in each session.</p><p><span class="vs-k">Relay</span>Each Claude pane shows its context and cost so far. Spend keeps the history.</p></li>
+          <li class="reveal"><h3>Who did what</h3><p><span class="vs-k">Several terminals</span>You keep track in your head.</p><p><span class="vs-k">Relay</span>The Graph shows who started whom and who messaged whom.</p></li>
+          <li class="reveal"><h3>The agent</h3><p><span class="vs-k">Several terminals</span>The <span class="mono">claude</span> CLI with your login.</p><p><span class="vs-k">Relay</span>The same <span class="mono">claude</span> CLI with your login and plan. Nothing new to learn.</p></li>
+        </ul>
+      </div>
+      <p class="caveat reveal">For one quick job on its own, a single terminal is fine. Relay pays off when several agents work on the same project.</p>
     </div>
   </section>
 
@@ -1128,6 +1168,10 @@ test('two of a product add up', async () =&gt; {
               <tr><td>git</td><td>For worktrees and Review</td><td>2.50.1</td></tr>
             </tbody>
           </table>
+        </details>
+        <details name="faq">
+          <summary>How is this different from a few Claude Code terminals?</summary>
+          <p>It runs the same <code>claude</code> CLI, with your login. What it adds: a git worktree for each worker, a lead that plans on a shared Board, agents that can message each other, one grid for status, one Review tab for every diff, and cost per pane. For one quick job, a single terminal is fine. <a href="#why">See the comparison</a>.</p>
         </details>
         <details name="faq">
           <summary>How do I know the download is safe?</summary>
@@ -2098,7 +2142,7 @@ test('two of a product add up', async () =&gt; {
     const go = id => () => { const s = $('#' + id); s.tabIndex = -1; s.scrollIntoView({ behavior: calm ? 'auto' : 'smooth' }); s.focus({ preventScroll: true }); };
     const open = url => () => { location.href = url; };
     const commands = () => [
-      ...[['Demo', 'demo'], ['Overview', 'overview'], ['Features', 'features'], ['Review', 'review'], ['Themes', 'themes'], ['Privacy', 'privacy'], ['Roadmap', 'roadmap'], ['FAQ', 'faq']]
+      ...[['Demo', 'demo'], ['Overview', 'overview'], ['Why Relay', 'why'], ['Features', 'features'], ['Review', 'review'], ['Themes', 'themes'], ['Privacy', 'privacy'], ['Roadmap', 'roadmap'], ['FAQ', 'faq']]
         .map(([l, id]) => [`Go to ${l}`, 'Section', go(id)]),
       ['Run the demo', 'Demo', () => { go('demo')(); runDemo(); }],
       [`Switch to ${isDark() ? 'light' : 'dark'} mode`, 'Appearance', () => btn.click()],
