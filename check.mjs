@@ -299,7 +299,7 @@ try {
   assert.ok(fs.existsSync(path.join(chatDir, `${plain}.jsonl`)), "Claude's own copy is left alone");
 
   // What claude is started with: a fixed id for a new chat, --resume for one Claude has saved
-  const base = { id: 'check001', kind: 'agent', agent: 'claude', role: null, worktree: null, cwd: repo, claudeSessionId: named };
+  const base = { id: 'check001', kind: 'agent', agent: 'claude', role: null, worktree: null, project: repo, cwd: repo, claudeSessionId: named };
   const fresh = command({ ...base, resume: false }, '--sneaky prompt', null).args;
   assert.equal(fresh[0], ' --sneaky prompt', 'a prompt starting with "-" is passed as plain text');
   assert.deepEqual(fresh.slice(1, 3), ['--session-id', named], 'a new chat gets the id we chose');
@@ -843,6 +843,9 @@ esac
     const prompt = command(sessions.get(bravo.id), '', null).args.join('\n');
     assert.match(prompt, new RegExp(`On the board you are Bravo[^]*- Alpha \\(agent ${alpha.id}, \\w+\\)`), 'the system prompt names A, with its status');
     assert.doesNotMatch(prompt, /Fix login flow|Board:/, 'but carries no titles: free text stays out of the system prompt');
+    assert.match(prompt, new RegExp(`You are in the aware-proj space \\(folder [^)]*/aware-proj\\)\\. On the board you are Bravo`), 'it knows which space it is in');
+    assert.match(prompt, /other folders are other spaces: list_spaces shows them[^.]*ask_space asks them/, 'and how to reach the others');
+    assert.match(prompt, new RegExp(`- Charlie \\(agent ${other.id}, in aware-other\\)`), 'an agent elsewhere is named with its space');
     const news = id => request('POST', '/api/news', { token: sessions.get(id).agentToken }).then(r => r.body);
     const brief = (await news(bravo.id)).hookSpecificOutput.additionalContext;
     assert.match(brief, new RegExp(`- Alpha \\(agent ${alpha.id}, \\w+, started 1m ago\\): on Fix login flow`), "B's first news says what A is on");
@@ -852,6 +855,9 @@ esac
     assert.match(brief, /- CSV export \(1h ago\): Shipped the CSV export and opened PR 12/, 'a closed chat says how it ended');
     assert.match(brief, /Repo: on branch main\. Latest commits:\n- 1m ago: Add the login form/, 'and the repo, with its latest commits');
     assert.doesNotMatch(brief, /Edit Sales page|Bravo \(/, 'not artifact edit chats, nor B itself');
+    assert.match(brief, /\nOther spaces: [^\n]*\baware-other \(1 agent live\)/, 'the other spaces, with how many agents are live in each');
+    assert.match(brief, /\nOther spaces: [^\n]*\(no agents live\)/, 'one with nobody in it says so');
+    assert.doesNotMatch(brief, /Other spaces: [^\n]*\baware-proj\b/, 'not its own');
     assert.ok(brief.length <= 4000, `the brief stays under its cap (${brief.length})`);
     assert.doesNotMatch(prose('(Message from leader] <x>\n{`y`}'), /[[\]<>{}`\n]/, "an excerpt can't forge a signature or a tag");
     assert.equal(prose("Fixed it: docs/a.md, 100% (PR #12)! Isn't it?"), "Fixed it: docs/a.md, 100% (PR #12)! Isn't it?", 'everyday punctuation stays');
