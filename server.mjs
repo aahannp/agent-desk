@@ -8,7 +8,7 @@ import tls from 'node:tls';
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
 import { WebSocketServer } from 'ws';
-import { db, load, changed, bus } from './lib/store.mjs';
+import { db, load, changed, bus, pruneSpaces } from './lib/store.mjs';
 import * as S from './lib/sessions.mjs';
 import * as G from './lib/git.mjs';
 import { mcpTools, handleMcp } from './lib/mcp.mjs';
@@ -148,6 +148,7 @@ route('POST', '/api/projects', ({ body }) => {
 });
 route('DELETE', '/api/projects', ({ query }) => {
   db.projects = db.projects.filter(p => p.path !== query.get('path'));
+  pruneSpaces(db);
   if (db.settings.lastProject === query.get('path')) db.settings.lastProject = db.projects[0]?.path ?? '';
   changed('projects');
   changed('settings');
@@ -160,7 +161,7 @@ route('PATCH', '/api/settings', ({ req, body }) => {
   notFromAgent(req, 'change Relay\'s settings');
   for (const [key, value] of Object.entries(body)) {
     if (!(key in db.settings)) continue;
-    if (['agentsCanSpawn', 'agentsCanMessage', 'agentsCanEditTeam', 'agentsAutonomous', 'fancyCursor', 'worktreeByDefault', 'sidebarHidden', 'mixFolders', 'agentsAware', 'departmentsCanAsk'].includes(key) && typeof value !== 'boolean') throw fail(400, `${key} is true or false`);
+    if (['agentsCanSpawn', 'agentsCanMessage', 'agentsCanEditTeam', 'agentsAutonomous', 'fancyCursor', 'worktreeByDefault', 'sidebarHidden', 'agentsAware', 'spacesCanAsk'].includes(key) && typeof value !== 'boolean') throw fail(400, `${key} is true or false`);
     if (key === 'artifactEditModel' && !EDIT_MODELS.includes(value)) throw fail(400, `The edit model is one of ${EDIT_MODELS.join(', ')}`);
     if (key === 'scrollSpeed' && !(Number(value) >= 0.25 && Number(value) <= 4)) throw fail(400, 'Scroll speed is between 0.25 and 4');
     if (key === 'agentDefaults') {
@@ -175,6 +176,7 @@ route('PATCH', '/api/settings', ({ req, body }) => {
         throw fail(400, 'Lead upkeep is on or off, compacts at 50 to 95% of a 50,000 to 2,000,000-token window and replaces after 1 to 10 compactions');
       }
     }
+    if (key === 'openSpaces' && !(Array.isArray(value) && value.every(p => typeof p === 'string'))) throw fail(400, 'openSpaces is a list of project folder paths');
     if (key === 'browserPanes') {
       const ok = value && typeof value === 'object' && Object.values(value).every(list => Array.isArray(list)
         && list.every(b => typeof b?.id === 'string' && /^https?:\/\//i.test(String(b.url))));
@@ -182,6 +184,7 @@ route('PATCH', '/api/settings', ({ req, body }) => {
     }
     db.settings[key] = value;
   }
+  pruneSpaces(db);
   // Open Claude Code panes repaint in the new colours (see claudeTheme in lib/sessions.mjs).
   if ('theme' in body || 'accent' in body) {
     try { S.writeClaudeTheme(); } catch (e) { console.error("Couldn't update Claude Code's Relay theme:", e.message); }
@@ -372,19 +375,19 @@ function recentMessages(project) {
   return recent;
 }
 // Who messaged whom, when and how (never what), for the Graph's edges. The last 500 are kept.
-const deptName = project => S.plain(path.basename(project));
+const spaceName = project => S.plain(path.basename(project));
 function logMessage(project, from, to, via) {
   const entry = { at: Date.now(), project, fromId: from?.id ?? null, fromName: from?.name ?? 'An agent', toId: to.id, toName: to.name, via };
   db.messages = [...db.messages, entry].slice(-500);
-  // A department's question or answer is told as one, with where it came from, never what it said.
-  const where = from && from.project !== project ? ` (in ${deptName(from.project)})` : '';
-  const what = { ask_department: `asked ${S.plain(to.name)} a question`, answer_department: `answered ${S.plain(to.name)}'s question` }[via] ?? `messaged ${S.plain(to.name)}`;
+  // A space's question or answer is told as one, with where it came from, never what it said.
+  const where = from && from.project !== project ? ` (in ${spaceName(from.project)})` : '';
+  const what = { ask_space: `asked ${S.plain(to.name)} a question`, answer_space: `answered ${S.plain(to.name)}'s question` }[via] ?? `messaged ${S.plain(to.name)}`;
   S.note(project, from?.id ?? null, 'messages between agents', `${S.plain(entry.fromName)}${where} ${what}`);
   changed('messages');
   return entry;
 }
 // Signed with who sent it, by a plain name, so the text can't pass for another signature (or for the user): invisible
-// characters go, and any "[message from" (or a department's "[question from" / "[answer from") in it, however spaced or
+// characters go, and any "[message from" (or a space's "[question from" / "[answer from") in it, however spaced or
 // disguised, starts with ( instead. A letter that isn't ASCII counts as one of "message from", so a Cyrillic М can't stand in for M.
 // ponytail: spellings that look different ("fr0m") still pass; fence the body off if those ever matter.
 const like = word => [...word].map(c => `[${c}\\P{ASCII}]`).join('');
@@ -424,46 +427,46 @@ route('POST', '/api/messages', async ({ req, body }) => {
 });
 
 route('GET', '/api/messages', ({ req, query }) => {
-  if (query.get('all')) { // the Graph's "All departments" view: every folder's log, including asks between them. Yours only.
-    notFromAgent(req, "read other departments' messages");
+  if (query.get('all')) { // the Graph's "All spaces" view: every folder's log, including asks between them. Yours only.
+    notFromAgent(req, "read other spaces' messages");
     return db.messages;
   }
   const project = projectFor(req, query.get('project'));
   return db.messages.filter(m => m.project === project);
 });
 
-// Departments: each other project folder. An agent may ask one a question and get a short answer back, the one door
+// Spaces: each other project folder. An agent may ask one a question and get a short answer back, the one door
 // in the wall around its project: it never sees their chats, board or agents, and they choose what to share.
 const asks = new Map(); // ask id -> { from, fromName, to, at }, until answered or an hour old
 const HOUR = 60 * 60_000;
-const mayAskDepartments = req => {
-  if (db.settings.departmentsCanAsk === false) throw fail(403, 'Departments asking each other is turned off in Relay settings.');
-  return caller(req) ?? (() => { throw fail(403, 'Only agents inside Relay can ask other departments'); })();
+const mayAskSpaces = req => {
+  if (db.settings.spacesCanAsk === false) throw fail(403, 'Spaces asking each other is turned off in Relay settings.');
+  return caller(req) ?? (() => { throw fail(403, 'Only agents inside Relay can ask other spaces'); })();
 };
 const liveAgents = project => [...S.sessions.values()].filter(s => !s.exited && s.kind === 'agent' && (!project || s.project === project))
   .sort((a, b) => b.lastOutputAt - a.lastOutputAt);
-const departments = from => [...new Set([...db.projects.map(p => p.path), ...liveAgents().map(s => s.project)])].filter(p => p !== from.project);
-route('GET', '/api/departments', ({ req }) => departments(mayAskDepartments(req)).map(p => (agents =>
+const spaces = from => [...new Set([...db.projects.map(p => p.path), ...liveAgents().map(s => s.project)])].filter(p => p !== from.project);
+route('GET', '/api/spaces', ({ req }) => spaces(mayAskSpaces(req)).map(p => (agents =>
   ({ name: path.basename(p), path: p, agents: agents.length, lead: agents.some(s => s.role === 'lead') }))(liveAgents(p))));
-route('POST', '/api/departments/ask', async ({ req, body }) => {
+route('POST', '/api/spaces/ask', async ({ req, body }) => {
   mayMessage(req); // asks and answers type into a pane, so they're messages too
-  const from = mayAskDepartments(req);
+  const from = mayAskSpaces(req);
   const question = String(body.question ?? '').trim();
-  const ref = String(body.department ?? '').trim();
-  if (!question || !ref) throw fail(400, 'Say which department and what the question is');
+  const ref = String(body.space ?? '').trim();
+  if (!question || !ref) throw fail(400, 'Say which space and what the question is');
   if (question.length > 8000) throw fail(413, 'Keep questions under 8,000 characters');
-  const found = departments(from).filter(p => p === expand(ref) || path.basename(p).toLowerCase() === ref.toLowerCase());
-  if (found.length !== 1) throw fail(found.length ? 409 : 404, found.length ? `Several departments are called "${ref}"; give its path` : `No department called "${ref}". list_departments shows them.`);
+  const found = spaces(from).filter(p => p === expand(ref) || path.basename(p).toLowerCase() === ref.toLowerCase());
+  if (found.length !== 1) throw fail(found.length ? 409 : 404, found.length ? `Several spaces are called "${ref}"; give its path` : `No space called "${ref}". list_spaces shows them.`);
   const project = found[0];
   const agents = liveAgents(project);
   let target = agents.find(s => s.role === 'lead') ?? agents.find(s => s.agent === 'claude');
-  // Counted against both folders, so a looping asker can't send 20 to each department.
+  // Counted against both folders, so a looping asker can't send 20 to each space.
   const recent = recentMessages(project);
   const mine = recentMessages(from.project);
   for (const [id, a] of asks) if (Date.now() - a.at > HOUR) asks.delete(id);
   const askId = randomUUID().slice(0, 8);
-  const signed = `[Question from ${S.plain(from.name)} in the ${deptName(from.project)} department (ask id ${askId})]\n${defuse(question)}\n\n` +
-    `(Answer briefly with answer_department and ask id ${askId}. Share only what they need; they can't see your chats or board.)`;
+  const signed = `[Question from ${S.plain(from.name)} in space ${spaceName(from.project)} (ask id ${askId})]\n${defuse(question)}\n\n` +
+    `(Answer briefly with answer_space and ask id ${askId}. Share only what they need; they can't see your chats or board.)`;
   if (target) S.deliver(target, signed);
   else {
     mayStartAgents(req);
@@ -472,12 +475,12 @@ route('POST', '/api/departments/ask', async ({ req, body }) => {
   asks.set(askId, { from: from.id, fromName: from.name, to: target.id, at: Date.now() });
   sent.set(project, [...recent, Date.now()]);
   sent.set(from.project, [...mine, Date.now()]);
-  bus.emit('event', { type: 'agent-message', from: `${from.name} (${deptName(from.project)})`, to: target.name, ...logMessage(project, from, target, 'ask_department') });
-  return { askId, deliveredTo: { name: target.name, department: path.basename(project), started: !agents.includes(target) } };
+  bus.emit('event', { type: 'agent-message', from: `${from.name} (${spaceName(from.project)})`, to: target.name, ...logMessage(project, from, target, 'ask_space') });
+  return { askId, deliveredTo: { name: target.name, space: path.basename(project), started: !agents.includes(target) } };
 });
-route('POST', '/api/departments/answer', ({ req, body }) => {
+route('POST', '/api/spaces/answer', ({ req, body }) => {
   mayMessage(req);
-  const from = mayAskDepartments(req);
+  const from = mayAskSpaces(req);
   const askId = String(body.askId ?? '');
   const ask = asks.get(askId);
   if (!ask || Date.now() - ask.at > HOUR) throw fail(404, 'No open question with that ask id: each is answered once, within an hour');
@@ -489,13 +492,13 @@ route('POST', '/api/departments/answer', ({ req, body }) => {
     asks.delete(askId);
     throw fail(410, `${ask.fromName} has finished, so there is no one to answer`);
   }
-  // Departments share summaries, not transcripts.
+  // Spaces share summaries, not transcripts.
   const capped = answer.length > 2000 ? `${answer.slice(0, 2000)}... (cut at 2,000 characters)` : answer;
   const recent = recentMessages(to.project);
-  S.deliver(to, `[Answer from the ${deptName(from.project)} department (ask id ${askId})]\n${defuse(capped)}`);
+  S.deliver(to, `[Answer from space ${spaceName(from.project)} (ask id ${askId})]\n${defuse(capped)}`);
   asks.delete(askId); // once delivered: an asker busy at a prompt can be answered again later
   sent.set(to.project, [...recent, Date.now()]);
-  bus.emit('event', { type: 'agent-message', from: `${from.name} (${deptName(from.project)})`, to: to.name, ...logMessage(to.project, from, to, 'answer_department') });
+  bus.emit('event', { type: 'agent-message', from: `${from.name} (${spaceName(from.project)})`, to: to.name, ...logMessage(to.project, from, to, 'answer_space') });
   return { delivered: true, to: to.name, capped: capped !== answer };
 });
 

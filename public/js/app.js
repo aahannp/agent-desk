@@ -1,5 +1,5 @@
 // The app shell: navigation, projects, live updates from the server, the command palette and shortcuts.
-import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, commands, menu, modal, askText, confirmDialog, ago, baseName, ltr, projectSessions, projectTasks, projectChats, gridSessions, chatTitle, DRAG, STATUS_LABEL } from './ui.js';
+import { state, api, h, icon, avatar, on, emit, toast, guard, actions, command, commands, menu, modal, askText, confirmDialog, ago, baseName, ltr, projectSessions, projectTasks, projectChats, gridSessions, openSpaces, spaceSummary, chatTitle, DRAG, STATUS_LABEL } from './ui.js';
 import { THEMES, applyTheme } from './themes.js';
 import * as agents from './agents.js';
 import * as board from './board.js';
@@ -154,68 +154,73 @@ function renderChrome() {
     if (counts[v.id]) btn.append(counts[v.id]);
   }
 
-  renderDepartments();
+  renderSpaces();
   renderChats(sessions);
   renderStatus();
 }
 
-// Departments: every project folder, with who's running in it. Click one to go there; open it to see its agents.
-const OPEN_DEPTS = 'agent-desk:open-departments';
-const openDepts = new Set((() => { try { return JSON.parse(localStorage.getItem(OPEN_DEPTS)) ?? []; } catch { return []; } })());
-let revealDept = null; // a department to scroll into view on the next build: the one just opened, or the current one at start
-const toggleDept = path => {
-  openDepts.has(path) ? openDepts.delete(path) : (openDepts.add(path), (revealDept = path));
-  try { localStorage.setItem(OPEN_DEPTS, JSON.stringify([...openDepts])); } catch {}
-  renderChrome(); // Chats too: it leaves out what the current department now shows
+// Spaces: every project folder, with who's running in it. Click one to go there; open it to see its agents.
+const EXPANDED = 'agent-desk:expanded-spaces';
+const expanded = new Set((() => { try { return JSON.parse(localStorage.getItem(EXPANDED)) ?? []; } catch { return []; } })());
+let revealSpace = null; // a space to scroll into view on the next build: the one just opened, or the current one at start
+const toggleExpanded = path => {
+  expanded.has(path) ? expanded.delete(path) : (expanded.add(path), (revealSpace = path));
+  try { localStorage.setItem(EXPANDED, JSON.stringify([...expanded])); } catch {}
+  renderChrome(); // Chats too: it leaves out what the current space now shows
 };
-const showsAgentsOf = path => path === state.project && openDepts.has(path);
+const showsAgentsOf = path => path === state.project && expanded.has(path);
 
-let deptsShown = '';
-function renderDepartments() {
-  const el = $('depts');
+let spacesShown = '';
+function renderSpaces() {
+  const el = $('spaces');
   const list = state.projects.map(p => {
     const agents = state.sessions.filter(s => s.project === p.path && !s.exited && !s.artifactId);
     return { p, agents, statuses: agents.map(s => actions.statusOf?.(s) ?? s.status) };
   });
   // This runs every second: rebuild only on a real change (a rebuild mid-click loses the click), and keep keyboard focus.
-  const now = JSON.stringify([state.project, [...openDepts], list.map(d => [d.p.path, d.p.name, d.statuses, d.agents.map(s => [s.id, chatTitle(s), s.cwd])])]);
-  if (now === deptsShown) return;
-  if (!deptsShown) revealDept = state.project;
-  deptsShown = now;
+  const open = openSpaces();
+  const now = JSON.stringify([open, [...expanded], list.map(d => [d.p.path, d.p.name, d.statuses, d.agents.map(s => [s.id, chatTitle(s), s.cwd])])]);
+  if (now === spacesShown) return;
+  if (!spacesShown) revealSpace = state.project;
+  spacesShown = now;
   const focused = el.contains(document.activeElement) ? document.activeElement.dataset.key : null;
   const scrolled = el.scrollTop; // emptying the list would reset it
   el.replaceChildren(...list.map(({ p, agents, statuses }, i) => {
     const waiting = statuses.filter(x => x === 'needs-input').length;
-    const open = openDepts.has(p.path);
+    const isOpen = expanded.has(p.path);
     const current = p.path === state.project;
-    const summary = agents.length ? `${agents.length} agent${agents.length === 1 ? '' : 's'}${waiting ? ` · ${waiting} need${waiting === 1 ? 's' : ''} you` : ''}` : 'No agents';
-    return h('div', { class: `dept${current ? ' current' : ''}`, role: 'listitem', 'data-path': p.path },
-      h('div', { class: 'dept-row' },
-        h('button', { class: `icon-btn sm dept-chev${open ? ' open' : ''}`, 'data-key': `chev:${p.path}`, 'aria-expanded': String(open), 'aria-controls': `dept-${i}`,
-          'aria-label': `Show agents in ${p.name}`, title: open ? 'Hide agents' : 'Show agents', onClick: () => toggleDept(p.path) }, icon('chevronRight', 12)),
-        h('button', { class: 'dept-main', 'data-key': `main:${p.path}`, 'aria-current': current ? 'true' : null, title: ltr(p.path.replace(state.info.home, '~')),
-          'aria-label': `${p.name}, ${summary}`, onClick: () => switchProject(p.path), onContextmenu: e => deptMenu(e, p) },
-          h('span', { class: 'dept-name' }, p.name),
-          h('span', { class: `dept-sum${waiting ? ' attn' : ''}` },
+    const beside = open.includes(p.path);
+    const summary = spaceSummary(agents.length, waiting);
+    return h('div', { class: `space${current ? ' current' : ''}${beside ? ' beside' : ''}`, role: 'listitem', 'data-path': p.path },
+      h('div', { class: 'space-row' },
+        h('button', { class: `icon-btn sm space-chev${isOpen ? ' open' : ''}`, 'data-key': `chev:${p.path}`, 'aria-expanded': String(isOpen), 'aria-controls': `space-${i}`,
+          'aria-label': `Show agents in ${p.name}`, title: isOpen ? 'Hide agents' : 'Show agents', onClick: () => toggleExpanded(p.path) }, icon('chevronRight', 12)),
+        h('button', { class: 'space-main', 'data-key': `main:${p.path}`, 'aria-current': current ? 'true' : null, title: `${ltr(p.path.replace(state.info.home, '~'))}\n⌘-click to show it beside the others`,
+          'aria-label': `${p.name}, ${summary}`, onClick: e => (e.metaKey || e.ctrlKey ? toggleBeside(p.path) : switchProject(p.path)), onContextmenu: e => spaceMenu(e, p) },
+          h('span', { class: 'space-name' }, p.name),
+          h('span', { class: `space-sum${waiting ? ' attn' : ''}` },
             ...statuses.slice(0, 8).map(x => h('span', { class: `dot ${x}` })), h('span', {}, summary))),
+        h('button', { class: 'icon-btn sm space-beside', 'data-key': `beside:${p.path}`, 'aria-pressed': String(beside), hidden: current && open.length < 2,
+          'aria-label': `Show ${p.name} beside`, title: beside ? `Hide ${p.name} from the grid` : `Show ${p.name} beside the others in the grid`,
+          onClick: () => toggleBeside(p.path) }, icon('stack', 13)),
         h('button', { class: 'icon-btn sm', 'data-key': `add:${p.path}`, 'aria-label': `New agent in ${p.name}`, title: `New agent in ${p.name}`,
           onClick: () => actions.newSession({ project: p.path }) }, icon('plus', 13))),
-      h('div', { class: 'dept-agents', id: `dept-${i}`, hidden: !open },
+      h('div', { class: 'space-agents', id: `space-${i}`, hidden: !isOpen },
         ...(agents.length ? agents.map((s, j) => h('button', { class: 'run-item', 'data-key': `agent:${s.id}`, title: s.cwd, onClick: () => actions.focusSession(s.id) },
           avatar(s, true), h('span', { class: 'name' }, chatTitle(s)), h('span', { class: `dot ${statuses[j]}`, title: STATUS_LABEL[statuses[j]] ?? '' })))
           : [h('div', { class: 'run-empty' }, 'Nothing running')])));
-  }), h('button', { class: 'run-item dept-new', 'data-key': 'new', onClick: () => addProject() }, icon('plus', 13), h('span', { class: 'name' }, 'New department')));
+  }), h('button', { class: 'run-item space-new', 'data-key': 'new', onClick: () => addProject() }, icon('plus', 13), h('span', { class: 'name' }, 'New space')));
   el.scrollTop = scrolled;
   if (focused) el.querySelector(`[data-key="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
-  const show = revealDept && el.querySelector(`.dept[data-path="${CSS.escape(revealDept)}"]`);
-  revealDept = null;
+  const show = revealSpace && el.querySelector(`.space[data-path="${CSS.escape(revealSpace)}"]`);
+  revealSpace = null;
   if (show) { // as much of it as fits, never scrolling its header out of view
     const top = show.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
     el.scrollTop = Math.min(top, Math.max(el.scrollTop, top + show.offsetHeight - el.clientHeight));
   }
 }
 
-function deptMenu(e, p) {
+function spaceMenu(e, p) {
   e.preventDefault();
   menu(e.currentTarget, [
     { label: 'New agent here', icon: 'plus', onClick: () => actions.newSession({ project: p.path }) },
@@ -296,7 +301,7 @@ function renderStatus() {
   ].filter(Boolean));
 }
 on('tick', renderChrome);
-on('project', renderChrome); // the new department lights up at once, not after the settings round trip
+on('project', renderChrome); // the new space lights up at once, not after the settings round trip
 
 function buildSidebar() {
   $('nav').replaceChildren(...VIEWS.map((v, i) => h('button', { class: 'nav-item', id: `nav-${v.id}`, title: `${v.label} (⌘${i + 1})`, onClick: () => showView(v.id) },
@@ -319,13 +324,24 @@ function pickProject(path = state.project || new URLSearchParams(location.search
   url.searchParams.set('project', state.project);
   history.replaceState(null, '', url);
 }
-function switchProject(path) {
+// The spaces open side by side in the Agents grid; the first is the current one (Board, Review and new agents use it).
+function showSpaces(list) {
   const before = state.project;
-  pickProject(path);
+  pickProject(list[0]);
+  const open = [...new Set([state.project, ...list])];
+  state.settings.openSpaces = open; // now, so the grid redraws once with the new project; the server keeps it
   if (before !== state.project) emit('project');
-  actions.setSetting({ lastProject: state.project }); // re-renders the sidebar too
+  actions.setSetting({ lastProject: state.project, openSpaces: open }); // re-renders the sidebar too
 }
+actions.showSpaces = showSpaces;
+const switchProject = path => showSpaces([path]); // a plain click on a space: just that one
 actions.switchProject = switchProject;
+// Show a space beside the open ones, or hide it again (the last one stays).
+function toggleBeside(path) {
+  const open = openSpaces();
+  if (!open.includes(path)) showSpaces([...open, path]);
+  else if (open.length > 1) showSpaces(open.filter(p => p !== path));
+}
 
 // A folder input that suggests folders as you type.
 function folderField(onSubmit) {
@@ -397,8 +413,10 @@ function openPalette() {
     ...commands,
     ...VIEWS.map((v, i) => ({ title: `Go to ${v.label}`, icon: v.icon, sub: `⌘${i + 1}`, run: () => showView(v.id) })),
     ...gridSessions().map(s => ({ title: `Show ${s.name}`, icon: 'terminal', sub: s.agent || s.kind, run: () => actions.focusSession(s.id) })),
+    ...(state.projects.length > 1 ? [{ title: 'Show every space side by side', icon: 'stack', run: () => showSpaces([state.project, ...state.projects.map(p => p.path)]) }] : []),
+    ...(openSpaces().length > 1 ? [{ title: 'Show only this space', icon: 'folder', run: () => switchProject(state.project) }] : []),
     ...state.projects.filter(p => p.path !== state.project).map(p => ({ title: `Switch to ${p.name}`, icon: 'folder', sub: p.path.replace(state.info.home, '~'), run: () => switchProject(p.path) })),
-    ...(state.project ? [{ title: `Remove ${baseName(state.project)} from the departments`, icon: 'x', sub: 'No files are touched', run: () => removeProject() }] : []),
+    ...(state.project ? [{ title: `Remove ${baseName(state.project)} from the spaces`, icon: 'x', sub: 'No files are touched', run: () => removeProject() }] : []),
     ...Object.entries(THEMES).map(([id, t]) => ({ title: `Theme: ${t.name}`, icon: 'sparkles', run: () => actions.setSetting({ theme: id }) })),
   ];
   const select = i => {
@@ -444,7 +462,7 @@ document.addEventListener('keydown', e => {
 command('New task', () => { showView('board'); actions.newTask?.(); }, { icon: 'plus' });
 command('Show or hide the sidebar', () => toggleSidebar(), { icon: 'sidebar', sub: '⌘B' });
 $('sideToggle').addEventListener('click', () => toggleSidebar());
-command('New department (add a project folder)', () => addProject(), { icon: 'folder' });
+command('New space (add a project folder)', () => addProject(), { icon: 'folder' });
 
 // ---------- Start ----------
 (async () => {

@@ -9,7 +9,7 @@ import path from 'node:path';
 import WebSocket from 'ws';
 import { start } from './server.mjs';
 import { createWorktree } from './lib/git.mjs';
-import { db, bus } from './lib/store.mjs';
+import { db, bus, migrate } from './lib/store.mjs';
 import { command, board, sessions, upkeep, effectiveWindow, claudeTheme, contrast, createSession, prose } from './lib/sessions.mjs';
 import { THEMES } from './public/js/themes.js';
 import { transcriptContext } from './lib/transcripts.mjs';
@@ -37,6 +37,15 @@ fs.writeFileSync(path.join(tmp, 'data', 'mcp', 'gone1234.json'), 'left by a cras
 fs.writeFileSync(path.join(tmp, 'data', 'desk.json'), JSON.stringify({ settings: { agentDefaults: { claude: { model: '', effort: '' }, lead: { model: 'opus', effort: 'high' } } } }));
 const desk = await start({ port: 0, dataDir: path.join(tmp, 'data') });
 assert.deepEqual(db.settings.agentDefaults, { claude: { model: 'sonnet', effort: '' }, lead: { model: 'opus', effort: 'high' } }, "an old install's workers move to Sonnet; leads stay on Opus");
+// Old settings: asking between folders turned off stays off under its new name
+const migrated = (settings, projects = []) => migrate({ projects, settings: { ...structuredClone(db.settings), ...settings } }).settings;
+assert.deepEqual([migrated({ departmentsCanAsk: false }).spacesCanAsk, 'departmentsCanAsk' in migrated({ departmentsCanAsk: false })], [false, false], 'departmentsCanAsk off becomes spacesCanAsk off');
+assert.equal(migrated({ departmentsCanAsk: true }).spacesCanAsk, true);
+const [spA, spB] = [{ path: '/x/a' }, { path: '/x/b' }];
+assert.deepEqual(migrated({ mixFolders: true, lastProject: '/x/b', openSpaces: [] }, [spA, spB]).openSpaces, ['/x/b', '/x/a'], 'every folder in one grid becomes every space open, the current one first');
+assert.deepEqual(migrated({ mixFolders: false, openSpaces: [] }, [spA, spB]).openSpaces, [], 'off: just the current one');
+assert.ok(!('mixFolders' in migrated({ mixFolders: true }, [spA])), 'the old switch is gone');
+assert.deepEqual(migrated({ openSpaces: ['/x/a', '/gone', '/x/a', '/x/b'] }, [spA, spB]).openSpaces, ['/x/a', '/x/b'], 'removed folders and repeats drop out');
 assert.ok(desk.token.length >= 32, 'an empty token file is replaced with a real secret');
 assert.ok(!fs.existsSync(path.join(tmp, 'data', 'mcp', 'gone1234.json')), "a session's MCP file never outlives a restart");
 const SELF = `http://127.0.0.1:${desk.port}`;
@@ -250,6 +259,7 @@ try {
   assert.equal((await request('POST', '/mcp', { token: '', body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } })).status, 401, 'MCP needs the token');
   const tools = (await rpc('tools/list', {})).result.tools.map(t => t.name);
   assert.equal(tools.length, 21, `21 MCP tools, got ${tools.join(', ')}`);
+  assert.ok(['list_spaces', 'ask_space', 'answer_space'].every(t => tools.includes(t)) && !tools.some(t => /depart/.test(t)), 'the folder tools are named for spaces');
   assert.ok(!tools.some(t => /publish/.test(t)), 'agents can save artifacts but have no tool to publish them');
   assert.match((await rpc('tools/call', { name: 'list_tasks', arguments: {} })).result.content[0].text, /Add a greeting/, 'MCP list_tasks reads the board');
   assert.match((await rpc('tools/call', { name: 'list_agents', arguments: {} }, { 'x-desk-session': shell.id })).result.content[0].text, new RegExp(shell.id), 'MCP list_agents sees the shell');
@@ -289,7 +299,7 @@ try {
   assert.ok(fs.existsSync(path.join(chatDir, `${plain}.jsonl`)), "Claude's own copy is left alone");
 
   // What claude is started with: a fixed id for a new chat, --resume for one Claude has saved
-  const base = { id: 'check001', kind: 'agent', agent: 'claude', role: null, worktree: null, cwd: repo, claudeSessionId: named };
+  const base = { id: 'check001', kind: 'agent', agent: 'claude', role: null, worktree: null, project: repo, cwd: repo, claudeSessionId: named };
   const fresh = command({ ...base, resume: false }, '--sneaky prompt', null).args;
   assert.equal(fresh[0], ' --sneaky prompt', 'a prompt starting with "-" is passed as plain text');
   assert.deepEqual(fresh.slice(1, 3), ['--session-id', named], 'a new chat gets the id we chose');
@@ -471,6 +481,16 @@ try {
   assert.deepEqual((await runOf({ kind: 'agent', agent: 'claude', role: 'lead' })).slice(0, 2), ['opus', 'high'], 'a lead agent has its own defaults');
   assert.equal((await request('PATCH', '/api/settings', { body: { agentDefaults: { claude: { model: 'gpt', effort: '' }, lead: { model: '', effort: '' } } } })).status, 400, 'defaults must be known models');
   assert.equal((await request('PATCH', '/api/settings', { body: { scrollSpeed: 10 } })).status, 400, 'scroll speed has a sensible range');
+  {
+    const { lastProject } = await ok('GET', '/api/settings');
+    const extra = fs.mkdtempSync(path.join(tmp, 'space-'));
+    await ok('POST', '/api/projects', { path: extra });
+    assert.equal((await request('PATCH', '/api/settings', { body: { openSpaces: 'all' } })).status, 400, 'open spaces are a list of folders');
+    assert.deepEqual((await ok('PATCH', '/api/settings', { openSpaces: [repo, '/no/such/space', extra, repo] })).openSpaces, [repo, extra], 'only known folders, once each');
+    await ok('DELETE', `/api/projects?path=${encodeURIComponent(extra)}`);
+    assert.deepEqual((await ok('GET', '/api/settings')).openSpaces, [repo], 'a removed space closes in the grid');
+    await ok('PATCH', '/api/settings', { lastProject, openSpaces: [] });
+  }
   await ok('PATCH', '/api/settings', { agentDefaults: { claude: { model: 'sonnet', effort: 'low' }, lead: { model: 'opus', effort: 'high' } } });
   assert.deepEqual((await runOf({ kind: 'agent', agent: 'claude' })).slice(0, 2), ['sonnet', 'low'], 'and you can change them in Settings');
   const plainSpec = await ok('POST', '/api/specialists', { name: 'Plain', role: 'Left on the default model' });
@@ -823,6 +843,9 @@ esac
     const prompt = command(sessions.get(bravo.id), '', null).args.join('\n');
     assert.match(prompt, new RegExp(`On the board you are Bravo[^]*- Alpha \\(agent ${alpha.id}, \\w+\\)`), 'the system prompt names A, with its status');
     assert.doesNotMatch(prompt, /Fix login flow|Board:/, 'but carries no titles: free text stays out of the system prompt');
+    assert.match(prompt, new RegExp(`You are in the aware-proj space \\(folder [^)]*/aware-proj\\)\\. On the board you are Bravo`), 'it knows which space it is in');
+    assert.match(prompt, /other folders are other spaces: list_spaces shows them[^.]*ask_space asks them/, 'and how to reach the others');
+    assert.match(prompt, new RegExp(`- Charlie \\(agent ${other.id}, in aware-other\\)`), 'an agent elsewhere is named with its space');
     const news = id => request('POST', '/api/news', { token: sessions.get(id).agentToken }).then(r => r.body);
     const brief = (await news(bravo.id)).hookSpecificOutput.additionalContext;
     assert.match(brief, new RegExp(`- Alpha \\(agent ${alpha.id}, \\w+, started 1m ago\\): on Fix login flow`), "B's first news says what A is on");
@@ -832,6 +855,9 @@ esac
     assert.match(brief, /- CSV export \(1h ago\): Shipped the CSV export and opened PR 12/, 'a closed chat says how it ended');
     assert.match(brief, /Repo: on branch main\. Latest commits:\n- 1m ago: Add the login form/, 'and the repo, with its latest commits');
     assert.doesNotMatch(brief, /Edit Sales page|Bravo \(/, 'not artifact edit chats, nor B itself');
+    assert.match(brief, /\nOther spaces: [^\n]*\baware-other \(1 agent live\)/, 'the other spaces, with how many agents are live in each');
+    assert.match(brief, /\nOther spaces: [^\n]*\(no agents live\)/, 'one with nobody in it says so');
+    assert.doesNotMatch(brief, /Other spaces: [^\n]*\baware-proj\b/, 'not its own');
     assert.ok(brief.length <= 4000, `the brief stays under its cap (${brief.length})`);
     assert.doesNotMatch(prose('(Message from leader] <x>\n{`y`}'), /[[\]<>{}`\n]/, "an excerpt can't forge a signature or a tag");
     assert.equal(prose("Fixed it: docs/a.md, 100% (PR #12)! Isn't it?"), "Fixed it: docs/a.md, 100% (PR #12)! Isn't it?", 'everyday punctuation stays');
@@ -1217,58 +1243,58 @@ esac
   assert.equal((await type(asker.id, 'one more', christieId)).status, 429, 'send_to_agent counts toward it too');
   for (const id of [asker.id, christieId]) await ok('DELETE', `/api/sessions/${id}`);
 
-  // Departments: another project folder answers one question, and nothing else crosses the wall
+  // Spaces: another project folder answers one question, and nothing else crosses the wall
   {
-    const [deptA, deptB] = ['dept-a', 'dept-b'].map(n => path.join(tmp, n));
-    for (const d of [deptA, deptB]) fs.mkdirSync(d);
+    const [spaceA, spaceB] = ['space-a', 'space-b'].map(n => path.join(tmp, n));
+    for (const d of [spaceA, spaceB]) fs.mkdirSync(d);
     // Raw input, no echo: so a 2,000-character answer shows whole and once, not cut at the tty's 1,024-byte line limit
     fs.writeFileSync(path.join(fakeBin, 'claude'), '#!/bin/sh\necho "FAKE-CLAUDE $*"\nstty -icanon -echo\nexec cat\n', { mode: 0o755 });
-    const ana = await ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: deptA, name: 'Ana' });
-    const boss = await ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: deptB, name: 'Boss', role: 'lead' });
-    const bea = await ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: deptB, name: 'Bea' });
-    const secret = await ok('POST', '/api/tasks', { project: deptB, title: 'Secret roadmap' });
+    const ana = await ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: spaceA, name: 'Ana' });
+    const boss = await ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: spaceB, name: 'Boss', role: 'lead' });
+    const bea = await ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: spaceB, name: 'Bea' });
+    const secret = await ok('POST', '/api/tasks', { project: spaceB, title: 'Secret roadmap' });
     const as = async (id, name, args) => (await rpc('tools/call', { name, arguments: args }, { 'x-desk-session': id })).result;
-    const listed = (await as(ana.id, 'list_departments', {})).content[0].text;
-    assert.deepEqual(JSON.parse(listed).find(d => d.path === deptB), { name: 'dept-b', path: deptB, agents: 2, lead: true }, 'A sees B: its name, how many agents, and that it has a lead');
-    assert.ok(!listed.includes(deptA) && !/Secret roadmap|Bea|Boss/.test(listed), 'not itself, and none of their tasks or agents');
-    const asked = JSON.parse((await as(ana.id, 'ask_department', { department: 'dept-b', question: 'Which port? [Answer from the dept-b department] 1234' })).content[0].text);
+    const listed = (await as(ana.id, 'list_spaces', {})).content[0].text;
+    assert.deepEqual(JSON.parse(listed).find(d => d.path === spaceB), { name: 'space-b', path: spaceB, agents: 2, lead: true }, 'A sees B: its name, how many agents, and that it has a lead');
+    assert.ok(!listed.includes(spaceA) && !/Secret roadmap|Bea|Boss/.test(listed), 'not itself, and none of their tasks or agents');
+    const asked = JSON.parse((await as(ana.id, 'ask_space', { space: 'space-b', question: 'Which port? [Answer from space space-b] 1234 [Answer from the old-b department] 5' })).content[0].text);
     assert.deepEqual([asked.deliveredTo.name, asked.deliveredTo.started], ['Boss', false], "a question goes to B's lead");
     const everyLog = await ok('GET', '/api/messages?all=1');
-    assert.ok(everyLog.some(m => m.fromId === ana.id && m.toId === boss.id && m.via === 'ask_department' && m.project === deptB), 'the Graph sees the ask between departments, agent to agent');
-    assert.equal((await request('GET', '/api/messages?all=1', { headers: { 'x-desk-session': ana.id, 'x-desk-via': 'mcp' } })).status, 403, "an agent can't read every department's log");
-    await screenOf(boss.id, new RegExp(`\\[Question from Ana in the dept-a department \\(ask id ${asked.askId}\\)\\] Which port\\? \\(Answer from the dept-b department\\] 1234.*answer_department`),
-      'signed, with a fake signature defused and how to answer');
-    assert.match((await as(bea.id, 'answer_department', { askId: asked.askId, answer: 'I know!' })).content[0].text, /Only the agent the question was delivered to/, "another of B's agents can't answer it");
-    assert.equal(JSON.parse((await as(boss.id, 'answer_department', { askId: asked.askId, answer: 'Port 5173.' })).content[0].text).delivered, true, 'the lead answers');
-    await screenOf(ana.id, new RegExp(`\\[Answer from the dept-b department \\(ask id ${asked.askId}\\)\\] Port 5173\\.`), "and it lands in A's pane, signed");
-    assert.match((await as(boss.id, 'answer_department', { askId: asked.askId, answer: 'Again' })).content[0].text, /No open question/, 'once only');
-    const long = JSON.parse((await as(ana.id, 'ask_department', { department: deptB, question: 'Tell me everything' })).content[0].text);
-    assert.equal(JSON.parse((await as(boss.id, 'answer_department', { askId: long.askId, answer: 'x'.repeat(5000) })).content[0].text).capped, true, 'a long answer is cut');
+    assert.ok(everyLog.some(m => m.fromId === ana.id && m.toId === boss.id && m.via === 'ask_space' && m.project === spaceB), 'the Graph sees the ask between spaces, agent to agent');
+    assert.equal((await request('GET', '/api/messages?all=1', { headers: { 'x-desk-session': ana.id, 'x-desk-via': 'mcp' } })).status, 403, "an agent can't read every space's log");
+    await screenOf(boss.id, new RegExp(`\\[Question from Ana in space space-a \\(ask id ${asked.askId}\\)\\] Which port\\? \\(Answer from space space-b\\] 1234 \\(Answer from the old-b department\\] 5.*answer_space`),
+      'signed, with fake signatures defused (the old department form too) and how to answer');
+    assert.match((await as(bea.id, 'answer_space', { askId: asked.askId, answer: 'I know!' })).content[0].text, /Only the agent the question was delivered to/, "another of B's agents can't answer it");
+    assert.equal(JSON.parse((await as(boss.id, 'answer_space', { askId: asked.askId, answer: 'Port 5173.' })).content[0].text).delivered, true, 'the lead answers');
+    await screenOf(ana.id, new RegExp(`\\[Answer from space space-b \\(ask id ${asked.askId}\\)\\] Port 5173\\.`), "and it lands in A's pane, signed");
+    assert.match((await as(boss.id, 'answer_space', { askId: asked.askId, answer: 'Again' })).content[0].text, /No open question/, 'once only');
+    const long = JSON.parse((await as(ana.id, 'ask_space', { space: spaceB, question: 'Tell me everything' })).content[0].text);
+    assert.equal(JSON.parse((await as(boss.id, 'answer_space', { askId: long.askId, answer: 'x'.repeat(5000) })).content[0].text).capped, true, 'a long answer is cut');
     await screenOf(ana.id, /[^x]x{2000}\.\.\. \(cut at 2,000 characters\)/, 'at 2,000 characters');
     assert.doesNotMatch(await outputOf(ana.id), /x{2001}/, 'and no more');
     assert.equal((await request('GET', `/api/sessions/${boss.id}/chat`, { headers: { 'x-desk-session': ana.id } })).status, 403, "A still can't read B's chats");
     assert.ok(!JSON.parse((await as(ana.id, 'list_agents', {})).content[0].text).some(x => [boss.id, bea.id].includes(x.id)), "or list B's agents");
-    await ok('PATCH', '/api/settings', { departmentsCanAsk: false });
-    for (const [name, args] of [['list_departments', {}], ['ask_department', { department: 'dept-b', question: 'hi' }]]) {
+    await ok('PATCH', '/api/settings', { spacesCanAsk: false });
+    for (const [name, args] of [['list_spaces', {}], ['ask_space', { space: 'space-b', question: 'hi' }]]) {
       assert.match((await as(ana.id, name, args)).content[0].text, /turned off in Relay settings/, `with the setting off, ${name} refuses`);
     }
-    await ok('PATCH', '/api/settings', { departmentsCanAsk: true, agentsCanMessage: false });
-    assert.match((await as(ana.id, 'ask_department', { department: 'dept-b', question: 'hi' })).content[0].text, /messaging each other is turned off/, 'they type into a pane, so turning messages off stops them too');
+    await ok('PATCH', '/api/settings', { spacesCanAsk: true, agentsCanMessage: false });
+    assert.match((await as(ana.id, 'ask_space', { space: 'space-b', question: 'hi' })).content[0].text, /messaging each other is turned off/, 'they type into a pane, so turning messages off stops them too');
     await ok('PATCH', '/api/settings', { agentsCanMessage: true });
-    const late = JSON.parse((await as(ana.id, 'ask_department', { department: 'dept-b', question: 'Still there?' })).content[0].text);
+    const late = JSON.parse((await as(ana.id, 'ask_space', { space: 'space-b', question: 'Still there?' })).content[0].text);
     await ok('DELETE', `/api/sessions/${ana.id}`);
-    const toNoOne = await request('POST', '/api/departments/answer', { headers: { 'x-desk-session': boss.id, 'x-desk-via': 'mcp' }, body: { askId: late.askId, answer: 'Yes' } });
+    const toNoOne = await request('POST', '/api/spaces/answer', { headers: { 'x-desk-session': boss.id, 'x-desk-via': 'mcp' }, body: { askId: late.askId, answer: 'Yes' } });
     assert.deepEqual([toNoOne.status, /Ana has finished/.test(toNoOne.body.error)], [410, true], 'an answer to an asker who has exited says so');
     for (const id of [boss.id, bea.id]) await ok('DELETE', `/api/sessions/${id}`);
     // B is now empty: with starting agents off, a question to it is refused and no one starts there
-    await ok('POST', '/api/projects', { path: deptB });
-    const cara = await ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: deptA, name: 'Cara' });
+    await ok('POST', '/api/projects', { path: spaceB });
+    const cara = await ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: spaceA, name: 'Cara' });
     await ok('PATCH', '/api/settings', { agentsCanSpawn: false });
-    const empty = await request('POST', '/api/departments/ask', { headers: { 'x-desk-session': cara.id, 'x-desk-via': 'mcp' }, body: { department: 'dept-b', question: 'Anyone?' } });
-    assert.equal(empty.status, 403, "a department with no one running can't be asked while starting agents is off");
-    assert.ok(!(await ok('GET', '/api/sessions')).some(x => x.project === deptB && !x.exited), 'and nothing starts there');
+    const empty = await request('POST', '/api/spaces/ask', { headers: { 'x-desk-session': cara.id, 'x-desk-via': 'mcp' }, body: { space: 'space-b', question: 'Anyone?' } });
+    assert.equal(empty.status, 403, "a space with no one running can't be asked while starting agents is off");
+    assert.ok(!(await ok('GET', '/api/sessions')).some(x => x.project === spaceB && !x.exited), 'and nothing starts there');
     await ok('PATCH', '/api/settings', { agentsCanSpawn: true });
-    await ok('DELETE', `/api/projects?path=${encodeURIComponent(deptB)}`);
+    await ok('DELETE', `/api/projects?path=${encodeURIComponent(spaceB)}`);
     await ok('DELETE', `/api/sessions/${cara.id}`);
     await ok('DELETE', `/api/tasks/${secret.id}`);
   }
