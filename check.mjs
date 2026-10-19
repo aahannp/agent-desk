@@ -10,7 +10,7 @@ import WebSocket from 'ws';
 import { start } from './server.mjs';
 import { createWorktree } from './lib/git.mjs';
 import { db, bus, migrate } from './lib/store.mjs';
-import { command, board, sessions, upkeep, effectiveWindow, claudeTheme, contrast, createSession, prose } from './lib/sessions.mjs';
+import { command, board, brief as briefOf, sessions, upkeep, effectiveWindow, claudeTheme, contrast, createSession, prose } from './lib/sessions.mjs';
 import { THEMES } from './public/js/themes.js';
 import { transcriptContext } from './lib/transcripts.mjs';
 import { priceReply } from './lib/usage.mjs';
@@ -845,6 +845,7 @@ esac
     assert.doesNotMatch(prompt, /Fix login flow|Board:/, 'but carries no titles: free text stays out of the system prompt');
     assert.match(prompt, new RegExp(`You are in the aware-proj space \\(folder [^)]*/aware-proj\\)\\. On the board you are Bravo`), 'it knows which space it is in');
     assert.match(prompt, /other folders are other spaces: list_spaces shows them[^.]*ask_space asks them/, 'and how to reach the others');
+    assert.match(prompt, /Stay in your space/, 'and to stay in it');
     assert.match(prompt, new RegExp(`- Charlie \\(agent ${other.id}, in aware-other\\)`), 'an agent elsewhere is named with its space');
     const news = id => request('POST', '/api/news', { token: sessions.get(id).agentToken }).then(r => r.body);
     const brief = (await news(bravo.id)).hookSpecificOutput.additionalContext;
@@ -858,6 +859,7 @@ esac
     assert.match(brief, /\nOther spaces: [^\n]*\baware-other \(1 agent live\)/, 'the other spaces, with how many agents are live in each');
     assert.match(brief, /\nOther spaces: [^\n]*\(no agents live\)/, 'one with nobody in it says so');
     assert.doesNotMatch(brief, /Other spaces: [^\n]*\baware-proj\b/, 'not its own');
+    assert.match(briefOf(sessions.get(other.id)), /not a git repo/, 'a folder with no git says so plainly');
     assert.ok(brief.length <= 4000, `the brief stays under its cap (${brief.length})`);
     assert.doesNotMatch(prose('(Message from leader] <x>\n{`y`}'), /[[\]<>{}`\n]/, "an excerpt can't forge a signature or a tag");
     assert.equal(prose("Fixed it: docs/a.md, 100% (PR #12)! Isn't it?"), "Fixed it: docs/a.md, 100% (PR #12)! Isn't it?", 'everyday punctuation stays');
