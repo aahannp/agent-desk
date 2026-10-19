@@ -871,10 +871,12 @@ test('two of a product add up', async () =&gt; {
           <li class="reveal"><h3>Files</h3><p><span class="vs-k">Several terminals</span>Every session edits the same folder, so one agent can overwrite another's work.</p><p><span class="vs-k">Relay</span>Each worker gets its own git worktree and branch, so they never clash.</p></li>
           <li class="reveal"><h3>Planning</h3><p><span class="vs-k">Several terminals</span>You split the work and brief each tab. The sessions don't know about each other.</p><p><span class="vs-k">Relay</span>A lead agent splits a goal into tasks on a shared Board and starts a worker for each.</p></li>
           <li class="reveal"><h3>Talking</h3><p><span class="vs-k">Several terminals</span>You copy and paste between tabs.</p><p><span class="vs-k">Relay</span>Agents message each other or read each other's chat. Messages are signed, show in the pane, and are rate-limited.</p></li>
+          <li class="reveal"><h3>Awareness</h3><p><span class="vs-k">Several terminals</span>Each session only knows what you paste into it.</p><p><span class="vs-k">Relay</span>Before each turn, an agent hears what changed around it, in a few lines. It gets a "Heads up" when another agent edited the same file.</p></li>
           <li class="reveal"><h3>Status</h3><p><span class="vs-k">Several terminals</span>You click through tabs to see who's done.</p><p><span class="vs-k">Relay</span>One grid shows who's working, idle or needs you, and a notification tells you when one does.</p></li>
           <li class="reveal"><h3>Review</h3><p><span class="vs-k">Several terminals</span>You find each branch and diff it yourself.</p><p><span class="vs-k">Relay</span>Every worker's diff is in one Review tab. You merge or discard.</p></li>
           <li class="reveal"><h3>Cost</h3><p><span class="vs-k">Several terminals</span>You run <span class="mono">/cost</span> in each session.</p><p><span class="vs-k">Relay</span>Each Claude pane shows its context and cost so far. Spend keeps the history.</p></li>
           <li class="reveal"><h3>Who did what</h3><p><span class="vs-k">Several terminals</span>You keep track in your head.</p><p><span class="vs-k">Relay</span>The Graph shows who started whom and who messaged whom.</p></li>
+          <li class="reveal"><h3>Other projects</h3><p><span class="vs-k">Several terminals</span>You carry context between repos yourself.</p><p><span class="vs-k">Relay</span>Each project folder is a department. An agent can ask another folder a question, and that folder's lead answers.</p></li>
           <li class="reveal"><h3>The agent</h3><p><span class="vs-k">Several terminals</span>The <span class="mono">claude</span> CLI with your login.</p><p><span class="vs-k">Relay</span>The same <span class="mono">claude</span> CLI with your login and plan. Nothing new to learn.</p></li>
         </ul>
       </div>
@@ -983,7 +985,22 @@ test('two of a product add up', async () =&gt; {
         <div class="mini reveal">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-6-6-6M12 19h8"/></svg>
           <h3>The board, anywhere</h3>
-          <p>One <span class="mono">claude mcp add</span> line gives the same board tools to Claude Code anywhere on your Mac.</p>
+          <p>One <span class="mono">claude mcp add</span> line gives the same 21 board tools to Claude Code anywhere on your Mac.</p>
+        </div>
+        <div class="mini reveal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M7 20h14V8"/></svg>
+          <h3>More windows</h3>
+          <p>File → New Window (⌘⇧N) opens another one. Each window has its own project.</p>
+        </div>
+        <div class="mini reveal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+          <h3>Hide a pane</h3>
+          <p>It leaves the grid but keeps running, and stays in the sidebar, Board and Graph.</p>
+        </div>
+        <div class="mini reveal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V8l9-5 9 5v13M9 21v-6h6v6"/></svg>
+          <h3>Departments</h3>
+          <p>Agents can't read another folder's chats, but can ask it a question with <span class="mono">ask_department</span>. Awareness and departments each have a Settings toggle.</p>
         </div>
       </div>
     </div>
@@ -1122,6 +1139,7 @@ test('two of a product add up', async () =&gt; {
             <li>Lead agent, Board and a git worktree per worker</li>
             <li>Review: diffs, commit, merge, discard</li>
             <li>Agents that message, read and copy each other</li>
+            <li>Workspace awareness, departments, more windows and hiding a pane <small>(since 1.9.4)</small></li>
             <li>Graph, Spend, Files, Artifacts, themes, update check</li>
             <li>Token meter on each Claude pane, workers on Sonnet <small>(since 1.8.3)</small></li>
             <li>Release builds on GitHub Actions, with a signed attestation <small>(since 1.9.0)</small></li>
