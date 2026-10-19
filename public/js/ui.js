@@ -202,6 +202,9 @@ export const shortBranch = branch => (branch || '').replace(/^desk\//, '');
 export const projectSessions = () => state.sessions.filter(s => s.project === state.project);
 export const projectTasks = () => state.tasks.filter(t => t.project === state.project);
 export const projectChats = () => state.chats.filter(c => c.project === state.project);
+// With "Agents from every folder in one grid" on (Settings), the grid, its sidebar list and counts cover every project.
+export const mixed = () => state.settings.mixFolders === true;
+export const gridSessions = () => (mixed() ? state.sessions : projectSessions());
 // A chat's best name: your rename, Claude's own title, or what the pane was called.
 export const chatTitle = s => state.chats.find(c => c.id === s.chatId)?.title ?? s.name;
 // Drag payloads between the sidebar and the grid.
