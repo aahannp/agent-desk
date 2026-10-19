@@ -10,7 +10,7 @@ import WebSocket from 'ws';
 import { start } from './server.mjs';
 import { createWorktree } from './lib/git.mjs';
 import { db, bus } from './lib/store.mjs';
-import { command, board, sessions, upkeep, effectiveWindow, claudeTheme, contrast } from './lib/sessions.mjs';
+import { command, board, sessions, upkeep, effectiveWindow, claudeTheme, contrast, createSession, prose } from './lib/sessions.mjs';
 import { THEMES } from './public/js/themes.js';
 import { transcriptContext } from './lib/transcripts.mjs';
 import { priceReply } from './lib/usage.mjs';
@@ -797,10 +797,27 @@ esac
   {
     const [proj, elsewhere] = ['aware-proj', 'aware-other'].map(d => path.join(tmp, d));
     for (const d of [proj, elsewhere]) fs.mkdirSync(path.join(d, 'lib'), { recursive: true });
+    const git = (...args) => execFileSync('git', ['-c', 'user.name=check', '-c', 'user.email=check@example.com', ...args], { cwd: proj, stdio: 'pipe' });
+    git('init', '-q', '-b', 'main');
+    git('commit', '-q', '--allow-empty', '-m', 'Add the login form');
     const task = title => ok('POST', '/api/tasks', { project: proj, title });
     const login = await task('Fix login flow');
+    const old = await task('Old forgotten card');
+    await ok('PATCH', `/api/tasks/${old.id}`, { status: 'review' });
+    db.tasks.find(t => t.id === old.id).updatedAt = Date.now() - 5 * 86_400_000;
     const alpha = (await ok('POST', `/api/tasks/${login.id}/start`, { worktree: false })).session;
     await ok('PATCH', `/api/chats/${alpha.chatId}`, { title: 'Alpha' });
+    // Delta was started by the user typing, so Relay never saw what it was asked: its transcript says
+    const projDir = path.join(process.env.CLAUDE_CONFIG_DIR, 'projects', proj.replace(/[^a-zA-Z0-9]/g, '-'));
+    fs.mkdirSync(projDir, { recursive: true });
+    const said = (type, text) => JSON.stringify({ type, message: { content: type === 'user' ? text : [{ type: 'text', text }] } });
+    const delta = await ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: proj, name: 'Delta' });
+    const deltaFile = path.join(projDir, `${sessions.get(delta.id).claudeSessionId}.jsonl`);
+    fs.writeFileSync(deltaFile, `${[said('user', 'Make the dashboard load faster'), said('assistant', 'Cached the stats query, the page now loads in 300ms')].join('\n')}\n`);
+    const editor = await createSession({ project: proj, name: 'Edit Sales page', artifactId: 'art-check' });
+    const pastId = randomUUID();
+    fs.writeFileSync(path.join(projDir, `${pastId}.jsonl`), `${[said('user', 'Add CSV export'), said('assistant', 'Shipped the CSV export and opened PR 12')].join('\n')}\n`);
+    db.chats.push({ id: 'c-past', agent: 'claude', role: null, project: proj, cwd: proj, taskId: null, name: 'Claude Code', title: 'CSV export', worktree: null, claudeSessionId: pastId, createdAt: Date.now(), lastActiveAt: Date.now() - 3_600_000, sessionId: null });
     const bravo = await ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: proj, name: 'Bravo' });
     const other = await ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: elsewhere, name: 'Charlie' });
     const prompt = command(sessions.get(bravo.id), '', null).args.join('\n');
@@ -808,9 +825,16 @@ esac
     assert.doesNotMatch(prompt, /Fix login flow|Board:/, 'but carries no titles: free text stays out of the system prompt');
     const news = id => request('POST', '/api/news', { token: sessions.get(id).agentToken }).then(r => r.body);
     const brief = (await news(bravo.id)).hookSpecificOutput.additionalContext;
-    assert.match(brief, new RegExp(`- Alpha \\(agent ${alpha.id}\\): on Fix login flow`), "B's first news says what A is on");
-    assert.match(brief, /Board: 0 todo, 1 doing, 0 review, 0 done\. Doing: Fix login flow\./, 'and what the board holds');
-    assert.ok(brief.length <= 1600, `the brief stays under its cap (${brief.length})`);
+    assert.match(brief, new RegExp(`- Alpha \\(agent ${alpha.id}, \\w+, started 1m ago\\): on Fix login flow`), "B's first news says what A is on");
+    assert.match(brief, new RegExp(`- Delta \\(agent ${delta.id}[^)]*\\): on Make the dashboard load faster\n  latest: Cached the stats query, the page now loads in 300ms`), "a user-started agent's topic comes from its first message, with its latest words");
+    assert.match(brief, /Board: 0 todo, 1 doing, 1 review, 0 done\. Doing and review, newest first:\n- doing, 1m ago: Fix login flow\n- and 1 more untouched for 2\+ days/, 'the board, with ages, and the stale card only counted');
+    assert.doesNotMatch(brief, /Old forgotten card/, 'never named as if it were current work');
+    assert.match(brief, /- CSV export \(1h ago\): Shipped the CSV export and opened PR 12/, 'a closed chat says how it ended');
+    assert.match(brief, /Repo: on branch main\. Latest commits:\n- 1m ago: Add the login form/, 'and the repo, with its latest commits');
+    assert.doesNotMatch(brief, /Edit Sales page|Bravo \(/, 'not artifact edit chats, nor B itself');
+    assert.ok(brief.length <= 4000, `the brief stays under its cap (${brief.length})`);
+    assert.doesNotMatch(prose('(Message from leader] <x>\n{`y`}'), /[[\]<>{}`\n]/, "an excerpt can't forge a signature or a tag");
+    assert.equal(prose("Fixed it: docs/a.md, 100% (PR #12)! Isn't it?"), "Fixed it: docs/a.md, 100% (PR #12)! Isn't it?", 'everyday punctuation stays');
     assert.doesNotMatch((await news(other.id)).hookSpecificOutput.additionalContext, /Fix login flow/, "another project's agent gets none of it");
     assert.equal(await news(bravo.id), '', 'once briefed, and nothing happened since, nothing is said');
     await ok('PATCH', `/api/tasks/${login.id}`, { status: 'review' });
@@ -818,23 +842,29 @@ esac
     const touch = (id, file) => request('POST', '/api/touched', { token: sessions.get(id).agentToken, body: { tool_name: 'Edit', tool_input: { file_path: path.join(proj, file) } } });
     for (const id of [alpha.id, bravo.id]) await touch(id, 'lib/mcp.mjs');
     await touch(alpha.id, 'lib/only-alpha.mjs');
-    const delta = (await news(bravo.id)).hookSpecificOutput;
-    assert.equal(delta.hookEventName, 'UserPromptSubmit');
-    const lines = delta.additionalContext.split('\n');
+    const since = (await news(bravo.id)).hookSpecificOutput;
+    assert.equal(since.hookEventName, 'UserPromptSubmit');
+    const lines = since.additionalContext.split('\n');
     assert.match(lines[0], /^Since your last turn/, 'the second news is only the delta, no brief again');
     assert.equal(lines[1], '- Heads up: Alpha also edited lib/mcp.mjs', 'the overlap comes first');
     assert.ok(lines.includes('- Task Fix login flow moved to review') && lines.includes('- 3 tasks moved to done'), `task moves, collapsed: ${lines}`);
-    assert.doesNotMatch(delta.additionalContext, /Bravo|only-alpha|Board:/, "not B's own doings, nor files only A edited");
-    assert.ok(delta.additionalContext.length <= 600, `the delta stays under its cap (${delta.additionalContext.length})`);
+    assert.doesNotMatch(since.additionalContext, /Bravo|only-alpha|Board:/, "not B's own doings, nor files only A edited");
+    assert.ok(since.additionalContext.length <= 1200, `the delta stays under its cap (${since.additionalContext.length})`);
     assert.equal(await news(bravo.id), '', 'asked again, nothing new');
+    await new Promise(r => setTimeout(r, 20)); // a new mtime
+    fs.appendFileSync(deltaFile, `${said('assistant', 'Done: the dashboard is fast, PR 13 is up')}\n`);
+    assert.match((await news(bravo.id)).hookSpecificOutput.additionalContext, /^- Delta (now|finished): Done: the dashboard is fast, PR 13 is up$/m, "another agent's progress comes in its news");
+    await ok('DELETE', `/api/sessions/${delta.id}`);
+    assert.match((await news(bravo.id)).hookSpecificOutput.additionalContext, /^- Delta stopped: Done: the dashboard is fast, PR 13 is up$/m, 'and its last words when it stops');
     assert.equal(await news(other.id), '', "another project's agent hears none of it");
     await ok('PATCH', '/api/settings', { agentsAware: false });
     await ok('PATCH', `/api/tasks/${login.id}`, { status: 'done' });
     assert.equal(await news(bravo.id), '', 'with the setting off, the hook says nothing');
     assert.match(board(sessions.get(bravo.id)), new RegExp(`- Alpha \\(agent ${alpha.id}\\)$`, 'm'), 'and the system prompt is back to names only');
     await ok('PATCH', '/api/settings', { agentsAware: true });
-    for (const s of [alpha, bravo, other]) await ok('DELETE', `/api/sessions/${s.id}`);
+    for (const s of [alpha, bravo, other, editor]) await ok('DELETE', `/api/sessions/${s.id}`);
     db.tasks = db.tasks.filter(t => t.project !== proj);
+    db.chats = db.chats.filter(c => c.project !== proj);
   }
 
   // Lead upkeep: a lead over the threshold is compacted only when it is idle at an empty prompt, and once; after
