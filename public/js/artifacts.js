@@ -65,7 +65,7 @@ export function toolbar() {
     h('button', { class: 'icon-btn', title: 'Move to a folder', 'aria-label': 'Move to a folder', 'aria-haspopup': 'menu', onClick: e => menu(e.currentTarget, moveItems(a), { align: 'right' }) }, icon('folder', 15)),
     h('button', { class: 'icon-btn', title: 'Rename', onClick: () => rename(a) }, icon('pen', 15)),
     h('button', { class: 'icon-btn', title: 'Delete', onClick: () => remove(a) }, icon('trash', 15)),
-    h('button', { class: 'btn', onClick: () => openInBrowser(a) }, icon('external', 15), 'Open in browser'),
+    h('button', { class: 'btn', title: 'Open in browser', 'aria-label': 'Open in browser', onClick: () => openInBrowser(a) }, icon('external', 15), h('span', { class: 'wide' }, 'Open in browser')),
     h('button', { class: 'btn primary', onClick: () => publish(a) }, icon('send', 15), a.published ? 'Publish again' : 'Publish'),
   ].filter(Boolean);
 }
