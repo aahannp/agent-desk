@@ -1,7 +1,7 @@
 // Graph view: who is doing what. Each agent or shell is a node, messages between them are edges, and named groups
 // are soft bubbles around their members. A small force layout places them, then settles and stops; dragging pins a node.
 // The layout lives in world coordinates; one transform on the world layer pans and zooms it, like a map.
-import { state, api, h, icon, avatar, on, toast, guard, actions, modal, confirmDialog, menu, ago, agentLabel, chatTitle, projectSessions, markdown, MONO, STATUS_LABEL, TEAM_COLORS } from './ui.js';
+import { state, api, h, icon, avatar, on, toast, guard, actions, modal, confirmDialog, menu, ago, agentLabel, chatTitle, baseName, projectSessions, markdown, MONO, STATUS_LABEL, TEAM_COLORS } from './ui.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const svg = (tag, attrs = {}) => {
@@ -17,6 +17,8 @@ const ZOOM = [0.3, 3];
 let root, stage, world, zoomLabel, hullLayer, edgeLayer, pulseLayer, nodeLayer, labelLayer, lassoEl, tipEl, legendEl, selBar, panel;
 let messages = [];
 let groups = [];
+let depts = []; // with "All departments" on, one bubble per project folder: { project, name, color, ids }
+let allDepts = false;
 let showExited = false;
 let nodes = []; // the sessions on the graph
 let edges = []; // { kind: 'message' | 'started', a, b, ... }
@@ -37,14 +39,17 @@ let view = { x: 0, y: 0, k: 1 }; // the camera: a world point (x, y) shows at (x
 let aim = null; // a view the camera is gliding to
 let manual = false; // you've panned or zoomed, so the camera stops framing the graph by itself
 let follow = false; // keep framing the graph while its layout settles
-const views = new Map(); // project -> { view, manual }, for this session
-let viewProject = '';
+const views = new Map(); // project (or '*' for all departments) -> { view, manual }, for this session
+let viewScope = '';
 
 const isShown = () => actions.currentView?.() === 'graph';
 const keyOf = s => s.chatId || s.id; // a group keeps an agent across restarts by its chat
 const byId = id => state.sessions.find(s => s.id === id);
-const nameOf = id => (s => (s ? chatTitle(s) : 'An agent'))(byId(id));
+const nameOf = id => (s => (s ? chatTitle(s) + (allDepts ? ` (${deptName(s)})` : '') : 'An agent'))(byId(id));
 const groupsOf = s => groups.filter(g => g.members.includes(keyOf(s)));
+const scope = () => (allDepts ? '*' : state.project);
+const bubbles = () => (allDepts ? depts : groups);
+const deptName = s => (p => p?.name ?? baseName(s.project))(state.projects.find(p => p.path === s.project));
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 export function mount(el) {
@@ -73,25 +78,13 @@ export function mount(el) {
   // Focusing a node that's out of view must not scroll these (they hide overflow, but can still scroll): the camera moves instead.
   root.addEventListener('scroll', e => (e.target === root || e.target === stage) && e.target.scrollTo(0, 0), true);
 
-  on('project', () => {
-    views.set(viewProject, { view, manual });
-    viewProject = state.project;
-    ({ view, manual } = views.get(viewProject) ?? { view: { x: 0, y: 0, k: 1 }, manual: false });
-    aim = null;
-    applyView();
-    messages = [];
-    groups = [];
-    pos.clear();
-    selected.clear();
-    closePanel();
-    if (isShown()) load();
-  });
+  on('project', () => scope() !== viewScope && rescope());
   on('sessions', () => isShown() && render());
   on('theme', () => mirror && (mirror.term.options.theme = state.termTheme));
   on('tasks', () => open?.kind === 'node' && isShown() && refreshNode(false));
   on('groups', () => isShown() && loadGroups());
   on('agent-message', e => {
-    if (e.project !== state.project || !e.toId) return;
+    if ((!allDepts && e.project !== state.project) || !e.toId) return;
     messages.push({ at: e.at, project: e.project, fromId: e.fromId, fromName: e.fromName, toId: e.toId, toName: e.toName, via: e.via });
     if (!isShown()) return;
     render();
@@ -110,8 +103,25 @@ export function mount(el) {
   }).observe(stage);
 }
 
+// Switching project, or turning "All departments" on or off: each keeps its own camera.
+function rescope() {
+  views.set(viewScope, { view, manual });
+  viewScope = scope();
+  ({ view, manual } = views.get(viewScope) ?? { view: { x: 0, y: 0, k: 1 }, manual: false });
+  aim = null;
+  applyView();
+  messages = [];
+  groups = [];
+  nodes = []; // and edges: the running layout must not look up positions that were just cleared
+  edges = [];
+  pos.clear();
+  selected.clear();
+  closePanel();
+  if (isShown()) load();
+}
+
 export const show = () => {
-  viewProject ||= state.project;
+  viewScope ||= scope();
   measure();
   load();
   if (open?.kind === 'node' && !mirror && byId(open.id)) screenOf(byId(open.id));
@@ -119,18 +129,25 @@ export const show = () => {
 export const hide = () => dropMirror();
 
 export const toolbar = () => [
+  h('label', { class: 'toggle', title: 'Show every project folder at once, each as a bubble, with the asks between them' },
+    h('input', { type: 'checkbox', checked: allDepts, onChange: e => { allDepts = e.target.checked; rescope(); } }), h('span', {}, 'All departments')),
   h('label', { class: 'toggle', title: 'Show agents and shells that have finished, dimmed' },
     h('input', { type: 'checkbox', checked: showExited, onChange: e => { showExited = e.target.checked; render(); } }), h('span', {}, 'Show exited')),
   h('button', { class: 'btn sm', title: 'Unpin every node and lay them out again', onClick: relayout }, icon('refresh', 13), 'Re-layout'),
 ];
 
 const load = guard(async () => {
+  if (allDepts) {
+    messages = await api('GET', '/api/messages?all=1');
+    return render();
+  }
   if (!state.project) return render();
   const q = `?project=${encodeURIComponent(state.project)}`;
   [messages, groups] = await Promise.all([api('GET', `/api/messages${q}`), api('GET', `/api/groups${q}`)]);
   render();
 });
 const loadGroups = guard(async () => {
+  if (allDepts) return; // groups belong to one project
   groups = await api('GET', `/api/groups?project=${encodeURIComponent(state.project)}`);
   render();
   if (open?.kind === 'group') groups.some(g => g.id === open.id) ? groupPanel() : closePanel();
@@ -144,7 +161,8 @@ function measure() {
 // ---------- What's on the graph ----------
 function render() {
   if (!root) return;
-  nodes = projectSessions().filter(s => (s.kind === 'agent' || s.kind === 'shell') && (showExited || !s.exited));
+  nodes = (allDepts ? state.sessions : projectSessions()).filter(s => (s.kind === 'agent' || s.kind === 'shell') && !s.artifactId && (showExited || !s.exited));
+  depts = allDepts ? state.projects.map((p, i) => ({ project: p.path, name: p.name, color: TEAM_COLORS[i % TEAM_COLORS.length], ids: nodes.filter(s => s.project === p.path).map(s => s.id) })) : [];
   const ids = new Set(nodes.map(s => s.id));
   for (const id of pos.keys()) if (!ids.has(id)) pos.delete(id);
   for (const id of selected) if (!ids.has(id)) selected.delete(id);
@@ -174,10 +192,10 @@ function render() {
   drawSelBar();
   if (open?.kind === 'node') refreshNode(false);
   if (!nodes.length && !stage.querySelector('.pane-empty')) {
-    stage.append(h('div', { class: 'pane-empty graph-empty' }, 'Nothing running in this project. Start an agent or a shell and it shows up here.'));
+    stage.append(h('div', { class: 'pane-empty graph-empty' }, allDepts ? 'Nothing running in any department.' : 'Nothing running in this project. Start an agent or a shell and it shows up here.'));
   } else if (nodes.length) stage.querySelector('.graph-empty')?.remove();
 
-  const now = [nodes.map(s => s.id).join(), edges.map(e => e.key).join(), groups.map(g => g.members.join()).join('|')].join('/');
+  const now = [nodes.map(s => s.id).join(), edges.map(e => e.key).join(), bubbles().map(g => g.ids?.join() ?? g.members.join()).join('|')].join('/');
   if (now !== shape) {
     shape = now;
     follow = !manual;
@@ -185,11 +203,22 @@ function render() {
   } else place();
 }
 
+// Where a node settles: the middle, or with "All departments" on, its department's spot on a ring around the middle.
+function home(s) {
+  const cx = size.width / 2 || 400;
+  const cy = size.height / 2 || 300;
+  const live = depts.filter(d => d.ids.length);
+  const i = live.findIndex(d => d.project === s.project);
+  if (live.length < 2 || i < 0) return { cx, cy };
+  const r = 120 + 90 * live.length;
+  const a = (i / live.length) * 2 * Math.PI - Math.PI / 2;
+  return { cx: cx + Math.cos(a) * r, cy: cy + Math.sin(a) * r };
+}
+
 // A new node starts next to whoever started it, the lead in the middle, anyone else near the middle.
 function spawn(s) {
   const near = pos.get(s.startedBy?.id);
-  const cx = size.width / 2 || 400;
-  const cy = size.height / 2 || 300;
+  const { cx, cy } = home(s);
   const jitter = r => (Math.random() - 0.5) * r;
   if (s.role === 'lead') return { x: cx, y: cy, vx: 0, vy: 0, pinned: false };
   return near ? { x: near.x + jitter(120), y: near.y + 60 + jitter(60), vx: 0, vy: 0, pinned: false } : { x: cx + jitter(240), y: cy + jitter(180), vx: 0, vy: 0, pinned: false };
@@ -217,7 +246,7 @@ function drawNodes() {
     const lead = s.role === 'lead';
     const sub = lead ? 'lead' : s.specialist ? (s.specialist.name === title ? s.specialist.role.split(/[:,]/)[0] : s.specialist.name) : s.kind === 'shell' ? 'shell' : agentLabel(s.agent);
     el.className = `gnode${lead ? ' lead' : ''}${s.exited ? ' exited' : ''}${selected.has(s.id) ? ' selected' : ''}${pos.get(s.id).pinned ? ' pinned' : ''}`;
-    el.setAttribute('aria-label', `${title}, ${STATUS_LABEL[status]?.toLowerCase() ?? status}${lead ? ', lead' : ''}${selected.has(s.id) ? ', selected' : ''}`);
+    el.setAttribute('aria-label', `${title}${allDepts ? ` in ${deptName(s)}` : ''}, ${STATUS_LABEL[status]?.toLowerCase() ?? status}${lead ? ', lead' : ''}${selected.has(s.id) ? ', selected' : ''}`);
     el.title = `${title}\nClick for details · Shift-click to select · Drag to pin, double-click to unpin`;
     el.replaceChildren(
       h('span', { class: 'gnode-face' }, avatar(s), h('span', { class: `dot ${status}` })),
@@ -230,7 +259,8 @@ function drawEdges() {
   edgeLayer.replaceChildren();
   for (const e of edges) {
     const fresh = e.kind === 'message' && Date.now() - e.last.at < FRESH;
-    e.line = svg('path', { class: `graph-edge ${e.kind}${fresh ? ' fresh' : ''}${fresh && e.last.fromId !== e.a ? ' rev' : ''}` });
+    const cross = byId(e.a)?.project !== byId(e.b)?.project;
+    e.line = svg('path', { class: `graph-edge ${e.kind}${cross ? ' cross' : ''}${fresh ? ' fresh' : ''}${fresh && e.last.fromId !== e.a ? ' rev' : ''}` });
     const hit = svg('path', { class: 'graph-hit' });
     const tip = e.kind === 'started' ? `${nameOf(e.a)} started ${nameOf(e.b)}`
       : [...e.ways.values()].map(w => `${nameOf(w.from)} → ${nameOf(w.to)} · ${plural(w.count, 'message')} · last ${ago(w.at)}`).join('\n');
@@ -261,13 +291,16 @@ function showTip(ev, text) {
 function drawHulls() {
   hullLayer.replaceChildren();
   labelLayer.replaceChildren();
-  for (const g of groups) {
-    g.ids = nodes.filter(s => g.members.includes(keyOf(s))).map(s => s.id);
+  for (const g of bubbles()) {
+    if (!allDepts) g.ids = nodes.filter(s => g.members.includes(keyOf(s))).map(s => s.id);
     if (!g.ids.length) continue;
     g.hull = svg('path', { class: 'graph-hull', fill: g.color, stroke: g.color, 'stroke-width': PAD * 2 });
     hullLayer.append(g.hull);
-    g.label = h('button', { class: 'graph-group-label', style: `--g: ${g.color}`, title: `Show the ${g.name} group`, onClick: () => openGroup(g.id) },
-      g.name, h('span', { class: 'n' }, g.ids.length));
+    g.label = allDepts
+      ? h('button', { class: 'graph-group-label', style: `--g: ${g.color}`, title: `Go to ${g.name}`, 'aria-label': `${g.name}, ${plural(g.ids.length, 'agent')}. Go to this department.`,
+        onClick: () => actions.switchProject(g.project) }, g.name, h('span', { class: 'n' }, g.ids.length))
+      : h('button', { class: 'graph-group-label', style: `--g: ${g.color}`, title: `Show the ${g.name} group`, onClick: () => openGroup(g.id) },
+        g.name, h('span', { class: 'n' }, g.ids.length));
     labelLayer.append(g.label);
   }
 }
@@ -278,6 +311,7 @@ function drawLegend() {
     dot('working', 'Working'), dot('idle', 'Idle'), dot('needs-input', 'Needs you'), dot('exited', 'Exited'),
     h('span', { class: 'sep' }),
     h('span', { class: 'line' }, h('i', { class: 'solid' }), 'Messages'), h('span', { class: 'line' }, h('i', { class: 'dashed' }), 'Started'),
+    allDepts && h('span', { class: 'line' }, h('i', { class: 'dotted' }), 'Between departments'),
     h('span', { class: 'sep' }),
     h('span', { class: 'graph-hint' }, 'Drag to pan · Pinch or ⌘-scroll to zoom · Shift-drag to select'),
     groups.length > 0 ? h('span', { class: 'sep' }) : '',
@@ -285,7 +319,7 @@ function drawLegend() {
 }
 
 function drawSelBar() {
-  selBar.hidden = !selected.size;
+  selBar.hidden = !selected.size || allDepts; // groups belong to one project
   if (!selected.size) return selBar.replaceChildren();
   const ids = [...selected];
   selBar.replaceChildren(
@@ -323,7 +357,7 @@ function tick() {
     p.vx += (dx / d) * f; p.vy += (dy / d) * f;
     q.vx -= (dx / d) * f; q.vy -= (dy / d) * f;
   }
-  for (const g of groups) {
+  for (const g of bubbles()) {
     const members = (g.ids ?? []).map(id => pos.get(id)).filter(Boolean);
     if (members.length < 2) continue;
     const cx = members.reduce((n, p) => n + p.x, 0) / members.length;
@@ -331,9 +365,10 @@ function tick() {
     for (const p of members) { p.vx += (cx - p.x) * 0.04 * alpha; p.vy += (cy - p.y) * 0.04 * alpha; }
   }
   for (const [s, p] of list) {
-    const k = (s.role === 'lead' ? 0.08 : 0.012) * alpha;
-    p.vx += (W / 2 - p.x) * k;
-    p.vy += (H / 2 - p.y) * k;
+    const k = (s.role === 'lead' ? 0.08 : allDepts ? 0.03 : 0.012) * alpha;
+    const { cx, cy } = allDepts ? home(s) : { cx: W / 2, cy: H / 2 };
+    p.vx += (cx - p.x) * k;
+    p.vy += (cy - p.y) * k;
     if (p.pinned || dragging === s.id) { p.vx = p.vy = 0; continue; }
     p.vx *= 0.6;
     p.vy *= 0.6;
@@ -438,7 +473,7 @@ function fitView() {
   let box = null;
   const take = (l, t, rr, b) => (box = box ? { l: Math.min(box.l, l), t: Math.min(box.t, t), r: Math.max(box.r, rr), b: Math.max(box.b, b) } : { l, t, r: rr, b });
   for (const s of nodes) (p => p && take(p.x - 70, p.y - 32, p.x + 70, p.y + 62))(pos.get(s.id));
-  for (const g of groups) for (const id of g.ids ?? []) (p => p && take(p.x - PAD, p.y + 18 - PAD - 32, p.x + PAD, p.y + 18 + PAD))(pos.get(id));
+  for (const g of bubbles()) for (const id of g.ids ?? []) (p => p && take(p.x - PAD, p.y + 18 - PAD - 32, p.x + PAD, p.y + 18 + PAD))(pos.get(id));
   if (!box || r.right - r.left < 120) return { ...view };
   const k = Math.min(1, Math.max(ZOOM[0], Math.min((r.right - r.left - 48) / (box.r - box.l), (r.bottom - r.top - 48) / (box.b - box.t))));
   return { k, x: (r.left + r.right) / 2 - ((box.l + box.r) / 2) * k, y: (r.top + r.bottom) / 2 - ((box.t + box.b) / 2) * k };
@@ -539,7 +574,7 @@ function place() {
     e.hit.setAttribute('d', d);
     e.badge?.setAttribute('transform', `translate(${(p.x + q.x) / 2}, ${(p.y + q.y) / 2})`);
   }
-  for (const g of groups) {
+  for (const g of bubbles()) {
     if (!g.hull) continue;
     const points = g.ids.map(id => pos.get(id)).filter(Boolean).map(p => [p.x, p.y + 18]); // a little low, to take in the name
     if (!points.length) continue;
@@ -760,7 +795,7 @@ function openNode(id) {
     [
       h('div', { class: 'actions-row' },
         h('button', { class: 'btn sm', onClick: () => actions.focusSession(s.id) }, icon('terminal', 13), 'Go to pane'),
-        h('button', { class: 'btn sm', onClick: e => addToMenu(e.currentTarget, [s.id]) }, icon('plus', 13), 'Add to group')),
+        !allDepts && h('button', { class: 'btn sm', onClick: e => addToMenu(e.currentTarget, [s.id]) }, icon('plus', 13), 'Add to group')),
       refs.facts,
       refs.groups,
       h('div', { class: 'graph-screen-head' }, h('span', { class: 'section-label' }, 'Screen'), refs.live, h('span', { class: 'grow' }),
