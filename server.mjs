@@ -160,7 +160,7 @@ route('PATCH', '/api/settings', ({ req, body }) => {
   notFromAgent(req, 'change Relay\'s settings');
   for (const [key, value] of Object.entries(body)) {
     if (!(key in db.settings)) continue;
-    if (['agentsCanSpawn', 'agentsCanMessage', 'agentsCanEditTeam', 'agentsAutonomous', 'fancyCursor', 'worktreeByDefault', 'sidebarHidden', 'mixFolders', 'agentsAware'].includes(key) && typeof value !== 'boolean') throw fail(400, `${key} is true or false`);
+    if (['agentsCanSpawn', 'agentsCanMessage', 'agentsCanEditTeam', 'agentsAutonomous', 'fancyCursor', 'worktreeByDefault', 'sidebarHidden', 'mixFolders', 'agentsAware', 'departmentsCanAsk'].includes(key) && typeof value !== 'boolean') throw fail(400, `${key} is true or false`);
     if (key === 'scrollSpeed' && !(Number(value) >= 0.25 && Number(value) <= 4)) throw fail(400, 'Scroll speed is between 0.25 and 4');
     if (key === 'agentDefaults') {
       const ok = ['claude', 'lead'].every(k => T.MODELS.includes(value?.[k]?.model) && T.EFFORTS.includes(value?.[k]?.effort));
@@ -371,21 +371,25 @@ function recentMessages(project) {
   return recent;
 }
 // Who messaged whom, when and how (never what), for the Graph's edges. The last 500 are kept.
+const deptName = project => S.plain(path.basename(project));
 function logMessage(project, from, to, via) {
   const entry = { at: Date.now(), project, fromId: from?.id ?? null, fromName: from?.name ?? 'An agent', toId: to.id, toName: to.name, via };
   db.messages = [...db.messages, entry].slice(-500);
-  S.note(project, from?.id ?? null, 'messages between agents', `${S.plain(entry.fromName)} messaged ${S.plain(to.name)}`);
+  // A department's question or answer is told as one, with where it came from, never what it said.
+  const where = from && from.project !== project ? ` (in ${deptName(from.project)})` : '';
+  const what = { ask_department: `asked ${S.plain(to.name)} a question`, answer_department: `answered ${S.plain(to.name)}'s question` }[via] ?? `messaged ${S.plain(to.name)}`;
+  S.note(project, from?.id ?? null, 'messages between agents', `${S.plain(entry.fromName)}${where} ${what}`);
   changed('messages');
   return entry;
 }
 // Signed with who sent it, by a plain name, so the text can't pass for another signature (or for the user): invisible
-// characters go, and any "[message from" in it, however spaced or disguised, starts with ( instead. A letter that isn't
-// ASCII counts as one of "message from", so a Cyrillic М can't stand in for M.
+// characters go, and any "[message from" (or a department's "[question from" / "[answer from") in it, however spaced or
+// disguised, starts with ( instead. A letter that isn't ASCII counts as one of "message from", so a Cyrillic М can't stand in for M.
 // ponytail: spellings that look different ("fr0m") still pass; fence the body off if those ever matter.
 const like = word => [...word].map(c => `[${c}\\P{ASCII}]`).join('');
-const FAKE_SIGNATURE = new RegExp(`\\[(?=[^\\p{L}\\p{N}]*${like('message')}[^\\p{L}\\p{N}]*${like('from')})`, 'giu');
-const sign = (from, text) => `[Message from ${from ? `${S.plain(from.name)} (agent ${from.id})` : 'an agent outside Relay'}]\n${
-  text.normalize('NFKC').replace(/\p{Default_Ignorable_Code_Point}/gu, '').replace(FAKE_SIGNATURE, '(')}`;
+const FAKE_SIGNATURE = new RegExp(`\\[(?=[^\\p{L}\\p{N}]*(?:${['message', 'question', 'answer'].map(like).join('|')})[^\\p{L}\\p{N}]*${like('from')})`, 'giu');
+const defuse = text => text.normalize('NFKC').replace(/\p{Default_Ignorable_Code_Point}/gu, '').replace(FAKE_SIGNATURE, '(');
+const sign = (from, text) => `[Message from ${from ? `${S.plain(from.name)} (agent ${from.id})` : 'an agent outside Relay'}]\n${defuse(text)}`;
 route('POST', '/api/messages', async ({ req, body }) => {
   mayMessage(req);
   const from = caller(req);
@@ -421,6 +425,73 @@ route('POST', '/api/messages', async ({ req, body }) => {
 route('GET', '/api/messages', ({ req, query }) => {
   const project = projectFor(req, query.get('project'));
   return db.messages.filter(m => m.project === project);
+});
+
+// Departments: each other project folder. An agent may ask one a question and get a short answer back, the one door
+// in the wall around its project: it never sees their chats, board or agents, and they choose what to share.
+const asks = new Map(); // ask id -> { from, fromName, to, at }, until answered or an hour old
+const HOUR = 60 * 60_000;
+const mayAskDepartments = req => {
+  if (db.settings.departmentsCanAsk === false) throw fail(403, 'Departments asking each other is turned off in Relay settings.');
+  return caller(req) ?? (() => { throw fail(403, 'Only agents inside Relay can ask other departments'); })();
+};
+const liveAgents = project => [...S.sessions.values()].filter(s => !s.exited && s.kind === 'agent' && (!project || s.project === project))
+  .sort((a, b) => b.lastOutputAt - a.lastOutputAt);
+const departments = from => [...new Set([...db.projects.map(p => p.path), ...liveAgents().map(s => s.project)])].filter(p => p !== from.project);
+route('GET', '/api/departments', ({ req }) => departments(mayAskDepartments(req)).map(p => (agents =>
+  ({ name: path.basename(p), path: p, agents: agents.length, lead: agents.some(s => s.role === 'lead') }))(liveAgents(p))));
+route('POST', '/api/departments/ask', async ({ req, body }) => {
+  mayMessage(req); // asks and answers type into a pane, so they're messages too
+  const from = mayAskDepartments(req);
+  const question = String(body.question ?? '').trim();
+  const ref = String(body.department ?? '').trim();
+  if (!question || !ref) throw fail(400, 'Say which department and what the question is');
+  if (question.length > 8000) throw fail(413, 'Keep questions under 8,000 characters');
+  const found = departments(from).filter(p => p === expand(ref) || path.basename(p).toLowerCase() === ref.toLowerCase());
+  if (found.length !== 1) throw fail(found.length ? 409 : 404, found.length ? `Several departments are called "${ref}"; give its path` : `No department called "${ref}". list_departments shows them.`);
+  const project = found[0];
+  const agents = liveAgents(project);
+  let target = agents.find(s => s.role === 'lead') ?? agents.find(s => s.agent === 'claude');
+  // Counted against both folders, so a looping asker can't send 20 to each department.
+  const recent = recentMessages(project);
+  const mine = recentMessages(from.project);
+  for (const [id, a] of asks) if (Date.now() - a.at > HOUR) asks.delete(id);
+  const askId = randomUUID().slice(0, 8);
+  const signed = `[Question from ${S.plain(from.name)} in the ${deptName(from.project)} department (ask id ${askId})]\n${defuse(question)}\n\n` +
+    `(Answer briefly with answer_department and ask id ${askId}. Share only what they need; they can't see your chats or board.)`;
+  if (target) S.deliver(target, signed);
+  else {
+    mayStartAgents(req);
+    target = await S.createSession({ project, prompt: signed, startedBy: starter(req) });
+  }
+  asks.set(askId, { from: from.id, fromName: from.name, to: target.id, at: Date.now() });
+  sent.set(project, [...recent, Date.now()]);
+  sent.set(from.project, [...mine, Date.now()]);
+  bus.emit('event', { type: 'agent-message', from: `${from.name} (${deptName(from.project)})`, to: target.name, ...logMessage(project, from, target, 'ask_department') });
+  return { askId, deliveredTo: { name: target.name, department: path.basename(project), started: !agents.includes(target) } };
+});
+route('POST', '/api/departments/answer', ({ req, body }) => {
+  mayMessage(req);
+  const from = mayAskDepartments(req);
+  const askId = String(body.askId ?? '');
+  const ask = asks.get(askId);
+  if (!ask || Date.now() - ask.at > HOUR) throw fail(404, 'No open question with that ask id: each is answered once, within an hour');
+  if (ask.to !== from.id) throw fail(403, 'Only the agent the question was delivered to can answer it');
+  const answer = String(body.answer ?? '').trim();
+  if (!answer) throw fail(400, 'Give an answer');
+  const to = S.sessions.get(ask.from);
+  if (!to || to.exited) {
+    asks.delete(askId);
+    throw fail(410, `${ask.fromName} has finished, so there is no one to answer`);
+  }
+  // Departments share summaries, not transcripts.
+  const capped = answer.length > 2000 ? `${answer.slice(0, 2000)}... (cut at 2,000 characters)` : answer;
+  const recent = recentMessages(to.project);
+  S.deliver(to, `[Answer from the ${deptName(from.project)} department (ask id ${askId})]\n${defuse(capped)}`);
+  asks.delete(askId); // once delivered: an asker busy at a prompt can be answered again later
+  sent.set(to.project, [...recent, Date.now()]);
+  bus.emit('event', { type: 'agent-message', from: `${from.name} (${deptName(from.project)})`, to: to.name, ...logMessage(to.project, from, to, 'answer_department') });
+  return { delivered: true, to: to.name, capped: capped !== answer };
 });
 
 // Groups on the Graph: you name them and pick who's in them; agents can't change them.

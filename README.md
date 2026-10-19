@@ -130,6 +130,9 @@ flowchart LR
   project's other agents (status, branch, what each is on), the board and recent chats, and before each turn
   hears what changed since (tasks moving, agents starting or waiting, PR links, messages), with a heads-up first
   when another agent edited a file it edited too. Under 1,600 and 600 characters, and nothing when nothing changed.
+- **Departments** (Settings, on by default): each project folder is a department. An agent can ask another
+  folder a question (`list_departments`, `ask_department`); it lands with that folder's lead, who answers in
+  under 2,000 characters (`answer_department`). Nothing else crosses: no chats, board or agents.
 - **Model and effort**: defaults for Claude Code agents, lead agents and each specialist (Christie on Sonnet,
   Browner on Opus, Scout on Haiku). Ask for "a lighter model" or "more effort" and the agent goes one step from
   its default.
@@ -176,7 +179,7 @@ flowchart LR
   done). Only tasks you brought over are written back, and only their status.
 - **Updates**: the version pill next to the logo checks this repo's GitHub releases. When a newer one is out it
   says Update, and one click downloads the new .dmg into your Downloads folder.
-- **MCP for your own Claude Code**: Settings shows a one-line `claude mcp add` that gives the same 18 board
+- **MCP for your own Claude Code**: Settings shows a one-line `claude mcp add` that gives the same 21 board
   tools to Claude Code anywhere.
 
 ## Safety
