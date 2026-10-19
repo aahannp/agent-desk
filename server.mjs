@@ -244,8 +244,9 @@ route('POST', '/api/touched', async ({ req, body }) => {
 
 // Chats: agent conversations kept after their pane closes or the app quits, so they can be opened again
 const findChat = id => db.chats.find(c => c.id === id) ?? (() => { throw fail(404, 'No such chat'); })();
-route('GET', '/api/chats', ({ query }) => {
-  const project = query.get('project') ? expand(query.get('project')) : null;
+route('GET', '/api/chats', ({ req, query }) => {
+  const project = fromAgent(req) ? (caller(req) ?? (() => { throw fail(403, 'Only agents inside Relay can reach other agents'); })()).project
+    : query.get('project') ? expand(query.get('project')) : null; // an agent sees only its own project's chats
   return db.chats.filter(c => !project || c.project === project).map(S.chatInfo).sort((a, b) => b.lastActiveAt - a.lastActiveAt);
 });
 route('POST', '/api/chats/:id/open', async ({ params }) => {
@@ -297,6 +298,13 @@ const noShell = (req, s, what) => {
   if (fromAgent(req) && s.kind === 'shell') throw fail(403, `Agents can't ${what} shell panes; ask the user`);
   return s;
 };
+route('GET', '/api/chats/:id/chat', ({ req, params, query }) => { // a closed pane's conversation, same project only
+  const chat = findChat(params.id);
+  const from = caller(req);
+  if (fromAgent(req) && !from) throw fail(403, 'Only agents inside Relay can reach other agents');
+  if (from && chat.project !== from.project) throw fail(403, 'Agents can only reach agents in their own project');
+  return S.chatConversation(chat, Math.min(Number(query.get('last')) || 30, 200));
+});
 route('GET', '/api/sessions/:id/chat', ({ req, params, query }) => S.conversation(sameProject(req, params.id), Math.min(Number(query.get('last')) || 30, 200)));
 route('POST', '/api/sessions/:id/clone', async ({ req, params, body }) => {
   mayStartAgents(req);

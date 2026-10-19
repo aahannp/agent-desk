@@ -1000,6 +1000,23 @@ esac
   }
   const listedNow = JSON.parse((await fromChristie('list_agents', {})).content[0].text).map(x => x.id);
   assert.ok(listedNow.includes(asker.id) && listedNow.includes(shell.id) && !listedNow.includes(outsider.id), 'list_agents shows this project only');
+  // A closed pane's conversation stays readable: list_agents shows it, read_agent_chat shows the command and the PR link
+  const pastId = randomUUID();
+  fs.writeFileSync(path.join(askerDir, `${pastId}.jsonl`), [
+    line({ type: 'user', message: { content: 'Open a PR for the login fix' } }),
+    line({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'gh pr create --title "Fix login"' } }] } }),
+    line({ type: 'user', message: { content: [{ type: 'tool_result', content: 'Creating pull request\nhttps://github.com/x/y/pull/7' }] } }),
+  ].join('\n'));
+  db.chats.push(chat('c-past', pastId), { ...chat('c-other', randomUUID()), project: elsewhere, cwd: elsewhere });
+  const listedPast = JSON.parse((await fromChristie('list_agents', {})).content[0].text);
+  assert.equal(listedPast.find(x => x.id === 'c-past')?.status, 'closed', 'list_agents also lists the closed chats of this project');
+  assert.ok(!listedPast.some(x => x.id === 'c-other'), "but not another project's");
+  const pastText = (await fromChristie('read_agent_chat', { agent: 'c-past' })).content[0].text;
+  assert.match(pastText, /ran: gh pr create --title \\"Fix login\\"/, 'read_agent_chat on a closed chat shows the command it ran');
+  assert.match(pastText, /https:\/\/github\.com\/x\/y\/pull\/7/, 'and the PR link it printed');
+  assert.equal(JSON.parse(pastText).messages.at(-1).from, 'agent', 'labeled as the agent\'s, not the user\'s');
+  assert.equal((await request('GET', '/api/chats/c-other/chat', { headers: asAgent })).status, 403, "an agent can't read another project's closed chat");
+  assert.ok(!(await request('GET', '/api/chats', { headers: asAgent })).body.some(c => c.project !== repo), 'or list it');
   assert.ok(!(await fromChristie('read_agent_output', { id: asker.id })).isError, 'read_agent_output works in the project');
   assert.ok(!(await fromChristie('get_agent_diff', { id: asker.id })).isError, 'get_agent_diff too');
   for (const [name, id] of [['read_agent_output', outsider.id], ['read_agent_output', shell.id], ['stop_agent', outsider.id], ['get_agent_diff', outsider.id]]) {
