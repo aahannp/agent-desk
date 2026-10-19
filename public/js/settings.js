@@ -78,8 +78,8 @@ function render() {
         h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.mixFolders === true, onChange: e => set({ mixFolders: e.target.checked }) }))),
       setting("Tell agents what's happening around them", 'Each agent starts with a short summary of the other agents and the board, and hears what changed before each turn, like a task moving or another agent editing the same file.',
         h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.agentsAware !== false, onChange: e => set({ agentsAware: e.target.checked }) }))),
-      setting('Let departments ask each other', 'Each project folder is a department. An agent can ask another folder\'s lead a question and gets a short answer back; it never reads their chats or board.',
-        h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.departmentsCanAsk !== false, onChange: e => set({ departmentsCanAsk: e.target.checked }) })))),
+      setting('Let spaces ask each other', 'Each project folder is a space. An agent can ask another folder\'s lead a question and gets a short answer back; it never reads their chats or board.',
+        h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.spacesCanAsk !== false, onChange: e => set({ spacesCanAsk: e.target.checked }) })))),
 
     section('Team', 'Specialists are Claude agents with a name, one area of expertise, their own instructions and, if you like, a model. Every agent knows who is on the team, so it can hand a job to the right one. Start one from the New Claude Code menu.',
       h('div', { class: 'agent-list' }, state.specialists.map(x => h('div', { class: 'agent-row' },

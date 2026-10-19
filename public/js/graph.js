@@ -17,8 +17,8 @@ const ZOOM = [0.3, 3];
 let root, stage, world, zoomLabel, hullLayer, edgeLayer, pulseLayer, nodeLayer, labelLayer, lassoEl, tipEl, legendEl, selBar, panel;
 let messages = [];
 let groups = [];
-let depts = []; // with "All departments" on, one bubble per project folder: { project, name, color, ids }
-let allDepts = false;
+let spaces = []; // with "All spaces" on, one bubble per project folder: { project, name, color, ids }
+let allSpaces = false;
 let showExited = false;
 let nodes = []; // the sessions on the graph
 let edges = []; // { kind: 'message' | 'started', a, b, ... }
@@ -39,17 +39,17 @@ let view = { x: 0, y: 0, k: 1 }; // the camera: a world point (x, y) shows at (x
 let aim = null; // a view the camera is gliding to
 let manual = false; // you've panned or zoomed, so the camera stops framing the graph by itself
 let follow = false; // keep framing the graph while its layout settles
-const views = new Map(); // project (or '*' for all departments) -> { view, manual }, for this session
+const views = new Map(); // project (or '*' for all spaces) -> { view, manual }, for this session
 let viewScope = '';
 
 const isShown = () => actions.currentView?.() === 'graph';
 const keyOf = s => s.chatId || s.id; // a group keeps an agent across restarts by its chat
 const byId = id => state.sessions.find(s => s.id === id);
-const nameOf = id => (s => (s ? chatTitle(s) + (allDepts ? ` (${deptName(s)})` : '') : 'An agent'))(byId(id));
+const nameOf = id => (s => (s ? chatTitle(s) + (allSpaces ? ` (${spaceName(s)})` : '') : 'An agent'))(byId(id));
 const groupsOf = s => groups.filter(g => g.members.includes(keyOf(s)));
-const scope = () => (allDepts ? '*' : state.project);
-const bubbles = () => (allDepts ? depts : groups);
-const deptName = s => (p => p?.name ?? baseName(s.project))(state.projects.find(p => p.path === s.project));
+const scope = () => (allSpaces ? '*' : state.project);
+const bubbles = () => (allSpaces ? spaces : groups);
+const spaceName = s => (p => p?.name ?? baseName(s.project))(state.projects.find(p => p.path === s.project));
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 export function mount(el) {
@@ -84,7 +84,7 @@ export function mount(el) {
   on('tasks', () => open?.kind === 'node' && isShown() && refreshNode(false));
   on('groups', () => isShown() && loadGroups());
   on('agent-message', e => {
-    if ((!allDepts && e.project !== state.project) || !e.toId) return;
+    if ((!allSpaces && e.project !== state.project) || !e.toId) return;
     messages.push({ at: e.at, project: e.project, fromId: e.fromId, fromName: e.fromName, toId: e.toId, toName: e.toName, via: e.via });
     if (!isShown()) return;
     render();
@@ -103,7 +103,7 @@ export function mount(el) {
   }).observe(stage);
 }
 
-// Switching project, or turning "All departments" on or off: each keeps its own camera.
+// Switching project, or turning "All spaces" on or off: each keeps its own camera.
 function rescope() {
   views.set(viewScope, { view, manual });
   viewScope = scope();
@@ -130,14 +130,14 @@ export const hide = () => dropMirror();
 
 export const toolbar = () => [
   h('label', { class: 'toggle', title: 'Show every project folder at once, each as a bubble, with the asks between them' },
-    h('input', { type: 'checkbox', checked: allDepts, onChange: e => { allDepts = e.target.checked; rescope(); } }), h('span', {}, 'All departments')),
+    h('input', { type: 'checkbox', checked: allSpaces, onChange: e => { allSpaces = e.target.checked; rescope(); } }), h('span', {}, 'All spaces')),
   h('label', { class: 'toggle', title: 'Show agents and shells that have finished, dimmed' },
     h('input', { type: 'checkbox', checked: showExited, onChange: e => { showExited = e.target.checked; render(); } }), h('span', {}, 'Show exited')),
   h('button', { class: 'btn sm', title: 'Unpin every node and lay them out again', onClick: relayout }, icon('refresh', 13), 'Re-layout'),
 ];
 
 const load = guard(async () => {
-  if (allDepts) {
+  if (allSpaces) {
     messages = await api('GET', '/api/messages?all=1');
     return render();
   }
@@ -147,7 +147,7 @@ const load = guard(async () => {
   render();
 });
 const loadGroups = guard(async () => {
-  if (allDepts) return; // groups belong to one project
+  if (allSpaces) return; // groups belong to one project
   groups = await api('GET', `/api/groups?project=${encodeURIComponent(state.project)}`);
   render();
   if (open?.kind === 'group') groups.some(g => g.id === open.id) ? groupPanel() : closePanel();
@@ -161,8 +161,8 @@ function measure() {
 // ---------- What's on the graph ----------
 function render() {
   if (!root) return;
-  nodes = (allDepts ? state.sessions : projectSessions()).filter(s => (s.kind === 'agent' || s.kind === 'shell') && !s.artifactId && (showExited || !s.exited));
-  depts = allDepts ? state.projects.map((p, i) => ({ project: p.path, name: p.name, color: TEAM_COLORS[i % TEAM_COLORS.length], ids: nodes.filter(s => s.project === p.path).map(s => s.id) })) : [];
+  nodes = (allSpaces ? state.sessions : projectSessions()).filter(s => (s.kind === 'agent' || s.kind === 'shell') && !s.artifactId && (showExited || !s.exited));
+  spaces = allSpaces ? state.projects.map((p, i) => ({ project: p.path, name: p.name, color: TEAM_COLORS[i % TEAM_COLORS.length], ids: nodes.filter(s => s.project === p.path).map(s => s.id) })) : [];
   const ids = new Set(nodes.map(s => s.id));
   for (const id of pos.keys()) if (!ids.has(id)) pos.delete(id);
   for (const id of selected) if (!ids.has(id)) selected.delete(id);
@@ -192,7 +192,7 @@ function render() {
   drawSelBar();
   if (open?.kind === 'node') refreshNode(false);
   if (!nodes.length && !stage.querySelector('.pane-empty')) {
-    stage.append(h('div', { class: 'pane-empty graph-empty' }, allDepts ? 'Nothing running in any department.' : 'Nothing running in this project. Start an agent or a shell and it shows up here.'));
+    stage.append(h('div', { class: 'pane-empty graph-empty' }, allSpaces ? 'Nothing running in any space.' : 'Nothing running in this project. Start an agent or a shell and it shows up here.'));
   } else if (nodes.length) stage.querySelector('.graph-empty')?.remove();
 
   const now = [nodes.map(s => s.id).join(), edges.map(e => e.key).join(), bubbles().map(g => g.ids?.join() ?? g.members.join()).join('|')].join('/');
@@ -203,11 +203,11 @@ function render() {
   } else place();
 }
 
-// Where a node settles: the middle, or with "All departments" on, its department's spot on a ring around the middle.
+// Where a node settles: the middle, or with "All spaces" on, its space's spot on a ring around the middle.
 function home(s) {
   const cx = size.width / 2 || 400;
   const cy = size.height / 2 || 300;
-  const live = depts.filter(d => d.ids.length);
+  const live = spaces.filter(d => d.ids.length);
   const i = live.findIndex(d => d.project === s.project);
   if (live.length < 2 || i < 0) return { cx, cy };
   const r = 120 + 90 * live.length;
@@ -246,7 +246,7 @@ function drawNodes() {
     const lead = s.role === 'lead';
     const sub = lead ? 'lead' : s.specialist ? (s.specialist.name === title ? s.specialist.role.split(/[:,]/)[0] : s.specialist.name) : s.kind === 'shell' ? 'shell' : agentLabel(s.agent);
     el.className = `gnode${lead ? ' lead' : ''}${s.exited ? ' exited' : ''}${selected.has(s.id) ? ' selected' : ''}${pos.get(s.id).pinned ? ' pinned' : ''}`;
-    el.setAttribute('aria-label', `${title}${allDepts ? ` in ${deptName(s)}` : ''}, ${STATUS_LABEL[status]?.toLowerCase() ?? status}${lead ? ', lead' : ''}${selected.has(s.id) ? ', selected' : ''}`);
+    el.setAttribute('aria-label', `${title}${allSpaces ? ` in ${spaceName(s)}` : ''}, ${STATUS_LABEL[status]?.toLowerCase() ?? status}${lead ? ', lead' : ''}${selected.has(s.id) ? ', selected' : ''}`);
     el.title = `${title}\nClick for details · Shift-click to select · Drag to pin, double-click to unpin`;
     el.replaceChildren(
       h('span', { class: 'gnode-face' }, avatar(s), h('span', { class: `dot ${status}` })),
@@ -292,12 +292,12 @@ function drawHulls() {
   hullLayer.replaceChildren();
   labelLayer.replaceChildren();
   for (const g of bubbles()) {
-    if (!allDepts) g.ids = nodes.filter(s => g.members.includes(keyOf(s))).map(s => s.id);
+    if (!allSpaces) g.ids = nodes.filter(s => g.members.includes(keyOf(s))).map(s => s.id);
     if (!g.ids.length) continue;
     g.hull = svg('path', { class: 'graph-hull', fill: g.color, stroke: g.color, 'stroke-width': PAD * 2 });
     hullLayer.append(g.hull);
-    g.label = allDepts
-      ? h('button', { class: 'graph-group-label', style: `--g: ${g.color}`, title: `Go to ${g.name}`, 'aria-label': `${g.name}, ${plural(g.ids.length, 'agent')}. Go to this department.`,
+    g.label = allSpaces
+      ? h('button', { class: 'graph-group-label', style: `--g: ${g.color}`, title: `Go to ${g.name}`, 'aria-label': `${g.name}, ${plural(g.ids.length, 'agent')}. Go to this space.`,
         onClick: () => actions.switchProject(g.project) }, g.name, h('span', { class: 'n' }, g.ids.length))
       : h('button', { class: 'graph-group-label', style: `--g: ${g.color}`, title: `Show the ${g.name} group`, onClick: () => openGroup(g.id) },
         g.name, h('span', { class: 'n' }, g.ids.length));
@@ -311,7 +311,7 @@ function drawLegend() {
     dot('working', 'Working'), dot('idle', 'Idle'), dot('needs-input', 'Needs you'), dot('exited', 'Exited'),
     h('span', { class: 'sep' }),
     h('span', { class: 'line' }, h('i', { class: 'solid' }), 'Messages'), h('span', { class: 'line' }, h('i', { class: 'dashed' }), 'Started'),
-    allDepts && h('span', { class: 'line' }, h('i', { class: 'dotted' }), 'Between departments'),
+    allSpaces && h('span', { class: 'line' }, h('i', { class: 'dotted' }), 'Between spaces'),
     h('span', { class: 'sep' }),
     h('span', { class: 'graph-hint' }, 'Drag to pan · Pinch or ⌘-scroll to zoom · Shift-drag to select'),
     groups.length > 0 ? h('span', { class: 'sep' }) : '',
@@ -319,7 +319,7 @@ function drawLegend() {
 }
 
 function drawSelBar() {
-  selBar.hidden = !selected.size || allDepts; // groups belong to one project
+  selBar.hidden = !selected.size || allSpaces; // groups belong to one project
   if (!selected.size) return selBar.replaceChildren();
   const ids = [...selected];
   selBar.replaceChildren(
@@ -365,8 +365,8 @@ function tick() {
     for (const p of members) { p.vx += (cx - p.x) * 0.04 * alpha; p.vy += (cy - p.y) * 0.04 * alpha; }
   }
   for (const [s, p] of list) {
-    const k = (s.role === 'lead' ? 0.08 : allDepts ? 0.03 : 0.012) * alpha;
-    const { cx, cy } = allDepts ? home(s) : { cx: W / 2, cy: H / 2 };
+    const k = (s.role === 'lead' ? 0.08 : allSpaces ? 0.03 : 0.012) * alpha;
+    const { cx, cy } = allSpaces ? home(s) : { cx: W / 2, cy: H / 2 };
     p.vx += (cx - p.x) * k;
     p.vy += (cy - p.y) * k;
     if (p.pinned || dragging === s.id) { p.vx = p.vy = 0; continue; }
@@ -795,7 +795,7 @@ function openNode(id) {
     [
       h('div', { class: 'actions-row' },
         h('button', { class: 'btn sm', onClick: () => actions.focusSession(s.id) }, icon('terminal', 13), 'Go to pane'),
-        !allDepts && h('button', { class: 'btn sm', onClick: e => addToMenu(e.currentTarget, [s.id]) }, icon('plus', 13), 'Add to group')),
+        !allSpaces && h('button', { class: 'btn sm', onClick: e => addToMenu(e.currentTarget, [s.id]) }, icon('plus', 13), 'Add to group')),
       refs.facts,
       refs.groups,
       h('div', { class: 'graph-screen-head' }, h('span', { class: 'section-label' }, 'Screen'), refs.live, h('span', { class: 'grow' }),
