@@ -1,0 +1,57 @@
+name: CI
+
+# Runs on every PR into main (forks included) so a change that breaks the app is caught before merge.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: macos-14
+    timeout-minutes: 20
+    env:
+      # Relay's shells and npm run check expect the user's shell to be zsh
+      SHELL: /bin/zsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22.23.3'
+          cache: npm
+      - run: npm ci
+      # Catches syntax errors in files the self-check never imports (electron/main.mjs, the UI scripts)
+      - name: Syntax check
+        run: |
+          set -euo pipefail
+          for f in server.mjs check.mjs electron/*.mjs lib/*.mjs build/art/*.mjs public/js/*.js; do
+            node --check "$f"
+          done
+      - run: npm run check
+
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22.23.3'
+          cache: npm
+      - run: npm ci
+      # Same steps as the release build, but packs the .app only (no DMG) to stay quick
+      - run: npm run build:native
+      - run: npm run build:art
+      - run: npx electron-builder --mac --dir --publish never
+      - name: The packed app is there
+        run: test -x dist/mac-arm64/Relay.app/Contents/MacOS/Relay

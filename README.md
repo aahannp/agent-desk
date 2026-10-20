@@ -299,6 +299,13 @@ blocks direct pushes, force pushes and deleting it.
    issue it closes (`Fixes #79`).
 5. For UI changes, attach a screenshot. If you can, include light and dark themes.
 
+Every PR runs the **CI** workflow, and both of its checks must pass before it can merge:
+
+- **check**: a syntax check of every script, then `npm run check`.
+- **build**: packs `Relay.app` the same way a release does, minus the DMG.
+
+On your first PR, the checks wait until the maintainer clicks "Approve and run".
+
 Open issues are listed under [Issues](https://github.com/aahannp/relay/issues). Releases are cut by the
 maintainer after a merge, so don't bump the version in your PR.
 
