@@ -35,7 +35,7 @@ fs.writeFileSync(path.join(tmp, 'data', 'token'), ''); // an empty secret file m
 fs.mkdirSync(path.join(tmp, 'data', 'mcp'));
 fs.writeFileSync(path.join(tmp, 'data', 'mcp', 'gone1234.json'), 'left by a crash');
 fs.writeFileSync(path.join(tmp, 'data', 'desk.json'), JSON.stringify({ settings: { agentDefaults: { claude: { model: '', effort: '' }, lead: { model: 'opus', effort: 'high' } } } }));
-const desk = await start({ port: 0, dataDir: path.join(tmp, 'data') });
+let desk = await start({ port: 0, dataDir: path.join(tmp, 'data') });
 assert.deepEqual(db.settings.agentDefaults, { claude: { model: 'sonnet', effort: '' }, lead: { model: 'opus', effort: 'high' } }, "an old install's workers move to Sonnet; leads stay on Opus");
 // Old settings: asking between folders turned off stays off under its new name
 const migrated = (settings, projects = []) => migrate({ projects, settings: { ...structuredClone(db.settings), ...settings } }).settings;
@@ -48,7 +48,7 @@ assert.ok(!('mixFolders' in migrated({ mixFolders: true }, [spA])), 'the old swi
 assert.deepEqual(migrated({ openSpaces: ['/x/a', '/gone', '/x/a', '/x/b'] }, [spA, spB]).openSpaces, ['/x/a', '/x/b'], 'removed folders and repeats drop out');
 assert.ok(desk.token.length >= 32, 'an empty token file is replaced with a real secret');
 assert.ok(!fs.existsSync(path.join(tmp, 'data', 'mcp', 'gone1234.json')), "a session's MCP file never outlives a restart");
-const SELF = `http://127.0.0.1:${desk.port}`;
+let SELF = `http://127.0.0.1:${desk.port}`;
 const EVIL = 'https://evil.example';
 
 function request(method, url, { headers = {}, body, token = desk.token } = {}) {
@@ -1376,6 +1376,35 @@ esac
 
   await ok('DELETE', `/api/sessions/${shell.id}`);
   assert.deepEqual(await ok('GET', '/api/sessions'), [], 'no sessions left');
+
+  // Quitting Relay and opening it again brings back the same chats, resumed, in the same order
+  fs.writeFileSync(path.join(fakeBin, 'claude'), '#!/bin/sh\necho "FAKE-CLAUDE $*"\nexec cat\n', { mode: 0o755 });
+  const mk = name => ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: repo, name });
+  const [one, two, closed] = [await mk('Restore one'), await mk('Restore two'), await mk('Restore closed')];
+  fs.writeFileSync(path.join(fakeBin, 'claude'), '#!/bin/sh\necho "FAKE-CLAUDE $*"\n', { mode: 0o755 });
+  const done = await mk('Restore finished'); // exits on its own, but its pane stays in the grid
+  await exited(done.id);
+  fs.mkdirSync(chatDir, { recursive: true });
+  fs.writeFileSync(path.join(chatDir, `${db.chats.find(c => c.id === done.chatId).claudeSessionId}.jsonl`), JSON.stringify({ type: 'user', message: { content: 'it finished' } }));
+  fs.writeFileSync(path.join(fakeBin, 'claude'), '#!/bin/sh\necho "FAKE-CLAUDE $*"\nexec cat\n', { mode: 0o755 });
+  await ok('POST', '/api/sessions', { kind: 'shell', project: repo });
+  await ok('DELETE', `/api/sessions/${closed.id}`);
+  const keptId = db.chats.find(c => c.id === one.chatId).claudeSessionId;
+  fs.mkdirSync(chatDir, { recursive: true });
+  fs.writeFileSync(path.join(chatDir, `${keptId}.jsonl`), JSON.stringify({ type: 'user', message: { content: 'before the quit' } }));
+  desk.close();
+  while ([...sessions.values()].some(x => !x.exited)) await new Promise(r => setTimeout(r, 50)); // a real restart is a new process
+  desk = await start({ port: 0, dataDir: path.join(tmp, 'data') });
+  SELF = `http://127.0.0.1:${desk.port}`;
+  const live = (await ok('GET', '/api/sessions')).filter(x => !x.exited && x.kind === 'agent');
+  assert.deepEqual(live.map(x => x.chatId), [one.chatId, two.chatId, done.chatId], 'every pane that was in the grid has one again, in its old order (a finished one too); the closed chat and the shell stay away');
+  assert.equal(db.chats.find(c => c.id === one.chatId).claudeSessionId, keptId, 'on the same conversation');
+  assert.ok(!(await ok('GET', '/api/sessions')).some(x => x.kind === 'shell' && !x.exited), "a shell can't be resumed");
+  for (let i = 0; i < 50 && !(await outputOf(live[0].id)); i++) await new Promise(r => setTimeout(r, 100));
+  assert.match(await outputOf(live[0].id), new RegExp(`--resume ${keptId}`), 'resumed, not started over');
+  for (let i = 0; i < 50 && !(await outputOf(live[2].id)); i++) await new Promise(r => setTimeout(r, 100));
+  assert.match(await outputOf(live[2].id), new RegExp(`--resume ${db.chats.find(c => c.id === done.chatId).claudeSessionId}`), 'and so does the finished one, resumed');
+  assert.ok(!(await ok('GET', '/api/chats')).find(c => c.id === closed.chatId).running, 'a chat you closed stays in Recent');
   console.log('All checks passed');
 } finally {
   desk.close();
