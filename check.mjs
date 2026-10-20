@@ -1008,7 +1008,7 @@ esac
     db.tasks.splice(db.tasks.indexOf(db.tasks.find(t => t.id === task.id)), 1);
   }
 
-  // A worker's task moving to review tells the lead that started it, once
+  // A worker's task moving to review tells the lead that started it, once; a lead can start a lead, nobody else can
   {
     const boss = await ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: repo, role: 'lead', name: 'Boss two' });
     const asBoss = { 'x-desk-session': boss.id };
@@ -1026,7 +1026,12 @@ esac
     await ok('DELETE', `/api/sessions/${helper.id}`);
     await new Promise(r => setTimeout(r, 400));
     assert.equal(await told(), before, 'not again when the worker exits');
-    for (const id of [boss.id]) await ok('DELETE', `/api/sessions/${id}`);
+    const viaBoss = async role => (await rpc('tools/call', { name: 'start_agent', arguments: { prompt: 'Own a goal', role } }, asBoss)).result;
+    const child = JSON.parse((await viaBoss('lead')).content[0].text);
+    assert.deepEqual([child.role, child.model, child.effort], ['lead', 'opus', 'high'], 'a lead starts a lead, on the lead defaults');
+    const plainOne = await viaTool('start_agent', { prompt: 'Own a goal', role: 'lead' });
+    assert.ok(plainOne.isError && /Only a lead agent/.test(plainOne.content[0].text), 'a non-lead cannot');
+    for (const id of [boss.id, child.id]) await ok('DELETE', `/api/sessions/${id}`);
     db.tasks.splice(db.tasks.indexOf(db.tasks.find(t => t.id === job.id)), 1);
   }
 

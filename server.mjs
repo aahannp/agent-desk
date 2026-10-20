@@ -197,8 +197,10 @@ route('PATCH', '/api/settings', ({ req, body }) => {
 route('GET', '/api/agents', () => S.availableAgents());
 route('GET', '/api/sessions', ({ req }) => visibleSessions(req).map(S.info));
 route('POST', '/api/sessions', async ({ req, body }) => {
-  const { kind = 'agent', agent = db.settings.defaultAgent, prompt = '', name, worktree = false, role = null, specialist = null, model = '', effort = '' } = body;
+  const { kind = 'agent', agent = db.settings.defaultAgent, prompt = '', name, worktree = false, role: asked = null, specialist = null, model = '', effort = '' } = body;
   if (kind === 'agent') mayStartAgents(req);
+  if (asked === 'lead' && fromAgent(req) && caller(req)?.role !== 'lead') throw fail(403, 'Only a lead agent can start another lead.');
+  const role = asked;
   const project = projectFor(req, body.project);
   if (!isDir(project)) throw fail(400, `Not a folder: ${project}`);
   return S.info(await S.createSession({ project, kind, agent, prompt, name, worktree, role, specialist, model, effort, startedBy: starter(req) }));
