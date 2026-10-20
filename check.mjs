@@ -479,6 +479,9 @@ try {
   assert.doesNotMatch(pOut, /--effort/, 'and no effort flag');
   assert.deepEqual((await runOf({ kind: 'agent', agent: 'claude', model: 'lighter' })).slice(0, 2), ['haiku', ''], 'lighter than the worker default (Sonnet) is Haiku');
   assert.deepEqual((await runOf({ kind: 'agent', agent: 'claude', role: 'lead' })).slice(0, 2), ['opus', 'high'], 'a lead agent has its own defaults');
+  const [, , leadOut] = await runOf({ kind: 'agent', agent: 'claude', role: 'lead' });
+  assert.match(leadOut, /--disallowedTools Agent/, "a lead can't use the built-in Agent tool, whose subagents Relay can't show");
+  assert.doesNotMatch(await runOf({ kind: 'agent', agent: 'claude' }).then(r => r[2]), /--disallowedTools/, 'workers keep it');
   assert.equal((await request('PATCH', '/api/settings', { body: { agentDefaults: { claude: { model: 'gpt', effort: '' }, lead: { model: '', effort: '' } } } })).status, 400, 'defaults must be known models');
   assert.equal((await request('PATCH', '/api/settings', { body: { scrollSpeed: 10 } })).status, 400, 'scroll speed has a sensible range');
   {
