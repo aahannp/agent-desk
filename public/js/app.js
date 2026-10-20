@@ -163,6 +163,8 @@ function renderChrome() {
 const EXPANDED = 'agent-desk:expanded-spaces';
 const expanded = new Set((() => { try { return JSON.parse(localStorage.getItem(EXPANDED)) ?? []; } catch { return []; } })());
 let revealSpace = null; // a space to scroll into view on the next build: the one just opened, or the current one at start
+const AGENT_CHATS = 'agent-desk:agent-started-chats-open';
+let agentChatsOpen = (() => { try { return localStorage.getItem(AGENT_CHATS) === '1'; } catch { return false; } })();
 const toggleExpanded = path => {
   expanded.has(path) ? expanded.delete(path) : (expanded.add(path), (revealSpace = path));
   try { localStorage.setItem(EXPANDED, JSON.stringify([...expanded])); } catch {}
@@ -236,31 +238,49 @@ let sidebarDrag = false; // rebuilding the list mid-drag would detach the dragge
 function renderChats(unordered) {
   if (sidebarDrag) return;
   const order = actions.paneOrder?.() ?? [];
+  // Chats an agent started and you haven't typed in sit in one folded group at the bottom.
+  const byAgent = c => c?.startedBy && !c.talked;
+  const chatOf = s => state.chats.find(c => c.id === s.chatId);
   const listed = unordered.filter(s => !s.exited && !s.artifactId && showsAgentsOf(s.project));
-  const sessions = unordered.filter(s => !listed.includes(s)).sort((a, b) => (order.indexOf(a.id) + 1 || Infinity) - (order.indexOf(b.id) + 1 || Infinity));
+  const unlisted = unordered.filter(s => !listed.includes(s));
+  const sessions = unlisted.filter(s => !byAgent(chatOf(s))).sort((a, b) => (order.indexOf(a.id) + 1 || Infinity) - (order.indexOf(b.id) + 1 || Infinity));
   const openIds = new Set(unordered.map(s => s.chatId).filter(Boolean)); // all of them: a listed agent's chat isn't "Recent" either
-  const recent = projectChats().filter(c => !openIds.has(c.id)).slice(0, 40);
+  const recent = projectChats().filter(c => !openIds.has(c.id) && !byAgent(c)).slice(0, 40);
   const drag = (type, id) => e => {
     e.dataTransfer.setData(type, id);
     e.dataTransfer.effectAllowed = 'move';
     sidebarDrag = true;
     e.currentTarget.addEventListener('dragend', () => { sidebarDrag = false; renderChrome(); }, { once: true });
   };
-  const open = sessions.map(s => h('button', {
+  const item = s => h('button', {
     class: `run-item${actions.isHidden?.(s.id) ? ' off' : ''}`, title: actions.isHidden?.(s.id) ? 'Hidden from the grid. Click to show it.' : s.cwd,
     'aria-label': actions.isHidden?.(s.id) ? `${chatTitle(s)}, hidden` : null, draggable: true, onDragstart: drag(DRAG.pane, s.id),
     onClick: () => actions.focusSession(s.id),
     onContextmenu: e => s.chatId && chatMenu(e, state.chats.find(c => c.id === s.chatId)),
-  }, avatar(s, true), h('span', { class: 'name' }, chatTitle(s)), actions.isHidden?.(s.id) && icon('eyeOff', 12), h('span', { class: `dot ${actions.statusOf?.(s) ?? s.status}` })));
-  const earlier = recent.map(c => h('button', {
+  }, avatar(s, true), h('span', { class: 'name' }, chatTitle(s)), actions.isHidden?.(s.id) && icon('eyeOff', 12), h('span', { class: `dot ${actions.statusOf?.(s) ?? s.status}` }));
+  const open = sessions.map(item);
+  const earlierItem = c => h('button', {
     class: `run-item chat${c.folderMissing ? ' gone' : ''}`, draggable: !c.folderMissing, onDragstart: drag(DRAG.chat, c.id),
     title: c.folderMissing ? `Its folder is gone: ${c.cwd}` : `Click or drag into the grid to ${c.resumable ? 'pick this chat up again' : 'start it again'}`,
     onClick: () => !c.folderMissing && actions.openChat(c.id),
     onContextmenu: e => chatMenu(e, c),
-  }, avatar(c, true), h('span', { class: 'name' }, c.title), h('span', { class: 'when' }, ago(c.lastActiveAt).replace(' ago', ''))));
+  }, avatar(c, true), h('span', { class: 'name' }, c.title), h('span', { class: 'when' }, ago(c.lastActiveAt).replace(' ago', '')));
+  const earlier = recent.map(earlierItem);
+  const agentOnes = [
+    ...unlisted.filter(s => byAgent(chatOf(s))).map(item),
+    ...projectChats().filter(c => byAgent(c) && !openIds.has(c.id)).slice(0, 40).map(earlierItem),
+  ];
   $('running').replaceChildren(
     ...(open.length ? open : [h('div', { class: 'run-empty' }, listed.length ? `Open ones are under ${baseName(state.project)}` : 'Nothing open')]),
-    ...(earlier.length ? [h('div', { class: 'side-label sub' }, 'Recent'), ...earlier] : []));
+    ...(earlier.length ? [h('div', { class: 'side-label sub' }, 'Recent'), ...earlier] : []),
+    ...(agentOnes.length ? [
+      h('button', { class: 'side-label sub', 'aria-expanded': String(agentChatsOpen), style: 'cursor:pointer;background:none;border:0;width:100%', onClick: () => {
+        agentChatsOpen = !agentChatsOpen;
+        try { localStorage.setItem(AGENT_CHATS, agentChatsOpen ? '1' : '0'); } catch {}
+        renderChrome();
+      } }, `${agentChatsOpen ? '▾' : '▸'} Started by agents (${agentOnes.length})`),
+      ...(agentChatsOpen ? agentOnes : []),
+    ] : []));
 }
 
 function chatMenu(e, chat) {
