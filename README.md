@@ -285,6 +285,23 @@ From the code and the [release notes](https://github.com/aahannp/relay/releases)
 - Hooks that tell the lead when something is done, such as a pull request merging, so it can move on without being asked
 - A Windows app
 
+## Contributing
+
+Fixes and features come in as pull requests from a fork. Nobody pushes to `main` directly: a ruleset
+blocks direct pushes, force pushes and deleting it.
+
+1. Fork [aahannp/relay](https://github.com/aahannp/relay) and clone your fork.
+2. Make a branch off `main`, named for the change: `fix/…`, `feat/…` or `docs/…`.
+3. Change the code, then run `npm run check` until it prints "All checks passed". Add a check to
+   `check.mjs` for any new behaviour.
+4. Push the branch to your fork and open a pull request into `aahannp/relay` `main`. Keep one change per PR.
+   Give it a short **Summary** (what and why) and a **Test plan** (what you ran or clicked), and link the
+   issue it closes (`Fixes #79`).
+5. For UI changes, attach a screenshot. If you can, include light and dark themes.
+
+Open issues are listed under [Issues](https://github.com/aahannp/relay/issues). Releases are cut by the
+maintainer after a merge, so don't bump the version in your PR.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
