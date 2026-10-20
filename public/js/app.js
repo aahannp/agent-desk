@@ -170,6 +170,9 @@ const toggleExpanded = path => {
   try { localStorage.setItem(EXPANDED, JSON.stringify([...expanded])); } catch {}
   renderChrome(); // Chats too: it leaves out what the current space now shows
 };
+// Chats an agent started and you haven't typed in: they stay off the left, except in one folded group.
+const chatOf = s => state.chats.find(c => c.id === s.chatId);
+const byAgent = s => { const c = chatOf(s); return Boolean(c?.startedBy && !c.talked); };
 const showsAgentsOf = path => path === state.project && expanded.has(path);
 
 let spacesShown = '';
@@ -177,17 +180,17 @@ function renderSpaces() {
   const el = $('spaces');
   const list = state.projects.map(p => {
     const agents = state.sessions.filter(s => s.project === p.path && !s.exited && !s.artifactId);
-    return { p, agents, statuses: agents.map(s => actions.statusOf?.(s) ?? s.status) };
+    return { p, agents, shown: agents.filter(s => !byAgent(s)), statuses: agents.map(s => actions.statusOf?.(s) ?? s.status) };
   });
   // This runs every second: rebuild only on a real change (a rebuild mid-click loses the click), and keep keyboard focus.
   const open = openSpaces();
-  const now = JSON.stringify([open, [...expanded], list.map(d => [d.p.path, d.p.name, d.statuses, d.agents.map(s => [s.id, chatTitle(s), s.cwd])])]);
+  const now = JSON.stringify([open, [...expanded], list.map(d => [d.p.path, d.p.name, d.statuses, d.agents.map(s => [s.id, chatTitle(s), s.cwd, byAgent(s)])])]);
   if (now === spacesShown) return;
   if (!spacesShown) revealSpace = state.project;
   spacesShown = now;
   const focused = el.contains(document.activeElement) ? document.activeElement.dataset.key : null;
   const scrolled = el.scrollTop; // emptying the list would reset it
-  el.replaceChildren(...list.map(({ p, agents, statuses }, i) => {
+  el.replaceChildren(...list.map(({ p, agents, shown, statuses }, i) => {
     const waiting = statuses.filter(x => x === 'needs-input').length;
     const isOpen = expanded.has(p.path);
     const current = p.path === state.project;
@@ -208,8 +211,8 @@ function renderSpaces() {
         h('button', { class: 'icon-btn sm', 'data-key': `add:${p.path}`, 'aria-label': `New agent in ${p.name}`, title: `New agent in ${p.name}`,
           onClick: () => actions.newSession({ project: p.path }) }, icon('plus', 13))),
       h('div', { class: 'space-agents', id: `space-${i}`, hidden: !isOpen },
-        ...(agents.length ? agents.map((s, j) => h('button', { class: 'run-item', 'data-key': `agent:${s.id}`, title: s.cwd, onClick: () => actions.focusSession(s.id) },
-          avatar(s, true), h('span', { class: 'name' }, chatTitle(s)), h('span', { class: `dot ${statuses[j]}`, title: STATUS_LABEL[statuses[j]] ?? '' })))
+        ...(shown.length ? agents.map((s, j) => !byAgent(s) && h('button', { class: 'run-item', 'data-key': `agent:${s.id}`, title: s.cwd, onClick: () => actions.focusSession(s.id) },
+          avatar(s, true), h('span', { class: 'name' }, chatTitle(s)), h('span', { class: `dot ${statuses[j]}`, title: STATUS_LABEL[statuses[j]] ?? '' }))).filter(Boolean)
           : [h('div', { class: 'run-empty' }, 'Nothing running')])));
   }), h('button', { class: 'run-item space-new', 'data-key': 'new', onClick: () => addProject() }, icon('plus', 13), h('span', { class: 'name' }, 'New space')));
   el.scrollTop = scrolled;
@@ -238,14 +241,11 @@ let sidebarDrag = false; // rebuilding the list mid-drag would detach the dragge
 function renderChats(unordered) {
   if (sidebarDrag) return;
   const order = actions.paneOrder?.() ?? [];
-  // Chats an agent started and you haven't typed in sit in one folded group at the bottom.
-  const byAgent = c => c?.startedBy && !c.talked;
-  const chatOf = s => state.chats.find(c => c.id === s.chatId);
-  const listed = unordered.filter(s => !s.exited && !s.artifactId && showsAgentsOf(s.project));
+  const listed = unordered.filter(s => !s.exited && !s.artifactId && showsAgentsOf(s.project) && !byAgent(s));
   const unlisted = unordered.filter(s => !listed.includes(s));
-  const sessions = unlisted.filter(s => !byAgent(chatOf(s))).sort((a, b) => (order.indexOf(a.id) + 1 || Infinity) - (order.indexOf(b.id) + 1 || Infinity));
+  const sessions = unlisted.filter(s => !byAgent(s)).sort((a, b) => (order.indexOf(a.id) + 1 || Infinity) - (order.indexOf(b.id) + 1 || Infinity));
   const openIds = new Set(unordered.map(s => s.chatId).filter(Boolean)); // all of them: a listed agent's chat isn't "Recent" either
-  const recent = projectChats().filter(c => !openIds.has(c.id) && !byAgent(c)).slice(0, 40);
+  const recent = projectChats().filter(c => !openIds.has(c.id) && !(c.startedBy && !c.talked)).slice(0, 40);
   const drag = (type, id) => e => {
     e.dataTransfer.setData(type, id);
     e.dataTransfer.effectAllowed = 'move';
@@ -267,14 +267,14 @@ function renderChats(unordered) {
   }, avatar(c, true), h('span', { class: 'name' }, c.title), h('span', { class: 'when' }, ago(c.lastActiveAt).replace(' ago', '')));
   const earlier = recent.map(earlierItem);
   const agentOnes = [
-    ...unlisted.filter(s => byAgent(chatOf(s))).map(item),
-    ...projectChats().filter(c => byAgent(c) && !openIds.has(c.id)).slice(0, 40).map(earlierItem),
+    ...unlisted.filter(byAgent).map(item),
+    ...projectChats().filter(c => c.startedBy && !c.talked && !openIds.has(c.id)).slice(0, 40).map(earlierItem),
   ];
   $('running').replaceChildren(
     ...(open.length ? open : [h('div', { class: 'run-empty' }, listed.length ? `Open ones are under ${baseName(state.project)}` : 'Nothing open')]),
     ...(earlier.length ? [h('div', { class: 'side-label sub' }, 'Recent'), ...earlier] : []),
     ...(agentOnes.length ? [
-      h('button', { class: 'side-label sub', 'aria-expanded': String(agentChatsOpen), style: 'cursor:pointer;background:none;border:0;width:100%', onClick: () => {
+      h('button', { class: 'side-label sub side-fold', 'aria-expanded': String(agentChatsOpen), onClick: () => {
         agentChatsOpen = !agentChatsOpen;
         try { localStorage.setItem(AGENT_CHATS, agentChatsOpen ? '1' : '0'); } catch {}
         renderChrome();
