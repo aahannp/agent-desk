@@ -1015,6 +1015,14 @@ esac
     const job = (await request('POST', '/api/tasks', { headers: asBoss, body: { title: 'Report back', project: repo } })).body;
     const { session: helper } = (await request('POST', `/api/tasks/${job.id}/start`, { headers: asBoss, body: { worktree: false } })).body;
     assert.equal(helper.startedBy?.id, boss.id, 'start_task records who started the worker');
+    const chatOf = async () => (await ok('GET', '/api/chats')).find(c => c.id === helper.chatId);
+    assert.deepEqual([(await chatOf()).startedBy?.id, (await chatOf()).talked], [boss.id, false], 'a chat an agent started reports its starter, and is not yours yet');
+    await new Promise((resolve, reject) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${desk.port}/ws?id=${helper.id}`, { origin: SELF, headers: { cookie } });
+      ws.on('open', () => (ws.send(JSON.stringify({ t: 'in', d: 'hi' })), setTimeout(() => (ws.close(), resolve()), 200)));
+      ws.on('error', reject);
+    });
+    assert.equal((await chatOf()).talked, true, 'you typing in its pane does');
     await screenOf(boss.id, /FAKE-CLAUDE/, 'started');
     await request('POST', `/api/tasks/${job.id}/comments`, { headers: { 'x-desk-session': helper.id }, body: { text: 'Done: the form works\nsecond line' } });
     await ok('PATCH', `/api/tasks/${job.id}`, { status: 'review' });
