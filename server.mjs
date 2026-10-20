@@ -266,6 +266,15 @@ route('GET', '/api/chats', ({ req, query }) => {
     : query.get('project') ? expand(query.get('project')) : null; // an agent sees only its own project's chats
   return db.chats.filter(c => !project || c.project === project).map(S.chatInfo).sort((a, b) => b.lastActiveAt - a.lastActiveAt);
 });
+async function reopen(chat) {
+  const s = await S.createSession({ chatId: chat.id });
+  const task = chat.taskId && db.tasks.find(t => t.id === chat.taskId);
+  if (task) {
+    task.sessionId = s.id;
+    changed('tasks');
+  }
+  return s;
+}
 route('POST', '/api/chats/:id/open', async ({ params }) => {
   const chat = findChat(params.id);
   const mine = S.chatSessions(chat.id);
@@ -273,12 +282,7 @@ route('POST', '/api/chats/:id/open', async ({ params }) => {
   if (live) return { session: S.info(live), replaced: null };
   const done = mine.find(s => s.exited); // a finished pane for this chat gives way to the reopened one
   if (done) S.stop(done);
-  const s = await S.createSession({ chatId: chat.id });
-  const task = chat.taskId && db.tasks.find(t => t.id === chat.taskId);
-  if (task) {
-    task.sessionId = s.id;
-    changed('tasks');
-  }
+  const s = await reopen(chat);
   return { session: S.info(s), replaced: done?.id ?? null };
 });
 // Naming a chat names its agent too: other agents reach it by that name ("ask Adam").
@@ -981,6 +985,13 @@ export async function start({ port = Number(process.env.PORT) || 4747, dataDir =
   // 127.0.0.1, not localhost: localhost may resolve to ::1, where some other program could be listening.
   const url = `http://127.0.0.1:${actual}/?t=${TOKEN}`;
   console.log(`Relay is running. Open ${url}`);
+  // Panes that were open when Relay stopped come back as they were (oldest first, so the grid keeps its order).
+  // Shells can't be resumed. A chat whose folder is gone stays in Recent.
+  for (const c of db.chats.filter(c => c.open).sort((a, b) => a.createdAt - b.createdAt)) {
+    c.open = false;
+    if (S.chatInfo(c).folderMissing) continue;
+    await reopen(c).catch(e => console.error(`Couldn't reopen ${c.name}:`, e.message));
+  }
   const upkeep = setInterval(() => S.upkeep().catch(e => console.error('Lead upkeep failed:', e)), 30_000);
   // Save finished days of spend even if the Spend page is never opened, before Claude Code deletes their transcripts.
   const spend = () => US.scan().catch(e => console.error('Spend scan failed:', e));

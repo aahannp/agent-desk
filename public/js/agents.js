@@ -256,9 +256,11 @@ function sync() {
 }
 
 // The order you arrange panes in is remembered per space, in this browser only (a convenience, not data).
+// Panes are keyed by chat, not session: a relaunch gives the same chat a new session id.
 const orderKey = project => `agent-desk:order:${project}`;
+const orderId = el => panes.get(el.dataset.id)?.session?.chatId ?? el.dataset.id;
 function saveOrder(project) {
-  try { localStorage.setItem(orderKey(project), JSON.stringify([...sectionFor(project).grid.children].map(el => el.dataset.id))); } catch {}
+  try { localStorage.setItem(orderKey(project), JSON.stringify([...sectionFor(project).grid.children].map(orderId))); } catch {}
   emit('tick'); // the sidebar lists open panes in the same order
 }
 function restoreOrder() {
@@ -266,7 +268,7 @@ function restoreOrder() {
     let saved = [];
     try { saved = JSON.parse(localStorage.getItem(orderKey(project)) || '[]'); } catch {}
     const rank = new Map(saved.map((id, i) => [id, i]));
-    const sorted = [...grid.children].sort((a, b) => (rank.get(a.dataset.id) ?? Infinity) - (rank.get(b.dataset.id) ?? Infinity));
+    const sorted = [...grid.children].sort((a, b) => (rank.get(orderId(a)) ?? Infinity) - (rank.get(orderId(b)) ?? Infinity));
     sorted.forEach((el, i) => grid.children[i] !== el && put(grid, el, grid.children[i])); // only what's out of place moves
   }
 }
