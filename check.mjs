@@ -1381,6 +1381,12 @@ esac
   fs.writeFileSync(path.join(fakeBin, 'claude'), '#!/bin/sh\necho "FAKE-CLAUDE $*"\nexec cat\n', { mode: 0o755 });
   const mk = name => ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: repo, name });
   const [one, two, closed] = [await mk('Restore one'), await mk('Restore two'), await mk('Restore closed')];
+  fs.writeFileSync(path.join(fakeBin, 'claude'), '#!/bin/sh\necho "FAKE-CLAUDE $*"\n', { mode: 0o755 });
+  const done = await mk('Restore finished'); // exits on its own, but its pane stays in the grid
+  await exited(done.id);
+  fs.mkdirSync(chatDir, { recursive: true });
+  fs.writeFileSync(path.join(chatDir, `${db.chats.find(c => c.id === done.chatId).claudeSessionId}.jsonl`), JSON.stringify({ type: 'user', message: { content: 'it finished' } }));
+  fs.writeFileSync(path.join(fakeBin, 'claude'), '#!/bin/sh\necho "FAKE-CLAUDE $*"\nexec cat\n', { mode: 0o755 });
   await ok('POST', '/api/sessions', { kind: 'shell', project: repo });
   await ok('DELETE', `/api/sessions/${closed.id}`);
   const keptId = db.chats.find(c => c.id === one.chatId).claudeSessionId;
@@ -1391,11 +1397,13 @@ esac
   desk = await start({ port: 0, dataDir: path.join(tmp, 'data') });
   SELF = `http://127.0.0.1:${desk.port}`;
   const live = (await ok('GET', '/api/sessions')).filter(x => !x.exited && x.kind === 'agent');
-  assert.deepEqual(live.map(x => x.chatId), [one.chatId, two.chatId], 'both open chats have a pane again, in their old order, and the closed chat and the shell stay away');
+  assert.deepEqual(live.map(x => x.chatId), [one.chatId, two.chatId, done.chatId], 'every pane that was in the grid has one again, in its old order (a finished one too); the closed chat and the shell stay away');
   assert.equal(db.chats.find(c => c.id === one.chatId).claudeSessionId, keptId, 'on the same conversation');
   assert.ok(!(await ok('GET', '/api/sessions')).some(x => x.kind === 'shell' && !x.exited), "a shell can't be resumed");
   for (let i = 0; i < 50 && !(await outputOf(live[0].id)); i++) await new Promise(r => setTimeout(r, 100));
   assert.match(await outputOf(live[0].id), new RegExp(`--resume ${keptId}`), 'resumed, not started over');
+  for (let i = 0; i < 50 && !(await outputOf(live[2].id)); i++) await new Promise(r => setTimeout(r, 100));
+  assert.match(await outputOf(live[2].id), new RegExp(`--resume ${db.chats.find(c => c.id === done.chatId).claudeSessionId}`), 'and so does the finished one, resumed');
   assert.ok(!(await ok('GET', '/api/chats')).find(c => c.id === closed.chatId).running, 'a chat you closed stays in Recent');
   console.log('All checks passed');
 } finally {
