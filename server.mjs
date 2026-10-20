@@ -338,7 +338,7 @@ route('POST', '/api/sessions/:id/input', ({ req, params, body }) => {
   const from = caller(req);
   if (target.id === from.id) throw fail(400, "An agent can't type into itself");
   const recent = recentMessages(target.project);
-  S.deliver(target, sign(from, text));
+  S.deliver(target, S.sign(from, text));
   sent.set(target.project, [...recent, Date.now()]);
   bus.emit('event', { type: 'agent-message', from: from.name, to: target.name, ...logMessage(target.project, from, target, 'send_to_agent') });
   return {};
@@ -386,14 +386,6 @@ function logMessage(project, from, to, via) {
   changed('messages');
   return entry;
 }
-// Signed with who sent it, by a plain name, so the text can't pass for another signature (or for the user): invisible
-// characters go, and any "[message from" (or a space's "[question from" / "[answer from") in it, however spaced or
-// disguised, starts with ( instead. A letter that isn't ASCII counts as one of "message from", so a Cyrillic М can't stand in for M.
-// ponytail: spellings that look different ("fr0m") still pass; fence the body off if those ever matter.
-const like = word => [...word].map(c => `[${c}\\P{ASCII}]`).join('');
-const FAKE_SIGNATURE = new RegExp(`\\[(?=[^\\p{L}\\p{N}]*(?:${['message', 'question', 'answer'].map(like).join('|')})[^\\p{L}\\p{N}]*${like('from')})`, 'giu');
-const defuse = text => text.normalize('NFKC').replace(/\p{Default_Ignorable_Code_Point}/gu, '').replace(FAKE_SIGNATURE, '(');
-const sign = (from, text) => `[Message from ${from ? `${S.plain(from.name)} (agent ${from.id})` : 'an agent outside Relay'}]\n${defuse(text)}`;
 route('POST', '/api/messages', async ({ req, body }) => {
   mayMessage(req);
   const from = caller(req);
@@ -410,7 +402,7 @@ route('POST', '/api/messages', async ({ req, body }) => {
       && (s.id === to || (s.project === project && (s.specialist?.name.toLowerCase() === name || s.name.toLowerCase() === name))))
     .filter(s => !asked || (({ model, effort }) => s.model === model && s.effort === effort)(T.settle(asked, T.usual(T.find(s.specialist?.id), s.role))))
     .sort((a, b) => b.lastOutputAt - a.lastOutputAt); // the most recently active (on the model asked for, if one was)
-  const signed = `${sign(from, text)}${from ? `\n\n(To answer, use message_agent to "${from.name}".)` : ''}`;
+  const signed = `${S.sign(from, text)}${from ? `\n\n(To answer, use message_agent to "${from.name}".)` : ''}`;
   let target = matches[0];
   const bucket = target?.project ?? project;
   const recent = recentMessages(bucket);
@@ -465,7 +457,7 @@ route('POST', '/api/spaces/ask', async ({ req, body }) => {
   const mine = recentMessages(from.project);
   for (const [id, a] of asks) if (Date.now() - a.at > HOUR) asks.delete(id);
   const askId = randomUUID().slice(0, 8);
-  const signed = `[Question from ${S.plain(from.name)} in space ${spaceName(from.project)} (ask id ${askId})]\n${defuse(question)}\n\n` +
+  const signed = `[Question from ${S.plain(from.name)} in space ${spaceName(from.project)} (ask id ${askId})]\n${S.defuse(question)}\n\n` +
     `(Answer briefly with answer_space and ask id ${askId}. Share only what they need; they can't see your chats or board.)`;
   if (target) S.deliver(target, signed);
   else {
@@ -495,7 +487,7 @@ route('POST', '/api/spaces/answer', ({ req, body }) => {
   // Spaces share summaries, not transcripts.
   const capped = answer.length > 2000 ? `${answer.slice(0, 2000)}... (cut at 2,000 characters)` : answer;
   const recent = recentMessages(to.project);
-  S.deliver(to, `[Answer from space ${spaceName(from.project)} (ask id ${askId})]\n${defuse(capped)}`);
+  S.deliver(to, `[Answer from space ${spaceName(from.project)} (ask id ${askId})]\n${S.defuse(capped)}`);
   asks.delete(askId); // once delivered: an asker busy at a prompt can be answered again later
   sent.set(to.project, [...recent, Date.now()]);
   bus.emit('event', { type: 'agent-message', from: `${from.name} (${spaceName(from.project)})`, to: to.name, ...logMessage(to.project, from, to, 'answer_space') });
@@ -640,6 +632,7 @@ const moved = (req, task, to) => S.note(task.project, caller(req)?.id ?? null, `
 route('PATCH', '/api/tasks/:id', ({ req, params, body }) => {
   const task = findTask(params.id);
   if (body.status !== undefined && !STATUSES.includes(body.status)) throw fail(400, `Status must be one of: ${STATUSES.join(', ')}`);
+  const toReview = body.status === 'review' && task.status !== 'review';
   if (body.status !== undefined && body.status !== task.status) moved(req, task, body.status);
   for (const key of ['title', 'description', 'status', 'agent', 'worktree']) if (body[key] !== undefined) task[key] = body[key];
   if (body.before !== undefined) { // drag-and-drop: place this task just before another one
@@ -649,6 +642,7 @@ route('PATCH', '/api/tasks/:id', ({ req, params, body }) => {
   }
   task.updatedAt = Date.now();
   changed('tasks');
+  if (toReview) S.tellStarter(task, 'is ready for review');
   return task;
 });
 route('DELETE', '/api/tasks/:id', ({ params }) => {
@@ -665,6 +659,7 @@ route('POST', '/api/tasks/:id/comments', ({ req, params, body }) => {
   }
   task.updatedAt = Date.now();
   changed('tasks');
+  if (task.status === 'doing' && caller(req)?.id === task.sessionId && /blocked/i.test(body.text)) S.tellStarter(task, 'is blocked');
   return task;
 });
 route('POST', '/api/tasks/:id/start', async ({ req, params, body }) => {
