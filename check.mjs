@@ -1346,11 +1346,13 @@ esac
   assert.equal(stripDeskCookies(''), '');
   assert.equal(stripDeskCookies(undefined), '');
   assert.ok(isNewer('v1.10.0', '1.9.2') && isNewer('2.0.0', '1.99.99') && !isNewer('v1.0.0', '1.0.0') && !isNewer('v1.0.0-beta', '1.0.0'), 'version comparison');
-  let release = null;
+  let release = null, limited = false;
   const dmgBytes = Buffer.from('not really a dmg');
   const gh = http.createServer((req, res) => {
     const send = (status, body, headers = {}) => res.writeHead(status, { 'content-type': 'application/json', ...headers }).end(body === undefined ? '' : JSON.stringify(body));
-    if (req.url === '/repos/aahannp/relay/releases/latest') return release ? send(200, release) : send(404, { message: 'Not Found' });
+    if (req.url === '/repos/aahannp/relay/releases/latest') return limited ? send(403, { message: 'API rate limit exceeded' }) : release ? send(200, release) : send(404, { message: 'Not Found' });
+    if (req.url === '/aahannp/relay/releases/latest') return send(302, undefined, { location: '/aahannp/relay/releases/tag/v99.0.0' });
+    if (req.url === '/aahannp/relay/releases/download/v99.0.0/Relay-99.0.0-arm64.dmg') return send(302, undefined, { location: '/files/agent.dmg' });
     if (req.url === '/dl/agent.dmg') return send(302, undefined, { location: '/files/agent.dmg' });
     if (req.url === '/files/agent.dmg') return res.writeHead(200, { 'content-length': dmgBytes.length }).end(dmgBytes);
     if (req.url === '/dl/elsewhere.dmg') return send(302, undefined, { location: 'https://example.invalid/agent.dmg' });
@@ -1377,6 +1379,11 @@ esac
     const stopped = await request('POST', '/api/update/download');
     assert.equal(stopped.status, 502, 'a download that leaves GitHub is stopped');
     assert.match(stopped.body.error, /somewhere other than GitHub/);
+    limited = true; // the API is rate-limited, so the release page's redirect is used instead
+    const viaPage = await ok('GET', '/api/update?force=1');
+    assert.deepEqual([viaPage.error, viaPage.newer, viaPage.latest, viaPage.asset.name], [undefined, true, 'v99.0.0', 'Relay-99.0.0-arm64.dmg'], 'rate-limited, found via the release page');
+    fs.rmSync(got.path);
+    assert.deepEqual(fs.readFileSync((await ok('POST', '/api/update/download')).path), dmgBytes, 'and its .dmg downloads');
   } finally {
     process.env.HOME = realHome;
     await new Promise(resolve => gh.close(resolve));
