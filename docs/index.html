@@ -870,7 +870,7 @@ test('two of a product add up', async () =&gt; {
         <ul>
           <li class="reveal"><h3>Files</h3><p><span class="vs-k">Several terminals</span>Every session edits the same folder, so one agent can overwrite another's work.</p><p><span class="vs-k">Relay</span>Each worker gets its own git worktree and branch, so they never clash.</p></li>
           <li class="reveal"><h3>Planning</h3><p><span class="vs-k">Several terminals</span>You split the work and brief each tab. The sessions don't know about each other.</p><p><span class="vs-k">Relay</span>A lead agent splits a goal into tasks on a shared Board and starts a worker for each.</p></li>
-          <li class="reveal"><h3>Talking</h3><p><span class="vs-k">Several terminals</span>You copy and paste between tabs.</p><p><span class="vs-k">Relay</span>Agents message each other or read each other's chat. Messages are signed, show in the pane, and are rate-limited.</p></li>
+          <li class="reveal"><h3>Talking</h3><p><span class="vs-k">Several terminals</span>You copy and paste between tabs.</p><p><span class="vs-k">Relay</span>Agents message each other or read each other's chat. A worker's last reply goes back to whoever started it. Messages are signed, show in the pane, and are rate-limited.</p></li>
           <li class="reveal"><h3>Awareness</h3><p><span class="vs-k">Several terminals</span>Each session only knows what you paste into it.</p><p><span class="vs-k">Relay</span>Before each turn, an agent hears what changed around it, in a few lines. It gets a "Heads up" when another agent edited the same file.</p></li>
           <li class="reveal"><h3>Status</h3><p><span class="vs-k">Several terminals</span>You click through tabs to see who's done.</p><p><span class="vs-k">Relay</span>One grid shows who's working, idle or needs you, and a notification tells you when one does.</p></li>
           <li class="reveal"><h3>Review</h3><p><span class="vs-k">Several terminals</span>You find each branch and diff it yourself.</p><p><span class="vs-k">Relay</span>Every worker's diff is in one Review tab. You merge or discard.</p></li>
@@ -960,12 +960,12 @@ test('two of a product add up', async () =&gt; {
         <div class="mini reveal">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg>
           <h3>A team of specialists</h3>
-          <p>A learning coach, a frontend expert and a quick code finder, each on its own model. Add your own.</p>
+          <p>An architect, a reviewer, a debugger, a tester, a code finder, a frontend expert and a learning coach, each on its own model. The read-only ones can't edit files. Add your own.</p>
         </div>
         <div class="mini reveal">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           <h3>Agents that talk</h3>
-          <p>They message each other by name, catch up on each other's chats, and copy themselves to split a job.</p>
+          <p>They message each other by name and copy themselves to split a job. When a worker finishes, its answer goes to whoever started it and its pane closes.</p>
         </div>
         <div class="mini reveal">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M10 13l-2 2 2 2M14 13l2 2-2 2"/></svg>
@@ -995,7 +995,7 @@ test('two of a product add up', async () =&gt; {
         <div class="mini reveal">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
           <h3>Hide a pane</h3>
-          <p>It leaves the grid but keeps running, and stays in the sidebar, Board and Graph.</p>
+          <p>It leaves the grid but keeps running, and stays in the sidebar, Board and Graph. Relaunch and the grid comes back as you left it.</p>
         </div>
         <div class="mini reveal">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V8l9-5 9 5v13M9 21v-6h6v6"/></svg>
@@ -1139,6 +1139,8 @@ test('two of a product add up', async () =&gt; {
             <li>Lead agent, Board and a git worktree per worker</li>
             <li>Review: diffs, commit, merge, discard</li>
             <li>Agents that message, read and copy each other</li>
+            <li>Restoring chats, shells, hidden and maximised panes <small>(since 1.9.11)</small></li>
+            <li>Workers that report back and close; seven specialists <small>(since 1.9.12)</small></li>
             <li>Workspace awareness, spaces, more windows and hiding a pane <small>(since 1.9.4)</small></li>
             <li>Graph, Spend, Files, Artifacts, themes, update check</li>
             <li>Token meter on each Claude pane, workers on Sonnet <small>(since 1.8.3)</small></li>
@@ -1159,7 +1161,7 @@ test('two of a product add up', async () =&gt; {
           <b>Planned</b>
           <ul>
             <li>Apple notarization <small>(no date yet)</small></li>
-            <li>Hooks that tell the lead when something is done, like a PR merging</li>
+            <li>Hooks that tell the lead when something outside Relay is done, like a PR merging</li>
             <li>A Windows app</li>
           </ul>
         </div>
@@ -1179,7 +1181,7 @@ test('two of a product add up', async () =&gt; {
             <tbody>
               <tr><td>Mac with Apple silicon</td><td>Required</td><td>Apple silicon. There's no Intel download.</td></tr>
               <tr><td>macOS 13 or later</td><td>Required (<a href="https://www.electronjs.org/blog/electron-44-0">Electron 44's minimum</a>)</td><td>macOS 26.4</td></tr>
-              <tr><td>Claude Code <code>claude</code></td><td>Required</td><td>2.1.302</td></tr>
+              <tr><td>Claude Code <code>claude</code></td><td>Required</td><td>2.1.308</td></tr>
               <tr><td>Codex CLI <code>codex</code></td><td>Optional</td><td>0.146.0</td></tr>
               <tr><td>Gemini CLI <code>gemini</code></td><td>Optional</td><td>Supported, not tested</td></tr>
               <tr><td>Cursor Agent <code>cursor-agent</code></td><td>Optional</td><td>Supported, not tested</td></tr>
@@ -1213,7 +1215,7 @@ test('two of a product add up', async () =&gt; {
         </details>
         <details name="faq">
           <summary>How does it update?</summary>
-          <p>The version pill next to the logo checks GitHub releases. When a newer one is out it says Update, and one click downloads the new .dmg to your Downloads folder.</p>
+          <p>The version pill next to the logo checks GitHub releases. When a newer one is out it says Update, and one click downloads the new .dmg to your Downloads folder. If GitHub's API is rate-limited, as it can be on a shared office network, it falls back to the release page (since 1.9.10). If an older version shows a rate-limit error, download the latest by hand once.</p>
         </details>
         <details name="faq">
           <summary>Can I build it myself, or run it on an Intel Mac?</summary>

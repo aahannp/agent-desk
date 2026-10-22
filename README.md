@@ -57,7 +57,7 @@ Run these in the folder with the download (`<name>` is the DMG's file name):
 | --- | --- | --- |
 | Mac with Apple silicon | Required: the DMG is arm64 only | Apple silicon |
 | macOS 13 (Ventura) or later | Required: [Electron 44's minimum](https://www.electronjs.org/blog/electron-44-0) | macOS 26.4 |
-| [Claude Code](https://code.claude.com/docs/en/overview) (`claude`), signed in | Required | 2.1.302 |
+| [Claude Code](https://code.claude.com/docs/en/overview) (`claude`), signed in | Required | 2.1.308 |
 | Codex CLI (`codex`) | Optional | 0.146.0 |
 | Gemini CLI (`gemini`) | Optional | Supported, not tested |
 | Cursor Agent (`cursor-agent`) | Optional | Supported, not tested |
@@ -109,7 +109,14 @@ flowchart LR
 ## What's in it
 
 - **Agents**: up to 16 Claude Code, Codex, Gemini CLI, Cursor Agent or shell panes in a grid. Each one shows
-  whether it's working, idle, needs you, or finished, and you get a notification when an agent needs you.
+  whether it's working, idle, needs you, or finished, and you get a notification when an agent needs you. The 16
+  counts every open pane in every folder, hidden ones and shells included; close finished panes to make room.
+- **Picks up where you left off**: quit and reopen and the grid comes back the way it was: each chat in its
+  pane, shells in their folders, hidden panes still hidden and a maximised pane still maximised (since 1.9.11).
+- **Workers report back** (since 1.9.12): when an agent that another agent started ends its turn, its last
+  message goes to its starter, signed as a report, so the starter doesn't have to keep checking. Then its pane
+  closes and the chat stays in the sidebar; message it again and it reopens with its conversation. A pane you
+  typed into, or one waiting at a permission prompt, stays open. Reports never leave the folder.
 - **Every folder in one grid** (Settings, off by default): agents from all your project folders side by side, each
   pane marked with its folder; the New Claude Code menu starts one in another folder.
 - **More windows**: File → New Window (⌘⇧N) or the Dock menu. Each window has its own project and starts on the
@@ -133,8 +140,8 @@ flowchart LR
 - **Spaces** (Settings, on by default): each project folder is a space. An agent can ask another
   folder a question (`list_spaces`, `ask_space`); it lands with that folder's lead, who answers in
   under 2,000 characters (`answer_space`). Nothing else crosses: no chats, board or agents.
-- **Model and effort**: defaults for Claude Code agents, lead agents and each specialist (Christie on Sonnet,
-  Browner on Opus, Scout on Haiku). Ask for "a lighter model" or "more effort" and the agent goes one step from
+- **Model and effort**: defaults for Claude Code agents, lead agents and each specialist (Archie, Vera,
+  Sherlock and Browner on Opus, Christie and Tess on Sonnet, Scout on Haiku). Ask for "a lighter model" or "more effort" and the agent goes one step from
   its default.
 - **Lead agent**: give it a goal and it plans tasks on the board, then starts a worker for each one in its
   own git worktree.
@@ -143,9 +150,23 @@ flowchart LR
   `/compact` into it. After 3 compactions a fresh lead with the same name takes over, handed
   its summary, open tasks, running workers and last messages; the old chat stays in the sidebar.
 - **Team**: named specialists, each a Claude agent with one area of expertise, its own instructions and,
-  if you like, a model (Opus, Sonnet or Haiku). Christie is a learning coach who teaches you anything step by
-  step, Browner a frontend expert, and Scout a quick code finder on Haiku. Add your own in Settings, and start
-  one from the New Claude Code menu. Every agent knows who is on the team and what each running agent was
+  if you like, a model (Opus, Sonnet or Haiku). Seven come built in, and every agent's brief says when to pick
+  each one:
+
+  | Name | Role | Use it | Model |
+  | --- | --- | --- | --- |
+  | Archie | Architect, read-only | Before a change that spans several files or workers: designs it and splits it into tasks | Opus |
+  | Vera | Reviewer, read-only | After a change, before merge: finds real bugs in a diff | Opus |
+  | Sherlock | Debugger | When something is broken or a test fails: finds the root cause, then fixes it | Opus |
+  | Tess | Tester | When a change needs tests or a claim needs proving: writes and runs them | Sonnet |
+  | Scout | Code finder, read-only | For a fast, cheap "where is" or "how does" | Haiku |
+  | Browner | Frontend expert | UI work in HTML, CSS, JavaScript or React, accessibility and speed | Opus |
+  | Christie | Learning coach | When you want to learn something, step by step | Sonnet |
+
+  Read-only specialists start with Claude Code's edit tools turned off (Edit, Write, MultiEdit, NotebookEdit), so
+  they can't change files that way; they can still run commands, which ask you as usual. Tick Read-only on your
+  own specialists in Settings → Team. Add your own there, and start one from the New Claude Code menu. If you
+  edited your team before 1.9.12, the new four join it and anyone you removed stays removed. Every agent knows who is on the team and what each running agent was
   asked, and can start a specialist on a model it picks for part of its job (turn that off in Settings).
   Agents can read each specialist's full profile, and when you ask ("Scout, make your answers shorter") change
   one, their own included, after asking you; agents started after that get the change (turn that off in Settings too).
@@ -180,7 +201,9 @@ flowchart LR
   it to an agent, and Task Notes follows its card (In progress and Review show as in progress, Done marks it
   done). Only tasks you brought over are written back, and only their status.
 - **Updates**: the version pill next to the logo checks this repo's GitHub releases. When a newer one is out it
-  says Update, and one click downloads the new .dmg into your Downloads folder.
+  says Update, and one click downloads the new .dmg into your Downloads folder. When GitHub's API is
+  rate-limited (60 calls an hour per address without a login, shared on an office network), it falls back to
+  the release page, which isn't limited (since 1.9.10). If 1.9.9 or older shows a rate-limit error, download the latest by hand once.
 - **MCP for your own Claude Code**: Settings shows a one-line `claude mcp add` that gives the same 21 board
   tools to Claude Code anywhere.
 
@@ -269,6 +292,8 @@ From the code and the [release notes](https://github.com/aahannp/relay/releases)
 - Claude Code and shell panes, up to 16 at once, with status and notifications
 - Lead agent, Board and a git worktree per worker; Review with diffs, commit, merge and discard
 - Agents that message, read and copy each other; the team of specialists
+- Restoring the grid as you left it: chats, shells, hidden and maximised panes (since 1.9.11)
+- Workers that report to their starter and close; Archie, Vera, Sherlock and Tess, with read-only (since 1.9.12)
 - Graph, Spend, Files, Artifacts with folders and GitHub Pages publishing, 16 themes, the update check
 - Token meter on each Claude pane, and workers on Sonnet by default (since 1.8.3)
 - Release builds on GitHub Actions, with a `.sha256` file and a signed build attestation (since 1.9.0)
@@ -282,7 +307,8 @@ From the code and the [release notes](https://github.com/aahannp/relay/releases)
 
 **Planned**
 - Apple notarization (needs a developer account; no date yet)
-- Hooks that tell the lead when something is done, such as a pull request merging, so it can move on without being asked
+- Hooks that tell the lead when something outside Relay is done, such as a pull request merging (a worker's own
+  report already arrives on its own since 1.9.12)
 - A Windows app
 
 ## Contributing
