@@ -315,6 +315,10 @@ try {
   fs.writeFileSync(path.join(claudeHome, 'settings.json'), JSON.stringify({ autoCompactWindow: 500_000 }));
   assert.equal(settingsOf(command({ ...base, resume: false }, '', null).args).autoCompactWindow, undefined, 'or your settings.json does');
   assert.match(hooks.PostToolUse[0].hooks[0].command, /\/api\/touched/, 'every file an agent edits is reported');
+  assert.match(hooks.Stop[0].hooks[0].command, /\/api\/turn-ended/, 'and the end of each turn');
+  process.env.CLAUDE_CODE_CHILD_SESSION = '1';
+  assert.ok(!('CLAUDE_CODE_CHILD_SESSION' in command({ ...base, resume: false }, '', null).env), "an agent never inherits Claude Code's child-session flag, which turns transcript saving off");
+  delete process.env.CLAUDE_CODE_CHILD_SESSION;
   fs.writeFileSync(path.join(claudeHome, 'settings.json'), JSON.stringify({ statusLine: { type: 'command', command: 'cat # yours', padding: 1 } }));
   const bar = JSON.parse(fs.readFileSync((args => args[args.indexOf('--settings') + 1])(command({ ...base, resume: false }, '', null).args), 'utf8')).statusLine;
   assert.match(bar.command, /\/api\/context/, "the status line reports the context window's size");
@@ -1040,6 +1044,42 @@ esac
     const plainOne = await viaTool('start_agent', { prompt: 'Own a goal', role: 'lead' });
     assert.ok(plainOne.isError && /Only a lead agent/.test(plainOne.content[0].text), 'a non-lead cannot');
     for (const id of [boss.id, child.id]) await ok('DELETE', `/api/sessions/${id}`);
+    db.tasks.splice(db.tasks.indexOf(db.tasks.find(t => t.id === job.id)), 1);
+  }
+
+  // A worker another agent started reports each turn to it, once, then closes; its chat stays and a message opens it again
+  {
+    const proj = path.join(tmp, 'reports'); // its own project, so its messages don't count against the repo's limit
+    fs.mkdirSync(proj);
+    const boss = await ok('POST', '/api/sessions', { kind: 'agent', agent: 'claude', project: proj, role: 'lead', name: 'Boss three' });
+    const asBoss = { 'x-desk-session': boss.id, 'x-desk-via': 'mcp' };
+    const worker = async name => (await request('POST', '/api/sessions', { headers: asBoss, body: { kind: 'agent', agent: 'claude', project: proj, name } })).body;
+    const [scouty, kept] = [await worker('Scouty'), await worker('Kept')];
+    const job = (await request('POST', '/api/tasks', { headers: asBoss, body: { title: 'Once only', project: proj } })).body;
+    const { session: tasked } = (await request('POST', `/api/tasks/${job.id}/start`, { headers: asBoss, body: { worktree: false } })).body;
+    for (const id of [boss.id, scouty.id, kept.id, tasked.id]) await screenOf(id, /FAKE-CLAUDE/, 'started');
+    await screenOf(scouty.id, /forwards your final message to them and closes your pane/, 'a worker knows its last words go to its starter');
+    const ended = (s, said) => request('POST', '/api/turn-ended', { token: sessions.get(s.id).agentToken, body: { hook_event_name: 'Stop', last_assistant_message: said } });
+    db.chats.find(c => c.id === kept.chatId).talked = true;
+    await ok('PATCH', `/api/tasks/${job.id}`, { status: 'review' });
+    for (const [s, said] of [[scouty, 'Found it in lib/x.mjs'], [kept, 'Kept is still here'], [tasked, 'Once only is done']]) assert.equal((await ended(s, said)).status, 200);
+    await screenOf(boss.id, new RegExp(`\\[Report from Scouty \\(agent ${scouty.id}\\)\\] Found it in lib/x\\.mjs \\(Scouty has closed its pane`), 'the starter gets its report');
+    await screenOf(boss.id, /\[Report from Kept [^\]]*\] Kept is still here/, 'a worker you typed in reports too');
+    await new Promise(r => setTimeout(r, 1500));
+    assert.doesNotMatch(await outputOf(boss.id), /Once only is done/, 'a turn that moved its task to review was told once already, not twice');
+    assert.ok(!sessions.has(scouty.id) && !sessions.has(tasked.id), 'then the worker closes, freeing its slot');
+    assert.ok(sessions.has(kept.id), 'but not one you typed in');
+    const chat = (await ok('GET', '/api/chats')).find(c => c.id === scouty.chatId);
+    assert.deepEqual([chat.running, chat.autoClosed], [false, scouty.id], 'its chat stays');
+    assert.doesNotMatch((await rpc('tools/call', { name: 'get_agent_diff', arguments: { id: scouty.id } }, asBoss)).result.content[0].text, /No such session/, 'get_agent_diff still finds it by its old id');
+    const woke = (await request('POST', '/api/messages', { headers: asBoss, body: { to: 'Scouty', text: 'And lib/y.mjs?' } })).body;
+    assert.deepEqual([woke.reopened, woke.started, woke.to.chatId, woke.to.startedBy?.id], [true, false, scouty.chatId, boss.id], 'a message to it by name opens its chat again');
+    await screenOf(woke.to.id, /FAKE-CLAUDE \[Message from Boss three[^\]]*\]\s*And lib\/y\.mjs\?/, 'with the message as its first');
+    assert.equal((await request('POST', `/api/sessions/${tasked.id}/input`, { headers: asBoss, body: { text: 'One more thing' } })).status, 200, 'send_to_agent by its old id opens it too');
+    const again = [...sessions.values()].find(s => s.chatId === tasked.chatId);
+    await screenOf(again.id, /One more thing/, 'and gets the message');
+    assert.equal(db.tasks.find(t => t.id === job.id).sessionId, again.id, 'its task follows it');
+    for (const id of [boss.id, kept.id, woke.to.id, again.id]) await ok('DELETE', `/api/sessions/${id}`);
     db.tasks.splice(db.tasks.indexOf(db.tasks.find(t => t.id === job.id)), 1);
   }
 
