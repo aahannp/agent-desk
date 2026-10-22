@@ -10,6 +10,7 @@ import WebSocket from 'ws';
 import { start } from './server.mjs';
 import { createWorktree } from './lib/git.mjs';
 import { db, bus, migrate } from './lib/store.mjs';
+import * as T from './lib/team.mjs';
 import { command, board, sessions, upkeep, effectiveWindow, claudeTheme, contrast, createSession, prose } from './lib/sessions.mjs';
 import { THEMES } from './public/js/themes.js';
 import { transcriptContext } from './lib/transcripts.mjs';
@@ -444,7 +445,7 @@ try {
   assert.ok(!(await ok('GET', '/api/sessions')).some(x => x.chatId === first.chatId), 'removing a chat also closes its finished pane');
 
   // The team: named specialists with their own instructions and model, who know about each other
-  assert.deepEqual((await ok('GET', '/api/specialists')).map(x => [x.name, x.model, x.effort]), [['Christie', 'sonnet', 'medium'], ['Browner', 'opus', 'high'], ['Scout', 'haiku', 'low']], 'three built-in specialists, each with a usual model and effort');
+  assert.deepEqual((await ok('GET', '/api/specialists')).map(x => [x.name, x.model, x.effort]), [['Christie', 'sonnet', 'medium'], ['Browner', 'opus', 'high'], ['Scout', 'haiku', 'low'], ['Archie', 'opus', 'high'], ['Vera', 'opus', 'high'], ['Sherlock', 'opus', 'high'], ['Tess', 'sonnet', 'medium']], 'seven built-in specialists, each with a usual model and effort');
   const scout = await ok('POST', '/api/sessions', { specialist: 'scout', project: repo, prompt: 'where is the README?' });
   assert.deepEqual([scout.name, scout.agent, scout.model, scout.specialist.name, scout.asked], ['Scout', 'claude', 'haiku', 'Scout', 'where is the README?'], 'a specialist is Claude with their own model');
   await exited(scout.id);
@@ -453,10 +454,13 @@ try {
   assert.match(scoutRan, /You are Scout/, 'with their own instructions');
   assert.match(scoutRan, /- Christie: Learning coach.*- Browner: Frontend.*- Scout \(you\)/, 'and knows who else is on the team');
   assert.match(scoutRan, /change one with update_specialist/, 'and that it can change a profile when asked');
+  assert.match(scoutRan, /- Vera: Reviewer: after a change.*opus, high effort, read-only\./, 'with when to pick each, and who is read-only');
+  assert.match(scoutRan, /--disallowedTools Edit,Write,MultiEdit,NotebookEdit/, 'a read-only specialist has its editing tools turned off');
   assert.ok(!/update_specialist/.test(scoutRan.match(/--allowedTools (\S+)/)[1]), 'which always asks you first');
   const coach = await ok('POST', '/api/sessions', { specialist: 'Christie', model: 'opus', project: repo });
   assert.equal(coach.model, 'opus', 'you can pick a model for one run');
   await exited(coach.id);
+  assert.doesNotMatch(await outputOf(coach.id), /--disallowedTools/, 'one that edits keeps them');
   const coachChat = db.chats.find(c => c.id === coach.chatId);
   assert.deepEqual([coachChat.specialist, coachChat.model], ['christie', 'opus'], 'the chat remembers who and which model');
   const coachAgain = await ok('POST', `/api/chats/${coach.chatId}/open`);
@@ -521,8 +525,8 @@ try {
   await exited(startedTask.sessionId);
   await ok('DELETE', `/api/tasks/${made.id}`);
   const teamNow = JSON.parse((await viaTool('list_team', {})).content[0].text);
-  assert.deepEqual(teamNow.map(x => [x.name, x.model]), [['Christie', 'sonnet'], ['Browner', 'opus'], ['Scout', 'haiku'], ['Rhea', 'sonnet']], 'agents see the whole team');
-  assert.deepEqual([teamNow[3].id, teamNow[3].instructions], [rhea.id, 'Review carefully.'], 'with each full profile');
+  assert.deepEqual(teamNow.map(x => [x.name, x.model]), [['Christie', 'sonnet'], ['Browner', 'opus'], ['Scout', 'haiku'], ['Archie', 'opus'], ['Vera', 'opus'], ['Sherlock', 'opus'], ['Tess', 'sonnet'], ['Rhea', 'sonnet']], 'agents see the whole team');
+  assert.deepEqual([teamNow[7].id, teamNow[7].instructions], [rhea.id, 'Review carefully.'], 'with each full profile');
   const edited = await viaTool('update_specialist', { specialist: 'rhea', instructions: 'Review briefly.' });
   assert.ok(!edited.isError, 'an agent can edit a specialist when asked');
   assert.deepEqual((await ok('GET', '/api/specialists')).find(x => x.id === rhea.id).instructions, 'Review briefly.', 'and the change sticks');
@@ -550,8 +554,23 @@ try {
   assert.equal((await request('POST', '/api/specialists', { headers: { 'x-desk-via': 'mcp' }, body: { name: 'Mole', role: 'Spy' } })).status, 403, "or change the team");
   assert.equal((await request('PATCH', '/api/settings', { body: { agentsCanSpawn: 'yes' } })).status, 400, 'the switch is true or false');
   await ok('PATCH', '/api/settings', { agentsCanSpawn: true });
+  assert.equal((await ok('PATCH', `/api/specialists/${rhea.id}`, { readOnly: true })).readOnly, true, 'any specialist can be made read-only');
   await ok('DELETE', `/api/specialists/${rhea.id}`);
-  assert.equal((await ok('GET', '/api/specialists')).length, 3);
+  assert.equal((await ok('GET', '/api/specialists')).length, 7);
+
+  // A team saved by an older Relay gets the built-ins added since, but not one you removed, and keeps your edits
+  {
+    const saved = [db.specialists, db.removedSpecialists];
+    db.specialists = [{ ...db.specialists[0], role: 'Learning coach: mine now' }, db.specialists[2], { id: 'own1', name: 'Mine', role: 'Custom', model: '', effort: '', instructions: '' }];
+    db.removedSpecialists = ['browner'];
+    assert.deepEqual((await ok('GET', '/api/specialists')).map(x => x.name), ['Christie', 'Scout', 'Mine', 'Archie', 'Vera', 'Sherlock', 'Tess'], 'new built-ins appear after your own team');
+    assert.equal(T.find('christie').role, 'Learning coach: mine now', 'your edit to a built-in stays');
+    await ok('DELETE', '/api/specialists/vera');
+    await ok('PATCH', '/api/specialists/own1', { name: 'Mine too' });
+    assert.ok(!(await ok('GET', '/api/specialists')).some(x => x.name === 'Vera'), 'a built-in you removed stays removed');
+    assert.deepEqual(db.removedSpecialists, ['browner', 'vera'], 'and is remembered');
+    [db.specialists, db.removedSpecialists] = saved;
+  }
   for (const x of await ok('GET', '/api/sessions')) if (x.exited) await ok('DELETE', `/api/sessions/${x.id}`);
 
   // Past the limit, the chats used longest ago go first, however old the favourite is

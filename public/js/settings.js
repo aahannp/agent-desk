@@ -82,7 +82,7 @@ function render() {
     section('Team', 'Specialists are Claude agents with a name, one area of expertise, their own instructions and, if you like, a model. Every agent knows who is on the team, so it can hand a job to the right one. Start one from the New Claude Code menu.',
       h('div', { class: 'agent-list' }, state.specialists.map(x => h('div', { class: 'agent-row' },
         avatar({ specialist: x }), h('div', { class: 'grow' }, h('b', {}, x.name), h('div', { class: 'muted', style: { fontSize: '12px' } }, x.role)),
-        h('span', { class: 'chip' }, [x.model || 'default model', x.effort || 'default effort'].join(' · ')),
+        h('span', { class: 'chip' }, [x.model || 'default model', x.effort || 'default effort', ...(x.readOnly ? ['read-only'] : [])].join(' · ')),
         h('button', { class: 'btn xs', onClick: () => editSpecialist(x) }, 'Edit'),
         h('button', { class: 'icon-btn', title: `Remove ${x.name}`, onClick: () => removeSpecialist(x) }, icon('trash', 14))))),
       h('div', { class: 'row', style: { margin: '12px 0 4px' } }, h('button', { class: 'btn sm', onClick: () => editSpecialist() }, icon('plus', 13), 'Add a specialist')),
@@ -154,6 +154,7 @@ function editSpecialist(x = null) {
   model.options[0].textContent = 'Worker default (Settings)';
   const effort = effortSelect(x?.effort ?? '');
   effort.options[0].textContent = 'Worker default (Settings)';
+  const readOnly = h('input', { type: 'checkbox', checked: !!x?.readOnly });
   const instructions = h('textarea', { class: 'input', rows: 9, value: x?.instructions ?? '', placeholder: 'How they work: what to focus on, what to avoid, how to report back.' });
   modal({
     title: x ? `Edit ${x.name}` : 'Add a specialist', width: 600,
@@ -162,10 +163,11 @@ function editSpecialist(x = null) {
       h('div', { class: 'row' }, h('label', { class: 'field', style: { flex: 1 } }, h('span', {}, 'Usual model'), model), h('label', { class: 'field', style: { flex: 1 } }, h('span', {}, 'Usual effort'), effort)),
       h('label', { class: 'field' }, h('span', {}, 'Good at'), role),
       h('label', { class: 'field' }, h('span', {}, 'Instructions'), instructions),
+      h('label', { class: 'toggle', title: 'Edit, Write, MultiEdit and NotebookEdit are turned off for them' }, readOnly, 'Read-only: Claude Code blocks their file-editing tools'),
     ],
     actions: [{ label: 'Cancel' }, { label: x ? 'Save' : 'Add', primary: true, onClick: async () => {
       try {
-        const body = { name: name.value, role: role.value, model: model.value, effort: effort.value, instructions: instructions.value };
+        const body = { name: name.value, role: role.value, model: model.value, effort: effort.value, readOnly: readOnly.checked, instructions: instructions.value };
         await api(x ? 'PATCH' : 'POST', x ? `/api/specialists/${x.id}` : '/api/specialists', body);
       } catch (e) {
         toast(e.message, 'error');
