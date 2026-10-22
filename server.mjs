@@ -54,7 +54,7 @@ function sameSite(req) {
   return !origin || LOCAL.has(origin.replace(/^https?:\/\//, ''));
 }
 
-const AGENT_ROUTES = new Set(['POST /mcp', 'POST /api/claude-session', 'POST /api/touched', 'POST /api/context', 'POST /api/news']);
+const AGENT_ROUTES = new Set(['POST /mcp', 'POST /api/claude-session', 'POST /api/touched', 'POST /api/context', 'POST /api/news', 'POST /api/turn-ended']);
 // { kind: 'ui' } for the master token, { kind: 'agent', session } for an agent's token on one of
 // AGENT_ROUTES (header only, never a cookie or ?t=), otherwise null: anywhere else an agent token counts for nothing.
 function auth(req, url) {
@@ -259,6 +259,14 @@ route('POST', '/api/news', ({ req }) => {
   return { raw: text ? JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: text } }) : '', type: 'application/json' };
 });
 
+// Claude's Stop hook: a turn is done. A worker another agent started reports to it, then closes (see turnEnded).
+route('POST', '/api/turn-ended', ({ req, body }) => {
+  const s = caller(req);
+  if (!s) throw fail(404, 'Unknown session');
+  S.turnEnded(s, body.last_assistant_message);
+  return {};
+});
+
 // Chats: agent conversations kept after their pane closes or the app quits, so they can be opened again
 const findChat = id => db.chats.find(c => c.id === id) ?? (() => { throw fail(404, 'No such chat'); })();
 route('GET', '/api/chats', ({ req, query }) => {
@@ -266,8 +274,8 @@ route('GET', '/api/chats', ({ req, query }) => {
     : query.get('project') ? expand(query.get('project')) : null; // an agent sees only its own project's chats
   return db.chats.filter(c => !project || c.project === project).map(S.chatInfo).sort((a, b) => b.lastActiveAt - a.lastActiveAt);
 });
-async function reopen(chat) {
-  const s = await S.createSession({ chatId: chat.id });
+async function reopen(chat, prompt = '') {
+  const s = await S.createSession({ chatId: chat.id, prompt });
   const task = chat.taskId && db.tasks.find(t => t.id === chat.taskId);
   if (task) {
     task.sessionId = s.id;
@@ -336,17 +344,20 @@ route('GET', '/api/sessions/:id/output', ({ req, params, query }) =>
   ({ text: S.screenText(noShell(req, sameProject(req, params.id), 'read'), Number(query.get('lines')) || 60) }));
 // You type anything into any pane. An agent (send_to_agent) gets a message's checks and limit: plain text, into an
 // agent in its own project, never a shell or a permission prompt.
-route('POST', '/api/sessions/:id/input', ({ req, params, body }) => {
+route('POST', '/api/sessions/:id/input', async ({ req, params, body }) => {
   const text = String(body.text ?? '');
   if (!fromAgent(req)) return (S.send(findSession(params.id), text, body.submit !== false), {});
   mayMessage(req);
-  const target = sameProject(req, params.id);
   const from = caller(req);
-  if (target.id === from.id) throw fail(400, "An agent can't type into itself");
-  const recent = recentMessages(target.project);
-  S.deliver(target, S.sign(from, text));
-  sent.set(target.project, [...recent, Date.now()]);
-  bus.emit('event', { type: 'agent-message', from: from.name, to: target.name, ...logMessage(target.project, from, target, 'send_to_agent') });
+  const closed = from && !S.sessions.has(params.id) && closedWorker(from.project, params.id);
+  let target = closed ? null : sameProject(req, params.id);
+  if (target?.id === from.id) throw fail(400, "An agent can't type into itself");
+  const recent = recentMessages(from.project);
+  if (target) S.deliver(target, S.sign(from, text));
+  else target = await wake(closed, S.sign(from, text));
+  if (from.startedBy?.id === target.id) from.told = true; // it told its starter itself, so its turn's report isn't sent too
+  sent.set(from.project, [...recent, Date.now()]);
+  bus.emit('event', { type: 'agent-message', from: from.name, to: target.name, ...logMessage(from.project, from, target, 'send_to_agent') });
   return {};
 });
 
@@ -392,6 +403,15 @@ function logMessage(project, from, to, via) {
   changed('messages');
   return entry;
 }
+// A worker Relay closed once its turn was done (S.turnEnded) still answers to its old id and its name: a message
+// opens its chat again, as its first message (or reaches it, if it's open again already).
+const closedWorker = (project, to) => db.chats.find(c => c.autoClosed && c.project === project && (c.autoClosed === to || c.name.toLowerCase() === to.toLowerCase()));
+async function wake(chat, signed) {
+  const live = S.chatSessions(chat.id).find(s => !s.exited);
+  if (live) return (S.deliver(live, signed), live);
+  for (const s of S.chatSessions(chat.id)) S.stop(s); // a finished pane gives way
+  return reopen(chat, signed);
+}
 route('POST', '/api/messages', async ({ req, body }) => {
   mayMessage(req);
   const from = caller(req);
@@ -410,18 +430,23 @@ route('POST', '/api/messages', async ({ req, body }) => {
     .sort((a, b) => b.lastOutputAt - a.lastOutputAt); // the most recently active (on the model asked for, if one was)
   const signed = `${S.sign(from, text)}${from ? `\n\n(To answer, use message_agent to "${from.name}".)` : ''}`;
   let target = matches[0];
+  const closed = !target && !asked && closedWorker(project, to);
   const bucket = target?.project ?? project;
   const recent = recentMessages(bucket);
   if (target) {
     S.deliver(target, signed);
+  } else if (closed) {
+    target = await wake(closed, signed);
   } else {
     if (!T.find(to)) throw fail(404, `No running agent called "${to}"${asked ? ' is on that model and effort' : ''}, and no one on the team has that name. A running agent can't change its model; list_agents and list_team show who there is.`);
     mayStartAgents(req);
     target = await S.createSession({ project, specialist: to, prompt: signed, ...asked, startedBy: starter(req) });
   }
+  if (from && from.startedBy?.id === target.id) from.told = true;
   sent.set(bucket, [...recent, Date.now()]);
-  bus.emit('event', { type: 'agent-message', from: from?.name ?? 'An agent', to: target.name, started: !matches[0], ...logMessage(bucket, from, target, 'message_agent') });
-  return { delivered: Boolean(matches[0]), started: !matches[0], to: S.info(target) };
+  const started = !matches[0] && !closed;
+  bus.emit('event', { type: 'agent-message', from: from?.name ?? 'An agent', to: target.name, started, ...logMessage(bucket, from, target, 'message_agent') });
+  return { delivered: !started, started, reopened: Boolean(closed), to: S.info(target) };
 });
 
 route('GET', '/api/messages', ({ req, query }) => {
