@@ -12,10 +12,16 @@ let hiddenCard;
 let focusedId = null;
 
 // Panes you've hidden from the grid. They keep running and show everywhere else (sidebar, Board, Graph).
-// Kept per window, since another window may want them on screen.
+// Remembered across relaunches by chat (or shell) id, like the order: a relaunch gives a pane a new session id.
+// `hidden` holds the session ids on screen now; `hiddenKeys` is what's saved.
 const HIDDEN = 'agent-desk:hidden';
-const hidden = new Set((() => { try { return JSON.parse(sessionStorage.getItem(HIDDEN) || '[]'); } catch { return []; } })());
-const saveHidden = () => { try { sessionStorage.setItem(HIDDEN, JSON.stringify([...hidden])); } catch {} };
+const MAX = 'agent-desk:max';
+const stored = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key) ?? fallback); } catch { return JSON.parse(fallback); } };
+const store = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} };
+const hidden = new Set();
+const hiddenKeys = new Set(stored(HIDDEN, '[]'));
+let maxKey = stored(MAX, 'null'); // the pane that was maximised, until it shows up again
+const keyOf = id => (s => s?.chatId ?? s?.shellId ?? id)(panes.get(id)?.session);
 
 export function mount(root) {
   stack = h('div', { class: 'stack' });
@@ -246,6 +252,7 @@ function sync() {
     const p = panes.get(s.id) ?? (s.artifactId ? null : terminalPane(s));
     if (!p) continue;
     p.session = s;
+    if (hiddenKeys.has(keyOf(s.id))) hidden.add(s.id);
     if (!p.docked) p.el.classList.toggle('hidden', !shows(s.project) || hidden.has(s.id));
     renderHead(p);
   }
@@ -253,12 +260,17 @@ function sync() {
   placeSections();
   syncBrowsers();
   restoreOrder();
+  const back = maxKey && [...panes.keys()].find(id => keyOf(id) === maxKey && !hidden.has(id));
+  if (back) {
+    maxKey = null;
+    toggleMaximise(back);
+  }
 }
 
 // The order you arrange panes in is remembered per space, in this browser only (a convenience, not data).
 // Panes are keyed by chat, not session: a relaunch gives the same chat a new session id.
 const orderKey = project => `agent-desk:order:${project}`;
-const orderId = el => panes.get(el.dataset.id)?.session?.chatId ?? el.dataset.id;
+const orderId = el => keyOf(el.dataset.id);
 function saveOrder(project) {
   try { localStorage.setItem(orderKey(project), JSON.stringify([...sectionFor(project).grid.children].map(orderId))); } catch {}
   emit('tick'); // the sidebar lists open panes in the same order
@@ -277,7 +289,8 @@ actions.paneOrder = () => [...stack.querySelectorAll('.grid > .pane')].map(el =>
 function hidePane(id, on = true) {
   if (!panes.has(id) || on === hidden.has(id)) return;
   hidden[on ? 'add' : 'delete'](id);
-  saveHidden();
+  hiddenKeys[on ? 'add' : 'delete'](keyOf(id));
+  store(HIDDEN, [...hiddenKeys]);
   if (on && focusedId === id) setFocus(null);
   sync();
   emit('tick'); // the sidebar marks hidden panes
@@ -622,11 +635,14 @@ function toggleMaximise(id) {
   const on = !p.el.classList.contains('max');
   unmaximise();
   p.el.classList.toggle('max', on);
+  maxKey = null;
+  if (on) store(MAX, keyOf(id));
   stack.classList.toggle('solo', on); // the maximised pane takes the whole view, other spaces too
 }
 const unmaximise = () => {
   stack.querySelectorAll('.pane.max').forEach(x => x.classList.remove('max'));
   stack.classList.remove('solo');
+  store(MAX, null);
 };
 
 const closePane = guard(async id => {
@@ -635,6 +651,7 @@ const closePane = guard(async id => {
   const keeps = p.session.chatId ? ' The chat stays in the sidebar, so you can drag it back in to carry on.' : '';
   if (!p.session.exited && !(await confirmDialog(`Stop "${chatTitle(p.session)}"?`, `This ends the process running in this pane.${keeps}`, { label: 'Stop', danger: true }))) return;
   await api('DELETE', `/api/sessions/${id}`);
+  if (hiddenKeys.delete(keyOf(id))) store(HIDDEN, [...hiddenKeys]);
   dispose(id);
   actions.refresh('sessions');
 });
@@ -644,7 +661,7 @@ function dispose(id) {
   const p = panes.get(id);
   if (!p) return;
   panes.delete(id);
-  if (hidden.delete(id)) saveHidden();
+  hidden.delete(id);
   if (p.ws) { p.ws.onclose = null; p.ws.close(); }
   p.term?.dispose();
   p.peek?.dispose();
@@ -807,7 +824,7 @@ function syncBrowsers() {
     if (p.kind !== 'browser') continue;
     if (!browserList(p.project).some(b => b.id === id)) dispose(id);
     else {
-      p.el.classList.toggle('hidden', !shows(p.project) || hidden.has(id));
+      p.el.classList.toggle('hidden', !shows(p.project) || hidden.has(id) || hiddenKeys.has(id));
     }
   }
   layout();

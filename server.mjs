@@ -986,11 +986,15 @@ export async function start({ port = Number(process.env.PORT) || 4747, dataDir =
   const url = `http://127.0.0.1:${actual}/?t=${TOKEN}`;
   console.log(`Relay is running. Open ${url}`);
   // Panes that were open when Relay stopped come back as they were (oldest first, so the grid keeps its order).
-  // Shells can't be resumed. A chat whose folder is gone stays in Recent.
+  // A chat whose folder is gone stays in Recent. A shell's process can't be resumed: it gets a fresh one in its folder.
   for (const c of db.chats.filter(c => c.open).sort((a, b) => a.createdAt - b.createdAt)) {
     c.open = false;
     if (S.chatInfo(c).folderMissing) continue;
     await reopen(c).catch(e => console.error(`Couldn't reopen ${c.name}:`, e.message));
+  }
+  for (const x of [...db.shells].sort((a, b) => a.createdAt - b.createdAt)) {
+    if (!fs.statSync(x.cwd, { throwIfNoEntry: false })?.isDirectory()) db.shells = db.shells.filter(y => y !== x);
+    else await S.createSession({ kind: 'shell', project: x.project, cwd: x.cwd, name: x.name, shellId: x.id }).catch(e => console.error(`Couldn't reopen ${x.name}:`, e.message));
   }
   const upkeep = setInterval(() => S.upkeep().catch(e => console.error('Lead upkeep failed:', e)), 30_000);
   // Save finished days of spend even if the Spend page is never opened, before Claude Code deletes their transcripts.
