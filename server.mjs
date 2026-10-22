@@ -355,6 +355,7 @@ route('POST', '/api/sessions/:id/input', async ({ req, params, body }) => {
   const recent = recentMessages(from.project);
   if (target) S.deliver(target, S.sign(from, text));
   else target = await wake(closed, S.sign(from, text));
+  if (from.startedBy?.id === target.id) from.told = true; // it told its starter itself, so its turn's report isn't sent too
   sent.set(from.project, [...recent, Date.now()]);
   bus.emit('event', { type: 'agent-message', from: from.name, to: target.name, ...logMessage(from.project, from, target, 'send_to_agent') });
   return {};
@@ -441,6 +442,7 @@ route('POST', '/api/messages', async ({ req, body }) => {
     mayStartAgents(req);
     target = await S.createSession({ project, specialist: to, prompt: signed, ...asked, startedBy: starter(req) });
   }
+  if (from && from.startedBy?.id === target.id) from.told = true;
   sent.set(bucket, [...recent, Date.now()]);
   const started = !matches[0] && !closed;
   bus.emit('event', { type: 'agent-message', from: from?.name ?? 'An agent', to: target.name, started, ...logMessage(bucket, from, target, 'message_agent') });
