@@ -204,6 +204,11 @@ flowchart LR
   says Update, and one click downloads the new .dmg into your Downloads folder. When GitHub's API is
   rate-limited (60 calls an hour per address without a login, shared on an office network), it falls back to
   the release page, which isn't limited (since 1.9.10). If 1.9.9 or older shows a rate-limit error, download the latest by hand once.
+- **Automatic updates**: with Settings › Update automatically on (the default), the Mac app downloads a new
+  version in the background, checks its SHA-256 against the release, and installs it when you quit Relay. Or
+  click **Restart to update**: agents stop and resume after the restart. Relay never restarts on its own. If
+  macOS blocks the install, Relay says so on the next launch and goes back to the manual download: allow Relay
+  in System Settings › Privacy & Security › App Management, then turn the setting back on.
 - **MCP for your own Claude Code**: Settings shows a one-line `claude mcp add` that gives the same 21 board
   tools to Claude Code anywhere.
 

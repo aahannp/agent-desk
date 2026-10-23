@@ -7,6 +7,7 @@ import { stripDeskCookies } from '../lib/cookies.mjs';
 
 const ROOT = path.dirname(import.meta.dirname);
 let server;
+let update;
 
 // Apps opened from Finder get a bare PATH, so claude and codex in /opt/homebrew/bin would not be
 // found. Ask the user's login shell for its PATH; markers skip anything their shell config prints.
@@ -60,6 +61,8 @@ async function boot() {
     if (e.code !== 'EADDRINUSE') throw e;
     return start({ ...options, port: 0 }); // 4848 is taken, so take any free port
   });
+  update = await import('../lib/update.mjs');
+  if (app.isPackaged) update.auto({ dataDir: options.dataDir, quit: () => app.quit() }); // never from `npm run app`'s Electron
 
   // Electron grants every page every permission unless told otherwise, and browser panes frame other
   // websites. So deny by default, and give Relay's own top-level page only what it uses.
@@ -116,7 +119,15 @@ if (!app.requestSingleInstanceLock()) {
   // Mac convention: closing the window keeps the app and its agents running; the Dock icon reopens it.
   app.on('window-all-closed', () => {});
   app.on('activate', () => server && !BrowserWindow.getAllWindows().length && createWindow());
-  app.on('will-quit', () => server?.close());
+  // A quit you chose installs a downloaded update; the new version opens next time you open Relay.
+  app.on('will-quit', () => {
+    server?.close();
+    try {
+      if (app.isPackaged) update?.installOnQuit();
+    } catch (e) {
+      console.error("Couldn't install the update:", e.message);
+    }
+  });
   app.whenReady().then(boot).catch(e => {
     dialog.showErrorBox('Relay could not start', String(e?.stack || e));
     app.quit();

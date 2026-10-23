@@ -1216,6 +1216,7 @@ test('two of a product add up', async () =&gt; {
         <details name="faq">
           <summary>How does it update?</summary>
           <p>The version pill next to the logo checks GitHub releases. When a newer one is out it says Update, and one click downloads the new .dmg to your Downloads folder. If GitHub's API is rate-limited, as it can be on a shared office network, it falls back to the release page (since 1.9.10). If an older version shows a rate-limit error, download the latest by hand once.</p>
+          <p>With Update automatically on in Settings (the default), the Mac app downloads the new version in the background, checks its SHA-256, and installs it when you quit Relay, or when you click Restart to update. It never restarts on its own. If macOS blocks it, allow Relay in System Settings › Privacy &amp; Security › App Management.</p>
         </details>
         <details name="faq">
           <summary>Can I build it myself, or run it on an Intel Mac?</summary>

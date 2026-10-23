@@ -1,7 +1,7 @@
 // Smoke check for the server: security, a shell with command blocks, the task board, worktree review and
 // merge, and the MCP tools. Uses a throwaway data folder and git repo, never your real ones.
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -15,10 +15,10 @@ import { command, board, sessions, upkeep, effectiveWindow, claudeTheme, contras
 import { THEMES } from './public/js/themes.js';
 import { transcriptContext } from './lib/transcripts.mjs';
 import { priceReply } from './lib/usage.mjs';
-import { isNewer } from './lib/update.mjs';
+import * as U from './lib/update.mjs';
 import { parseMarkdown, meterView } from './public/js/ui.js';
 import { stripDeskCookies } from './lib/cookies.mjs';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agent-desk-check-')));
 const repo = path.join(tmp, 'repo');
@@ -1404,9 +1404,10 @@ esac
   assert.equal(stripDeskCookies(' desk_1 = x '), '');
   assert.equal(stripDeskCookies(''), '');
   assert.equal(stripDeskCookies(undefined), '');
-  assert.ok(isNewer('v1.10.0', '1.9.2') && isNewer('2.0.0', '1.99.99') && !isNewer('v1.0.0', '1.0.0') && !isNewer('v1.0.0-beta', '1.0.0'), 'version comparison');
+  assert.ok(U.isNewer('v1.10.0', '1.9.2') && U.isNewer('2.0.0', '1.99.99') && !U.isNewer('v1.0.0', '1.0.0') && !U.isNewer('v1.0.0-beta', '1.0.0'), 'version comparison');
   let release = null, limited = false;
   const dmgBytes = Buffer.from('not really a dmg');
+  let realDmg = Buffer.alloc(0), shaText = '';
   const gh = http.createServer((req, res) => {
     const send = (status, body, headers = {}) => res.writeHead(status, { 'content-type': 'application/json', ...headers }).end(body === undefined ? '' : JSON.stringify(body));
     if (req.url === '/repos/aahannp/relay/releases/latest') return limited ? send(403, { message: 'API rate limit exceeded' }) : release ? send(200, release) : send(404, { message: 'Not Found' });
@@ -1414,6 +1415,8 @@ esac
     if (req.url === '/aahannp/relay/releases/download/v99.0.0/Relay-99.0.0-arm64.dmg') return send(302, undefined, { location: '/files/agent.dmg' });
     if (req.url === '/dl/agent.dmg') return send(302, undefined, { location: '/files/agent.dmg' });
     if (req.url === '/files/agent.dmg') return res.writeHead(200, { 'content-length': dmgBytes.length }).end(dmgBytes);
+    if (req.url === '/files/real.dmg') return res.writeHead(200, { 'content-length': realDmg.length }).end(realDmg);
+    if (req.url === '/files/real.dmg.sha256') return res.writeHead(200).end(shaText);
     if (req.url === '/dl/elsewhere.dmg') return send(302, undefined, { location: 'https://example.invalid/agent.dmg' });
     send(404, {});
   });
@@ -1443,6 +1446,90 @@ esac
     assert.deepEqual([viaPage.error, viaPage.newer, viaPage.latest, viaPage.asset.name], [undefined, true, 'v99.0.0', 'Relay-99.0.0-arm64.dmg'], 'rate-limited, found via the release page');
     fs.rmSync(got.path);
     assert.deepEqual(fs.readFileSync((await ok('POST', '/api/update/download')).path), dmgBytes, 'and its .dmg downloads');
+
+    // Automatic updates (the Mac app): download into <data>/update, check the SHA-256, copy Relay.app out of the .dmg,
+    // and swap it in only once Relay has quit. A tiny real .dmg of a fake, ad-hoc signed Relay.app stands in for a release.
+    if (process.platform === 'darwin') {
+      const fakeApp = (dir, version) => {
+        const contents = path.join(dir, 'Relay.app', 'Contents');
+        fs.mkdirSync(path.join(contents, 'MacOS'), { recursive: true });
+        fs.writeFileSync(path.join(contents, 'Info.plist'), `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleExecutable</key><string>Relay</string><key>CFBundleIdentifier</key><string>check.relay</string><key>CFBundleShortVersionString</key><string>${version}</string></dict></plist>`);
+        fs.writeFileSync(path.join(contents, 'MacOS', 'Relay'), '#!/bin/sh\n', { mode: 0o755 });
+        return path.join(dir, 'Relay.app');
+      };
+      const versionOf = app => execFileSync('plutil', ['-extract', 'CFBundleShortVersionString', 'raw', '-o', '-', path.join(app, 'Contents', 'Info.plist')]).toString().trim();
+      const rel = path.join(tmp, 'release');
+      execFileSync('codesign', ['-s', '-', fakeApp(path.join(rel, 'src'), '99.0.0')]);
+      execFileSync('hdiutil', ['create', '-quiet', '-srcfolder', path.join(rel, 'src'), '-volname', 'Relay', '-format', 'UDZO', path.join(rel, 'r.dmg')]);
+      realDmg = fs.readFileSync(path.join(rel, 'r.dmg'));
+      const realSha = createHash('sha256').update(realDmg).digest('hex');
+
+      limited = false;
+      release = null;
+      await ok('GET', '/api/update?force=1'); // nothing out yet, so turning it on downloads nothing
+      let quits = 0;
+      const autoData = path.join(tmp, 'auto');
+      const upd = path.join(autoData, 'update');
+      U.auto({ dataDir: autoData, quit: () => quits++ });
+      release = { tag_name: 'v99.0.0', body: '', html_url: 'https://github.com/aahannp/relay/releases/tag/v99.0.0', assets: [
+        { name: 'Relay-99.0.0-arm64.dmg', browser_download_url: `${hubUrl}/files/real.dmg`, size: realDmg.length },
+        { name: 'Relay-99.0.0-arm64.dmg.sha256', browser_download_url: `${hubUrl}/files/real.dmg.sha256` }] };
+      const seen = await ok('GET', '/api/update?force=1');
+      assert.deepEqual([seen.auto, seen.staged, seen.asset.sha256], [true, null, `${hubUrl}/files/real.dmg.sha256`], 'automatic, nothing ready yet, and the .sha256 is found');
+      shaText = `${'0'.repeat(64)}  Relay-99.0.0-arm64.dmg\n`;
+      const bad = await request('POST', '/api/update/download');
+      assert.equal(bad.status, 502, 'a download whose SHA-256 is wrong is refused');
+      assert.match(bad.body.error, /SHA-256 doesn't match/);
+      assert.deepEqual(fs.readdirSync(upd), [], 'deleted, and nothing is staged');
+      shaText = `${realSha}  Relay-99.0.0-arm64.dmg\n`;
+      release.assets[0].digest = `sha256:${'1'.repeat(64)}`;
+      await ok('GET', '/api/update?force=1');
+      assert.equal((await request('POST', '/api/update/download')).status, 502, "GitHub's digest is checked too");
+      release.assets[0].digest = `sha256:${realSha}`;
+      await ok('GET', '/api/update?force=1');
+      assert.deepEqual(await ok('POST', '/api/update/download'), { version: '99.0.0', path: path.join(upd, 'Relay.app') }, 'a matching download is staged');
+      assert.equal(versionOf(path.join(upd, 'Relay.app')), '99.0.0', 'Relay.app copied out of the .dmg');
+      assert.deepEqual(fs.readdirSync(upd).sort(), ['Relay.app', 'staged.json'], 'and the .dmg is gone');
+      assert.equal((await ok('GET', '/api/update')).staged, '99.0.0', 'the pill offers Restart to update');
+      assert.equal((await request('POST', '/api/update/install', { headers: { 'x-desk-via': 'mcp' } })).status, 403, "agents can't install updates");
+      const notApp = await request('POST', '/api/update/install');
+      assert.deepEqual([notApp.status, quits], [409, 0], 'outside a .app bundle nothing is installed and Relay keeps running');
+      await ok('PATCH', '/api/settings', { autoUpdate: false });
+      const off = await ok('GET', '/api/update');
+      assert.deepEqual([off.auto, off.staged], [false, null], 'turned off, it is the manual download again');
+      await ok('PATCH', '/api/settings', { autoUpdate: true });
+
+      // The install script, on a fake installed Relay in a temp folder, with a stand-in `open` that records what it opened
+      fs.writeFileSync(path.join(fakeBin, 'open'), `#!/bin/sh\necho "$@" >> "${path.join(tmp, 'opened')}"\n`, { mode: 0o755 });
+      const bundle = fakeApp(path.join(tmp, 'Applications'), '1.0.0');
+      const swap = async (relaunch, waitFor) => {
+        const child = U.install({ bundle, dir: upd, pid: waitFor?.pid ?? 999999, relaunch });
+        await new Promise(resolve => child.once('exit', resolve));
+      };
+      const sleeper = spawn('sleep', ['0.5']);
+      const sleeperGone = new Promise(resolve => sleeper.once('exit', () => resolve(Date.now())));
+      await swap(false, sleeper);
+      const swapped = Date.now();
+      assert.ok(swapped >= await sleeperGone, 'it waits for Relay to exit first');
+      assert.equal(versionOf(bundle), '99.0.0', 'the new version is in place');
+      assert.deepEqual([fs.existsSync(`${bundle}.old`), fs.existsSync(path.join(upd, 'staged.json')), fs.existsSync(path.join(upd, 'last-error.txt'))], [false, false, false], 'the old one and the staged note are gone');
+      assert.ok(!fs.existsSync(path.join(tmp, 'opened')), 'and nothing is opened when it was a plain quit');
+      await swap(true); // nothing staged now, so the copy fails
+      assert.equal(versionOf(bundle), '99.0.0', 'a failed copy puts the old app back');
+      assert.ok(!fs.existsSync(`${bundle}.old`));
+      assert.match(fs.readFileSync(path.join(upd, 'last-error.txt'), 'utf8'), /Couldn't copy the new version/, 'and says why in last-error.txt');
+      assert.ok(!fs.existsSync(path.join(tmp, 'opened')), 'and opens nothing');
+      fakeApp(upd, '99.0.1');
+      await swap(true);
+      assert.equal(versionOf(bundle), '99.0.1');
+      assert.equal(fs.readFileSync(path.join(tmp, 'opened'), 'utf8').trim(), bundle, 'Restart to update opens the new version');
+      fs.writeFileSync(path.join(upd, 'last-error.txt'), 'mv: Operation not permitted');
+      U.auto({ dataDir: autoData, quit: () => quits++ }); // the next launch
+      const told = await ok('GET', '/api/update');
+      assert.deepEqual([told.installError, told.auto, db.settings.autoUpdate], ['mv: Operation not permitted', false, false], 'the next launch says why, once, and goes back to manual downloads');
+      assert.equal((await ok('GET', '/api/update')).installError, null, 'only once');
+      fs.rmSync(path.join(fakeBin, 'open'));
+    }
   } finally {
     process.env.HOME = realHome;
     await new Promise(resolve => gh.close(resolve));

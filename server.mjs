@@ -161,7 +161,7 @@ route('PATCH', '/api/settings', ({ req, body }) => {
   notFromAgent(req, 'change Relay\'s settings');
   for (const [key, value] of Object.entries(body)) {
     if (!(key in db.settings)) continue;
-    if (['agentsCanSpawn', 'agentsCanMessage', 'agentsCanEditTeam', 'agentsAutonomous', 'fancyCursor', 'worktreeByDefault', 'sidebarHidden', 'agentsAware', 'spacesCanAsk'].includes(key) && typeof value !== 'boolean') throw fail(400, `${key} is true or false`);
+    if (['agentsCanSpawn', 'agentsCanMessage', 'agentsCanEditTeam', 'agentsAutonomous', 'fancyCursor', 'worktreeByDefault', 'sidebarHidden', 'agentsAware', 'spacesCanAsk', 'autoUpdate'].includes(key) && typeof value !== 'boolean') throw fail(400, `${key} is true or false`);
     if (key === 'artifactEditModel' && !EDIT_MODELS.includes(value)) throw fail(400, `The edit model is one of ${EDIT_MODELS.join(', ')}`);
     if (key === 'scrollSpeed' && !(Number(value) >= 0.25 && Number(value) <= 4)) throw fail(400, 'Scroll speed is between 0.25 and 4');
     if (key === 'agentDefaults') {
@@ -568,8 +568,10 @@ route('DELETE', '/api/groups/:id', ({ req, params }) => {
 });
 
 // Updates: is there a newer release on GitHub, and download it
-route('GET', '/api/update', ({ query }) => U.check(query.get('force') === '1'));
-route('POST', '/api/update/download', ({ req }) => (notFromAgent(req, 'download updates'), U.download()));
+route('GET', '/api/update', ({ query }) => U.status(query.get('force') === '1'));
+// With automatic updates on, Download gets the update ready to install instead of saving it to Downloads.
+route('POST', '/api/update/download', ({ req }) => (notFromAgent(req, 'download updates'), U.autoOn() ? U.prepare() : U.download()));
+route('POST', '/api/update/install', ({ req }) => (notFromAgent(req, 'install updates'), U.restart()));
 route('POST', '/api/update/show', () => U.reveal());
 
 // The team: named specialists with their own instructions and model
