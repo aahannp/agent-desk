@@ -50,6 +50,7 @@ export function mount(root) {
   on('project', sync);
   on('settings', sync); // also picks up spaces opened or closed beside this one
   on('theme', retheme);
+  addEventListener('focus', () => panes.forEach(reclaim));
   setInterval(tick, 1000);
 }
 
@@ -255,6 +256,7 @@ function sync() {
     if (hiddenKeys.has(keyOf(s.id))) hidden.add(s.id);
     if (!p.docked) p.el.classList.toggle('hidden', !shows(s.project) || hidden.has(s.id));
     renderHead(p);
+    reclaim(p);
   }
   for (const [id, p] of panes) if (p.kind === 'term' && !live.has(id)) dispose(id);
   placeSections();
@@ -369,6 +371,16 @@ function announce(s) {
 // On a light background, xterm darkens any text colour that would read below 4.5:1, so pale prompt and
 // truecolor output from other tools stays legible. Dark themes keep their colours exactly.
 const contrast = () => state.theme?.dark === false ? 4.5 : 1;
+
+// A pane open in several windows has one PTY, and each window sizes it to its own pane. When the PTY isn't the size
+// this window last asked for, another window changed it: the window you're using takes it back and the others leave
+// it, so two windows never fight over it.
+function reclaim(p) {
+  const s = p.session;
+  if (p.kind !== 'term' || !document.hasFocus() || !s.cols || `${s.cols}x${s.rows}` === p.size) return;
+  p.size = '';
+  p.fit();
+}
 
 function retheme() {
   for (const p of panes.values()) {
@@ -513,7 +525,8 @@ function terminalPane(s, parent) {
     if (!host.offsetWidth) return;
     fitAddon.fit();
     const size = `${term.cols}x${term.rows}`;
-    if (size !== p.size && p.ws?.readyState === WebSocket.OPEN) {
+    // A hidden window (a background tab) leaves the size to the one you can see.
+    if (size !== p.size && !document.hidden && p.ws?.readyState === WebSocket.OPEN) {
       p.ws.send(JSON.stringify({ t: 'resize', cols: term.cols, rows: term.rows }));
       p.size = size;
     }
