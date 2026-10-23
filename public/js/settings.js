@@ -128,7 +128,11 @@ function render() {
 
     section('About', null, h('div', { class: 'row' }, h('p', { class: 'muted grow', style: { margin: 0 } },
       `Relay ${state.info.version ? `v${state.info.version} ` : ''}${state.info.electron ? 'Mac app' : 'in the browser'} · server ${state.info.url}`),
-    h('button', { class: 'btn sm', onClick: () => openUpdates() }, icon('refresh', 13), 'Check for updates')))));
+    h('button', { class: 'btn sm', onClick: () => openUpdates() }, icon('refresh', 13), 'Check for updates')),
+    setting('Update automatically', s.autoUpdate !== false
+      ? 'On: the Mac app downloads new versions in the background, checks them, and installs them when you quit Relay or click Restart to update. It never restarts on its own.'
+      : 'Off: the Update button downloads the new .dmg to your Downloads folder for you to drag into Applications.',
+    h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: s.autoUpdate !== false, onChange: e => set({ autoUpdate: e.target.checked }) }))))));
 }
 
 // A switch plus three small numbers: when to compact a lead (a % of a window in thousands of tokens), and after
