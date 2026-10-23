@@ -4,35 +4,6 @@
 import { api, h, icon, markdown } from './ui.js';
 import { loadMonaco } from './monaco.js';
 
-// ---------- STUB: delete from here to END STUB once GET /api/sessions/:id/transcript (Task A) lands ----------
-// Then make `feed` below plain `url => api('GET', url)`. A fixed reply in the route's shape: all but the last few
-// items at first, then one more each time the pane prints something. `prompting` follows the pane's "needs you".
-const STUB = true;
-const STUB_ITEMS = [
-  { kind: 'user', key: 'u1:0', text: 'Add a dark mode toggle to settings.\nKeep it small.', images: 1 },
-  { kind: 'thinking', key: 'a1:0', text: 'Settings live in public/js/settings.js. A toggle there plus a CSS variable swap should do.' },
-  { kind: 'text', key: 'a2:0', text: "I'll look at how **settings** are stored first.\n\n- read `settings.js`\n- add the toggle" },
-  { kind: 'tool', key: 'a3:0', id: 't1', name: 'Bash', label: 'Ran `npm run -s check`', detail: 'npm run -s check' },
-  { kind: 'result', key: 'u2:0', id: 't1', error: false, text: 'All checks passed', images: 0 },
-  { kind: 'tool', key: 'a4:0', id: 't2', name: 'Edit', label: 'Edited public/js/settings.js', detail: "- const dark = false;\n+ const dark = matchMedia('(prefers-color-scheme: dark)').matches;" },
-  { kind: 'result', key: 'u3:0', id: 't2', error: true, text: 'String to replace not found in file.', images: 0 },
-  { kind: 'command', key: 'u4:0', text: '/model sonnet' },
-  { kind: 'note', key: 'u5:0', text: 'Interrupted' },
-  { kind: 'compact', key: 'u6:0', text: 'We added a dark mode toggle to settings and fixed one failed edit.' },
-  { kind: 'text', key: 'a5:0', text: 'Here is the toggle:\n\n```js\nconst toggle = document.querySelector("#dark");\ntoggle.addEventListener("change", e => setTheme(e.target.checked ? "dark" : "light"));\n```\n\nAnything else?' },
-  { kind: 'tool', key: 'a6:0', id: 't3', name: 'Read', label: 'Read public/app.css', detail: '{\n  "file_path": "public/app.css"\n}' },
-  { kind: 'result', key: 'u7:0', id: 't3', error: false, text: '/* Relay. Colours come from the active theme */', images: 0 },
-];
-const stubShown = new Map(); // pane id -> how many items it has been given
-function stubFeed(p, url) {
-  const after = Number(new URL(url, location.href).searchParams.get('after')) || 0;
-  const n = after ? Math.min((stubShown.get(p.id) ?? after) + 1, STUB_ITEMS.length) : STUB_ITEMS.length - 3;
-  stubShown.set(p.id, n);
-  return { sid: 'stub', size: n, reset: !after, prompting: p.session.status === 'needs-input', items: STUB_ITEMS.slice(after, n) };
-}
-// ---------- END STUB ----------
-const feed = (p, url) => (STUB ? Promise.resolve(stubFeed(p, url)) : api('GET', url));
-
 const MAX_ROWS = 400;
 const LANGS = { js: 'javascript', ts: 'typescript', sh: 'shell', bash: 'shell', zsh: 'shell', py: 'python' };
 // Control characters out (newlines and tabs stay), so a paste can't end the paste brackets early (as lib/sessions.mjs does).
@@ -104,7 +75,7 @@ export function chatView(p) {
     busy = true;
     last = Date.now();
     try {
-      const r = await feed(p, `/api/sessions/${p.id}/transcript?sid=${encodeURIComponent(sid ?? '')}&after=${after}`);
+      const r = await api('GET', `/api/sessions/${p.id}/transcript?sid=${encodeURIComponent(sid ?? '')}&after=${after}`);
       if (r.reset) {
         list.replaceChildren();
         seen.clear();
