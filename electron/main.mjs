@@ -22,13 +22,18 @@ function loginShellPath() {
 
 const openOutside = url => /^(https?|mailto):/.test(url) && shell.openExternal(url);
 
+// The debug build (`npm run dist:debug`) is a separate app named "Relay Debug": own data folder, port, lock and no updates.
+const DEBUG = app.getName() === 'Relay Debug';
+const APP_NAME = DEBUG ? 'Relay Debug' : 'Relay';
+
 function createWindow({ from, project } = {}) {
   const win = new BrowserWindow({
     width: 1440, height: 900, minWidth: 1100, minHeight: 700,
     ...(from && { x: from.getBounds().x + 28, y: from.getBounds().y + 28 }), // a step off the one it came from
     titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 18, y: 18 },
-    backgroundColor: '#0b0c10', show: false, title: 'Relay',
+    backgroundColor: '#0b0c10', show: false, title: APP_NAME,
   });
+  if (DEBUG) win.on('page-title-updated', e => e.preventDefault()); // keep "Relay Debug" in the title bar
   win.once('ready-to-show', () => win.show());
   // Links and window.open go to the default browser; only the Relay page stays in the window.
   win.webContents.setWindowOpenHandler(({ url }) => { openOutside(url); return { action: 'deny' }; });
@@ -52,17 +57,18 @@ function newWindow() {
 async function boot() {
   process.env.PATH = await loginShellPath();
   // Imported only now, because the server copies process.env for its agents when it loads.
+  if (DEBUG) process.env.RELAY_DEBUG = '1'; // the server reports it to the page and refuses updates
   const { start } = await import('../server.mjs');
   const options = {
     dataDir: app.getPath('userData'),
     voiceHelper: app.isPackaged ? path.join(process.resourcesPath, 'desk-listen') : path.join(ROOT, 'native/build/desk-listen'),
   };
-  server = await start({ ...options, port: 4848 }).catch(e => {
+  server = await start({ ...options, port: DEBUG ? 4849 : 4848 }).catch(e => {
     if (e.code !== 'EADDRINUSE') throw e;
-    return start({ ...options, port: 0 }); // 4848 is taken, so take any free port
+    return start({ ...options, port: 0 }); // the port is taken, so take any free port
   });
   update = await import('../lib/update.mjs');
-  if (app.isPackaged) update.auto({ dataDir: options.dataDir, quit: () => app.quit() }); // never from `npm run app`'s Electron
+  if (app.isPackaged && !DEBUG) update.auto({ dataDir: options.dataDir, quit: () => app.quit() }); // never from `npm run app`'s Electron
 
   // Electron grants every page every permission unless told otherwise, and browser panes frame other
   // websites. So deny by default, and give Relay's own top-level page only what it uses.
@@ -105,7 +111,8 @@ async function boot() {
 // Relay was called Agent Desk: keep using its data folder (board, chats, settings, login) when one exists.
 // Same userData also means the same single-instance lock, so the old app and Relay never share desk.json at once.
 const oldData = path.join(app.getPath('appData'), 'Agent Desk');
-if (fs.existsSync(oldData)) app.setPath('userData', oldData);
+// The debug app never takes it: that would share the real desk.json and the single-instance lock.
+if (!DEBUG && fs.existsSync(oldData)) app.setPath('userData', oldData);
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -123,7 +130,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('will-quit', () => {
     server?.close();
     try {
-      if (app.isPackaged) update?.installOnQuit();
+      if (app.isPackaged && !DEBUG) update?.installOnQuit();
     } catch (e) {
       console.error("Couldn't install the update:", e.message);
     }

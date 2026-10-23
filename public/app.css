@@ -89,6 +89,7 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .brand { display: flex; align-items: center; gap: 10px; font: 650 14.5px var(--display); letter-spacing: -.02em; }
 .brand .ver { font: 600 9px var(--mono); letter-spacing: .08em; color: var(--dim); background: none; border: 1px solid var(--hair-strong); border-radius: 99px; padding: 1px 6px; -webkit-app-region: no-drag; }
 .brand .ver:hover { color: var(--text); border-color: var(--dim); }
+.brand .debug-tag { font: 600 9px var(--mono); letter-spacing: .08em; color: var(--dim); border: 1px solid var(--hair-strong); border-radius: 3px; padding: 1px 5px; -webkit-app-region: no-drag; }
 .brand .ver.new { color: #fff; background: var(--accent); border-color: transparent; }
 .logo { width: 26px; height: 26px; }
 
