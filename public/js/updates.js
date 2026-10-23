@@ -12,6 +12,7 @@ async function check(force = false) {
   } catch (e) {
     info = { error: e.message };
   }
+  if (info.debug && !pill.nextElementSibling) pill.after(h('span', { class: 'debug-tag', title: 'Relay Debug: its own data, port and no updates' }, 'DEBUG'));
   pill.textContent = info.staged ? 'Restart to update' : info.newer ? 'Update' : info.current ? `v${info.current}` : 'v?';
   pill.classList.toggle('new', Boolean(info.newer));
   pill.title = info.staged ? `${info.latest} is ready to install` : info.newer ? `${info.latest} is available` : 'Check for updates';
@@ -24,6 +25,7 @@ async function check(force = false) {
 const mb = bytes => `${Math.round(bytes / 1048576)} MB`;
 
 export async function openUpdates() {
+  if (info?.debug) return toast('This is the debug build: updates are off.');
   const body = h('div', { class: 'update' }, h('p', { class: 'muted' }, 'Checking GitHub…'));
   modal({ title: 'Updates', width: 520, body });
   const paint = d => {
