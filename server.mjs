@@ -204,7 +204,8 @@ route('POST', '/api/sessions', async ({ req, body }) => {
   const role = asked;
   const project = projectFor(req, body.project);
   if (!isDir(project)) throw fail(400, `Not a folder: ${project}`);
-  return S.info(await S.createSession({ project, kind, agent, prompt, name, worktree, role, specialist, model, effort, startedBy: starter(req) }));
+  const s = await S.createSession({ project, kind, agent, prompt, name, worktree, role, specialist, model, effort, startedBy: starter(req) });
+  return S.info(kind === 'agent' && fromAgent(req) ? await S.launched(s) : s); // you see a pane that dies; an agent is told
 });
 route('DELETE', '/api/sessions/:id', ({ req, params }) => (S.stop(noShell(req, sameProject(req, params.id), 'stop')), {}));
 
@@ -441,7 +442,7 @@ route('POST', '/api/messages', async ({ req, body }) => {
   } else {
     if (!T.find(to)) throw fail(404, `No running agent called "${to}"${asked ? ' is on that model and effort' : ''}, and no one on the team has that name. A running agent can't change its model; list_agents and list_team show who there is.`);
     mayStartAgents(req);
-    target = await S.createSession({ project, specialist: to, prompt: signed, ...asked, startedBy: starter(req) });
+    target = await S.launched(await S.createSession({ project, specialist: to, prompt: signed, ...asked, startedBy: starter(req) }));
   }
   if (from && from.startedBy?.id === target.id) from.told = true;
   sent.set(bucket, [...recent, Date.now()]);
@@ -704,10 +705,18 @@ route('POST', '/api/tasks/:id/start', async ({ req, params, body }) => {
   const agent = body.agent || task.agent || db.settings.defaultAgent;
   const worktree = body.worktree ?? task.worktree;
   const prompt = task.description ? `${task.title}\n\n${task.description}` : task.title;
+  const was = task.status;
   const s = await S.createSession({ project: task.project, agent, prompt, name: task.title, taskId: task.id, worktree, specialist: body.specialist || null, model: body.model || '', effort: body.effort || '', startedBy: starter(req) });
   if (task.status !== 'doing') S.note(task.project, s.id, 'tasks moved to doing', `Task ${S.plain(task.title, 60)} moved to doing`); // by its own agent, which knows
   Object.assign(task, { status: 'doing', sessionId: s.id, agent, worktree, branch: s.worktree?.branch ?? null, worktreePath: s.worktree?.path ?? null, updatedAt: Date.now() });
   changed('tasks');
+  if (fromAgent(req)) {
+    await S.launched(s).catch(e => {
+      task.status = was; // it never started, so the task goes back where it was
+      changed('tasks');
+      throw e;
+    });
+  }
   return { task, session: S.info(s) };
 });
 
