@@ -346,6 +346,7 @@ function tick() {
   for (const p of panes.values()) {
     if (p.kind !== 'term') continue;
     const status = statusOf(p.session);
+    if (p.dot.className === `dot ${status}`) continue; // every second: an unchanged header needs no repaint
     p.state.className = `state ${status}`;
     p.dot.className = `dot ${status}`;
     p.stateText.textContent = STATUS_LABEL[status] ?? status;
