@@ -405,6 +405,11 @@ try {
     }
   }
   await ok('PATCH', '/api/settings', { theme: savedTheme, accent: '' });
+  const css = fs.readFileSync(new URL('./public/app.css', import.meta.url), 'utf8');
+  for (const [, name] of css.matchAll(/animation:\s*([\w-]+)[^;}]*\binfinite/g)) {
+    const frames = css.match(new RegExp(`@keyframes ${name}\\s*{((?:[^{}]*{[^}]*})*)`))?.[1] ?? '';
+    assert.doesNotMatch(frames, /box-shadow|filter/, `the never-ending ${name} animation repaints on every frame: animate transform or opacity instead`);
+  }
 
   // The whole chat lifecycle, with a stand-in `claude` on the PATH that prints its arguments and exits
   const fakeBin = path.join(tmp, 'fake-bin');

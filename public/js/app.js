@@ -31,6 +31,12 @@ const $ = id => document.getElementById(id);
 let current = '';
 let live = false; // is the event stream from the server connected
 
+// The status pulses stop while Relay isn't the focused window: nobody's watching, and each frame costs GPU (app.css .away).
+const away = () => document.documentElement.classList.toggle('away', !document.hasFocus());
+addEventListener('blur', away);
+addEventListener('focus', away);
+away();
+
 // ---------- Live data ----------
 const loaders = {
   sessions: async () => { state.sessions = await api('GET', '/api/sessions'); },
@@ -150,7 +156,9 @@ function renderChrome() {
   };
   for (const v of VIEWS) {
     const btn = $(`nav-${v.id}`);
-    btn.querySelector('.count')?.remove();
+    const old = btn.querySelector('.count');
+    if ((old?.outerHTML ?? '') === (counts[v.id]?.outerHTML ?? '')) continue; // this runs every second: touch only what changed
+    old?.remove();
     if (counts[v.id]) btn.append(counts[v.id]);
   }
 
@@ -237,6 +245,7 @@ function spaceMenu(e, p) {
 
 // Sidebar chats: what's open now, then earlier chats you can click or drag into the grid to pick up again.
 let sidebarDrag = false; // rebuilding the list mid-drag would detach the dragged button and lose its dragend
+let chatsShown = '';
 
 function renderChats(unordered) {
   if (sidebarDrag) return;
@@ -270,7 +279,7 @@ function renderChats(unordered) {
     ...unlisted.filter(byAgent).map(item),
     ...projectChats().filter(c => c.startedBy && !c.talked && !openIds.has(c.id)).slice(0, 40).map(earlierItem),
   ];
-  $('running').replaceChildren(
+  const list = [
     ...(open.length ? open : [h('div', { class: 'run-empty' }, listed.length ? `Open ones are under ${baseName(state.project)}` : 'Nothing open')]),
     ...(earlier.length ? [h('div', { class: 'side-label sub' }, 'Recent'), ...earlier] : []),
     ...(agentOnes.length ? [
@@ -280,7 +289,12 @@ function renderChats(unordered) {
         renderChrome();
       } }, `${agentChatsOpen ? '▾' : '▸'} Started by agents (${agentOnes.length})`),
       ...(agentChatsOpen ? agentOnes : []),
-    ] : []));
+    ] : [])];
+  // This runs every second: swap the list only when it would look different, so an idle sidebar isn't repainted.
+  const html = list.map(n => n.outerHTML).join('');
+  if (html === chatsShown) return;
+  chatsShown = html;
+  $('running').replaceChildren(...list);
 }
 
 function chatMenu(e, chat) {
@@ -303,12 +317,13 @@ function chatMenu(e, chat) {
 
 // The thin bar along the bottom: connection, what's running, and the guardrails in force.
 const PERMISSION_NAMES = { default: 'Ask me', acceptEdits: 'Accept edits', auto: 'Auto', plan: 'Plan only' };
+let statusShown = '';
 function renderStatus() {
   const sessions = gridSessions();
   const running = sessions.filter(s => !s.exited);
   const waiting = sessions.filter(s => s.status === 'needs-input');
   const busy = running.filter(s => actions.statusOf?.(s) === 'working');
-  $('statusBar').replaceChildren(...[
+  const items = [
     h('span', {}, h('i', { class: `live-dot${live ? '' : ' off'}` }), live ? 'Live' : 'Reconnecting…'),
     h('span', {}, icon('terminal', 12), `${running.length} running`),
     busy.length > 0 && h('span', {}, icon('zap', 12), `${busy.length} ${STATUS_LABEL.working.toLowerCase()}`),
@@ -318,7 +333,11 @@ function renderStatus() {
     h('span', { title: 'What Claude agents may do without asking' }, icon('shield', 12), PERMISSION_NAMES[state.settings.permissionMode] ?? 'Ask me'),
     h('span', {}, icon('sparkles', 12), state.theme?.name ?? ''),
     h('span', {}, h('kbd', {}, '⌘K'), 'commands'),
-  ].filter(Boolean));
+  ].filter(Boolean);
+  const html = items.map(n => n.outerHTML).join('');
+  if (html === statusShown) return; // every second otherwise, repainting the bar for nothing
+  statusShown = html;
+  $('statusBar').replaceChildren(...items);
 }
 on('tick', renderChrome);
 on('project', renderChrome); // the new space lights up at once, not after the settings round trip

@@ -82,7 +82,9 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .is-app .app.no-side .topbar { padding-left: 84px; } /* room for the window's traffic lights */
 .side-toggle { -webkit-app-region: no-drag; margin-right: -8px; }
 .side { position: relative; display: flex; flex-direction: column; min-height: 0; padding: 0 12px 12px;
-  background: color-mix(in srgb, var(--side) 72%, transparent); backdrop-filter: blur(24px) saturate(150%); border-right: 1px solid var(--hair); }
+  background: color-mix(in srgb, var(--side) 72%, hsl(from var(--bg) h calc(s * 1.5) l)); border-right: 1px solid var(--hair); }
+/* ^ What blur(24px) saturate(150%) made of the flat page behind it, within 1/255 on every dark theme, without the blur:
+   the GPU re-ran that blur over the whole sidebar on every frame any dot in it pulsed. */
 .side > * { flex-shrink: 0; } /* only the spaces and chats lists give way */
 .side-top { height: 58px; display: flex; align-items: center; padding: 0 6px; -webkit-app-region: drag; }
 .is-app .side-top { padding-left: 80px; }
@@ -140,9 +142,10 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .voice-btn, .palette-btn { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 11px; border: 1px solid var(--hair); background: var(--glass); color: var(--text); box-shadow: var(--lift); transition: border-color .2s, background .2s, box-shadow .2s; }
 .voice-btn kbd, .palette-btn kbd { margin-left: auto; }
 .voice-btn:hover, .palette-btn:hover { border-color: var(--hair-strong); background: var(--glass-strong); }
-.voice-btn.live { background: var(--accent); border-color: transparent; color: #fff; box-shadow: 0 0 0 4px var(--accent-soft); animation: breathe 1.8s ease-in-out infinite; }
+.voice-btn.live { position: relative; background: var(--accent); border-color: transparent; color: #fff; box-shadow: 0 0 0 4px var(--accent-soft); }
+.voice-btn.live::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; box-shadow: inherit; pointer-events: none; animation: breathe 1.8s ease-in-out infinite; }
 .voice-btn.live kbd { color: inherit; border-color: rgb(255 255 255 / .35); background: none; }
-@keyframes breathe { 50% { box-shadow: 0 0 0 8px transparent; } }
+@keyframes breathe { 50% { transform: scale(1.06); opacity: 0; } }
 
 .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .topbar { height: 58px; display: flex; align-items: center; gap: 16px; padding: 0 16px 0 20px; -webkit-app-region: drag; flex-shrink: 0; border-bottom: 1px solid var(--hair);
@@ -237,13 +240,18 @@ textarea.input { resize: vertical; min-height: 84px; line-height: 1.55; }
 .avatar.shell { background: #2a2e38; color: var(--ok); }
 .avatar.browser { background: #3b82f6; }
 
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex-shrink: 0; opacity: .7; }
-.dot.working { background: var(--ok); opacity: 1; animation: pulse 1.6s infinite; }
+.dot { position: relative; width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex-shrink: 0; opacity: .7; }
+.dot.working { background: var(--ok); opacity: 1; }
 .dot.idle { background: var(--info); opacity: 1; }
-.dot.needs-input { background: var(--warn); opacity: 1; animation: pulse-warn 1.2s infinite; }
+.dot.needs-input { background: var(--warn); opacity: 1; }
 .dot.exited { background: var(--dim); opacity: .4; }
-@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); } 70% { box-shadow: 0 0 0 6px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
-@keyframes pulse-warn { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--warn) 60%, transparent); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+/* The pulse is a copy of the dot that grows and fades. Only transform and opacity change, so the GPU runs it without
+   repainting: animating box-shadow repainted the page every frame while any agent worked (~40% GPU, ~20% renderer). */
+.dot.working::after, .dot.needs-input::after, .graph-live.busy i::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: inherit; pointer-events: none; animation: pulse 1.6s infinite; }
+.dot.needs-input::after { animation: pulse-warn 1.2s infinite; }
+.away .dot::after, .away .graph-live i::after, .away .pane.attn { animation: none; }
+@keyframes pulse { 0% { transform: scale(1); opacity: .6; } 70%, 100% { transform: scale(2.5); opacity: 0; } }
+@keyframes pulse-warn { 0% { transform: scale(1); opacity: .6; } 70%, 100% { transform: scale(2.75); opacity: 0; } }
 .state { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px 0 8px; border-radius: 99px; font-size: 11px; font-weight: 600; white-space: nowrap; flex-shrink: 0; border: 1px solid var(--hair); background: var(--softer); color: var(--dim); }
 .state .dot { width: 6px; height: 6px; }
 .state.working { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 28%, transparent); background: color-mix(in srgb, var(--ok) 8%, transparent); }
@@ -343,7 +351,7 @@ textarea.input { resize: vertical; min-height: 84px; line-height: 1.55; }
 @keyframes paneIn { from { opacity: 0; transform: scale(.985); } }
 .pane.hidden { display: none; }
 .pane.focus { border-color: transparent; box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 65%, transparent), 0 0 0 5px var(--accent-soft); }
-.pane.attn { border-color: transparent; box-shadow: 0 0 0 1px var(--warn), 0 0 0 5px color-mix(in srgb, var(--warn) 14%, transparent); animation: attn 1.6s ease-in-out infinite; }
+.pane.attn { border-color: transparent; box-shadow: 0 0 0 1px var(--warn), 0 0 0 5px color-mix(in srgb, var(--warn) 14%, transparent); animation: attn 1.6s ease-in-out 3; } /* a few pulses, then a steady ring: a pane can wait for hours */
 @keyframes attn { 50% { box-shadow: 0 0 0 1px var(--warn), 0 0 0 9px transparent; } }
 .pane-head { display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 8px 0 10px; flex-shrink: 0; user-select: none;
   background: var(--panel); border-bottom: 1px solid var(--hair); }
@@ -600,8 +608,7 @@ textarea.input { resize: vertical; min-height: 84px; line-height: 1.55; }
 .graph-screen-head { display: flex; align-items: center; gap: 10px; margin: 6px 0 10px; }
 .graph-screen-head .section-label { margin: 0; }
 .graph-live { display: inline-flex; align-items: center; gap: 6px; font: 600 9.5px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ok); }
-.graph-live i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.graph-live.busy i { animation: pulse 1.6s infinite; }
+.graph-live i { position: relative; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .graph-live.done { color: var(--dim); }
 .graph-term { padding: 8px 10px; border-radius: 12px; border: 1px solid var(--hair); background: var(--term-bg); overflow: auto; cursor: pointer;
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 6%, transparent); transition: border-color .15s; }
@@ -620,7 +627,7 @@ textarea.input { resize: vertical; min-height: 84px; line-height: 1.55; }
 .graph-swatch { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
 .linkish { border: 0; background: none; padding: 0; font-weight: 600; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .linkish:hover { text-decoration: underline; }
-@media (prefers-reduced-motion: reduce) { .graph-edge.fresh, .graph-live.busy i { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .graph-edge.fresh, .graph-live.busy i::after { animation: none; } }
 
 /* ---------- Markdown (ui.js markdown()): tight, for narrow panels ---------- */
 .md { line-height: 1.55; overflow-wrap: anywhere; }
